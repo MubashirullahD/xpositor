@@ -18,11 +18,13 @@
   "activationEvents": [
     "onCommand:patchwork.start",
     "onCommand:patchwork.stop",
+    "onView:patchwork.pairing",
     "onStartupFinished"
   ],
   "main": "./extension.js",
   "scripts": {
-    "vscode:prepublish": "node prepare-bundle.mjs"
+    "vscode:prepublish": "node prepare-bundle.mjs",
+    "package": "node package.mjs"
   },
   "contributes": {
     "commands": [
@@ -35,6 +37,26 @@
         "title": "Patchwork: Stop Companion"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "patchwork",
+          "title": "Patchwork",
+          "icon": "resources/patchwork-activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "patchwork": [
+        {
+          "type": "webview",
+          "id": "patchwork.pairing",
+          "name": "Pair phone",
+          "icon": "resources/patchwork-activity.svg",
+          "contextualTitle": "Patchwork pairing"
+        }
+      ]
+    },
     "configuration": {
       "title": "Patchwork",
       "properties": {
@@ -74,5 +96,8 @@
         }
       }
     }
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^4.0.0"
   }
 }

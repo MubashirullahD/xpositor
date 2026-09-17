@@ -80,6 +80,17 @@ The gentle nudge asks for browser notification permission and schedules a 7:30 P
 
 ## VS Code launcher (phase two)
 
-The `vscode-extension/` folder contains the laptop-side launcher. Run `npm install` in that folder once, open it in VS Code, press `F5` to start an Extension Development Host, open a Git repository there, and run `Patchwork: Start for Workspace` from the Command Palette. The extension starts the read-only companion automatically and opens a pairing QR panel. Enable `patchwork.autoStart` if you want it to start whenever VS Code opens with a workspace.
+The `vscode-extension/` folder contains the laptop-side launcher. Run `npm install` in that folder once, open it in VS Code, press `F5` to start an Extension Development Host, and open a Git repository there. The extension contributes a Patchwork icon to the Activity Bar; click it to open the pairing view and start the read-only companion on demand. `Patchwork: Start for Workspace` remains available from the Command Palette. `patchwork.autoStart` is off by default and can be enabled if you want it to start whenever VS Code opens with a workspace.
 
-The extension bundles the companion during `vscode:prepublish` and uses the sibling script while developing from this repository. Configure `patchwork.aiProvider` to choose `auto`, Codex, Claude Code, or the API provider. HTTPS certificate setup and a distributable `.vsix` are still next-phase packaging work.
+The extension bundles the companion during `vscode:prepublish` and uses the sibling script while developing from this repository. Configure `patchwork.aiProvider` to choose `auto`, Codex, Claude Code, or the API provider.
+
+To build and install a local VSIX:
+
+```sh
+cd vscode-extension
+npm install
+npm run package
+code --install-extension ./patchwork-vscode-0.1.0.vsix --force
+```
+
+This is local sideloading; Marketplace publishing is still a separate future step.

@@ -6,10 +6,12 @@ const vscode = require('vscode');
 const { qrSvg } = require('./qr');
 
 let companionProcess;
-let pairingPanel;
+let pairingView;
 let pairingUrl;
 let statusBar;
 let stopping = false;
+let companionStatus = 'stopped';
+let lastError = '';
 
 function activate(context) {
   statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -18,11 +20,41 @@ function activate(context) {
   statusBar.tooltip = 'Start Patchwork and show the phone pairing QR';
   statusBar.show();
   context.subscriptions.push(statusBar);
-  context.subscriptions.push(vscode.commands.registerCommand('patchwork.start', () => startCompanion()));
+  context.subscriptions.push(vscode.window.registerWebviewViewProvider('patchwork.pairing', new PairingViewProvider(), {
+    retainContextWhenHidden: true,
+  }));
+  context.subscriptions.push(vscode.commands.registerCommand('patchwork.start', () => {
+    void revealPairingView();
+    startCompanion();
+  }));
   context.subscriptions.push(vscode.commands.registerCommand('patchwork.stop', () => stopCompanion(true)));
   context.subscriptions.push({ dispose: () => stopCompanion(false) });
 
-  if (vscode.workspace.getConfiguration('patchwork').get('autoStart', false)) void startCompanion();
+  if (vscode.workspace.getConfiguration('patchwork').get('autoStart', false)) {
+    void revealPairingView();
+    startCompanion();
+  }
+}
+
+class PairingViewProvider {
+  resolveWebviewView(webviewView) {
+    pairingView = webviewView;
+    webviewView.webview.options = { enableScripts: true };
+    const messageSubscription = webviewView.webview.onDidReceiveMessage((message) => handlePairingMessage(message));
+    webviewView.onDidDispose(() => {
+      messageSubscription.dispose();
+      if (pairingView === webviewView) pairingView = undefined;
+    }, undefined, []);
+
+    renderPairingView();
+    if (workspaceRoot() && !companionProcess && companionStatus === 'stopped') startCompanion();
+  }
+}
+
+function revealPairingView() {
+  return vscode.commands.executeCommand('workbench.view.extension.patchwork').catch((error) => {
+    vscode.window.showErrorMessage(`Patchwork could not open its sidebar: ${error.message}`);
+  });
 }
 
 function workspaceRoot() {
@@ -40,17 +72,22 @@ function companionPath() {
 function startCompanion() {
   const root = workspaceRoot();
   if (!root) {
+    lastError = 'Open a workspace before starting Patchwork.';
+    setStatus('error');
     vscode.window.showErrorMessage('Patchwork needs an open workspace first.');
     return;
   }
   if (companionProcess) {
-    if (pairingUrl) showPairingPanel(pairingUrl, root);
+    renderPairingView();
+    if (pairingUrl) void revealPairingView();
     else vscode.window.showInformationMessage('Patchwork is still starting. The pairing QR will appear when the companion is ready.');
     return;
   }
 
   const script = companionPath();
   if (!fs.existsSync(script)) {
+    lastError = `Patchwork companion not found at ${script}. Set patchwork.companionPath in your settings.`;
+    setStatus('error');
     vscode.window.showErrorMessage(`Patchwork companion not found at ${script}. Set patchwork.companionPath in your settings.`);
     return;
   }
@@ -64,6 +101,7 @@ function startCompanion() {
   const nodeArgs = [script, root];
   stopping = false;
   pairingUrl = '';
+  lastError = '';
   setStatus('starting');
   let stderrBuffer = '';
   companionProcess = spawn(process.execPath, nodeArgs, {
@@ -84,8 +122,9 @@ function startCompanion() {
       if (candidate.includes('0.0.0.0') || candidate.includes('127.0.0.1') || candidate.includes('localhost')) return;
       if (!/^https?:\/\/[^\s]+\/\?token=[^\s]+$/.test(candidate)) return;
       pairingUrl = candidate;
+      lastError = '';
       setStatus('ready');
-      showPairingPanel(pairingUrl, root);
+      void revealPairingView();
     });
   };
   companionProcess.stdout.on('data', readOutput);
@@ -96,17 +135,22 @@ function startCompanion() {
   companionProcess.once('error', (error) => {
     companionProcess = undefined;
     pairingUrl = '';
+    lastError = error.message;
     setStatus('error');
     if (!stopping) vscode.window.showErrorMessage(`Patchwork could not start: ${error.message}`);
   });
   companionProcess.once('exit', (code) => {
     companionProcess = undefined;
     pairingUrl = '';
-    setStatus('stopped');
     if (!stopping && code) {
       const detail = stderrBuffer.trim().split(/\r?\n/).filter(Boolean).at(-1) || 'No diagnostic output was captured.';
+      lastError = `The companion stopped before pairing (exit ${code}). ${detail}`;
+      setStatus('error');
       vscode.window.showErrorMessage(`Patchwork companion stopped before pairing (exit ${code}). ${detail}`);
+      return;
     }
+    lastError = '';
+    setStatus('stopped');
   });
 }
 
@@ -115,15 +159,13 @@ function stopCompanion(showMessage) {
   if (companionProcess) companionProcess.kill();
   companionProcess = undefined;
   pairingUrl = '';
-  if (pairingPanel) {
-    pairingPanel.dispose();
-    pairingPanel = undefined;
-  }
+  lastError = '';
   setStatus('stopped');
   if (showMessage) vscode.window.showInformationMessage('Patchwork companion stopped.');
 }
 
 function setStatus(status) {
+  companionStatus = status;
   if (!statusBar) return;
   const labels = {
     starting: '$(sync~spin) Patchwork: starting',
@@ -132,34 +174,46 @@ function setStatus(status) {
     stopped: '$(broadcast) Patchwork',
   };
   statusBar.text = labels[status] || labels.stopped;
+  renderPairingView();
 }
 
-function showPairingPanel(url, root) {
+function renderPairingView() {
+  if (!pairingView) return;
   try {
-    const panel = pairingPanel || vscode.window.createWebviewPanel('patchworkPairing', 'Patchwork pairing', vscode.ViewColumn.Beside, { enableScripts: true, retainContextWhenHidden: true });
-    pairingPanel = panel;
-    panel.title = 'Patchwork pairing';
-    panel.webview.html = pairingHtml(panel.webview, url, root);
-    panel.webview.onDidReceiveMessage(async (message) => {
-      if (message.type === 'copy') {
-        await vscode.env.clipboard.writeText(url);
-        vscode.window.showInformationMessage('Patchwork pairing link copied.');
-      }
-      if (message.type === 'open') await vscode.env.openExternal(vscode.Uri.parse(url));
-    }, undefined, []);
-    panel.onDidDispose(() => { if (pairingPanel === panel) pairingPanel = undefined; }, undefined, []);
-    panel.reveal(vscode.ViewColumn.Beside);
+    pairingView.webview.html = pairingHtml(pairingView.webview, {
+      status: companionStatus,
+      url: pairingUrl,
+      root: workspaceRoot(),
+      error: lastError,
+    });
   } catch (error) {
-    vscode.window.showErrorMessage(`Patchwork could not create the pairing QR: ${error.message}`);
+    vscode.window.showErrorMessage(`Patchwork could not render its sidebar: ${error.message}`);
   }
 }
 
-function pairingHtml(webview, url, root) {
+async function handlePairingMessage(message) {
+  if (message.type === 'copy' && pairingUrl) {
+    await vscode.env.clipboard.writeText(pairingUrl);
+    vscode.window.showInformationMessage('Patchwork pairing link copied.');
+  }
+  if (message.type === 'open' && pairingUrl) await vscode.env.openExternal(vscode.Uri.parse(pairingUrl));
+  if (message.type === 'retry') startCompanion();
+  if (message.type === 'stop') stopCompanion(true);
+}
+
+function pairingHtml(webview, state) {
   const nonce = crypto.randomBytes(16).toString('hex');
-  const qr = qrSvg(url);
-  const safeUrl = escapeHtml(url);
-  const safeRoot = escapeHtml(path.basename(root));
+  const safeUrl = escapeHtml(state.url || '');
+  const safeRoot = escapeHtml(state.root ? path.basename(state.root) : 'No workspace');
+  const safeError = escapeHtml(state.error || '');
   const csp = `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';`;
+  const content = state.status === 'ready' && state.url
+    ? readyPairingContent(state.url, safeUrl)
+    : state.status === 'starting'
+      ? startingPairingContent()
+      : state.status === 'error'
+        ? errorPairingContent(safeError)
+        : stoppedPairingContent();
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -169,36 +223,66 @@ function pairingHtml(webview, url, root) {
   <title>Pair Patchwork</title>
   <style>
     :root { color-scheme: light dark; }
-    body { max-width: 620px; margin: 0 auto; padding: 36px 28px; color: var(--vscode-foreground); font: 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    .eyebrow { color: var(--vscode-textLink-foreground); font-size: 11px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
-    h1 { margin: 10px 0 8px; font-size: 28px; letter-spacing: -.04em; }
-    p { color: var(--vscode-descriptionForeground); line-height: 1.55; }
-    .card { display: grid; place-items: center; margin: 26px 0 22px; padding: 30px; border: 1px solid var(--vscode-panel-border); border-radius: 16px; background: #fff; }
-    svg { display: block; width: min(360px, 82vw); height: auto; shape-rendering: crispEdges; image-rendering: pixelated; }
-    code { display: block; margin: 12px 0 8px; padding: 13px; overflow-wrap: anywhere; border-radius: 6px; background: var(--vscode-textBlockQuote-background); color: var(--vscode-textPreformat-foreground); font-size: 13px; line-height: 1.45; }
-    .manual { margin: 0 0 16px; color: var(--vscode-descriptionForeground); font-size: 12px; }
-    .actions { display: flex; flex-wrap: wrap; gap: 9px; }
-    button { padding: 8px 13px; border: 0; border-radius: 5px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); cursor: pointer; }
+    body { margin: 0; padding: 18px 16px 24px; color: var(--vscode-foreground); font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .eyebrow { color: var(--vscode-textLink-foreground); font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+    h1 { margin: 9px 0 8px; font-size: 21px; line-height: 1.15; letter-spacing: -.03em; }
+    p { color: var(--vscode-descriptionForeground); line-height: 1.5; }
+    .card { display: grid; place-items: center; margin: 18px 0 16px; padding: 14px; border: 1px solid var(--vscode-panel-border); border-radius: 10px; background: #fff; }
+    svg { display: block; width: min(220px, 100%); height: auto; shape-rendering: crispEdges; image-rendering: pixelated; }
+    code { display: block; margin: 10px 0 8px; padding: 10px; overflow-wrap: anywhere; border-radius: 5px; background: var(--vscode-textBlockQuote-background); color: var(--vscode-textPreformat-foreground); font-size: 11px; line-height: 1.4; }
+    .manual { margin: 0 0 12px; font-size: 11px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 7px; }
+    button { padding: 7px 10px; border: 0; border-radius: 4px; background: var(--vscode-button-background); color: var(--vscode-button-foreground); cursor: pointer; }
     button.secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
-    .note { margin-top: 22px; padding: 13px 15px; border-left: 3px solid var(--vscode-textLink-foreground); background: var(--vscode-textBlockQuote-background); }
+    button.link { margin-top: 15px; padding: 0; background: transparent; color: var(--vscode-textLink-foreground); text-decoration: underline; }
+    .note { margin-top: 18px; padding: 10px 11px; border-left: 3px solid var(--vscode-textLink-foreground); background: var(--vscode-textBlockQuote-background); }
+    .state { display: flex; align-items: center; gap: 9px; margin: 22px 0; padding: 14px; border: 1px solid var(--vscode-panel-border); border-radius: 8px; }
+    .spinner { width: 13px; height: 13px; border: 2px solid var(--vscode-panel-border); border-top-color: var(--vscode-textLink-foreground); border-radius: 50%; animation: spin 800ms linear infinite; }
+    .error { padding: 11px; border-left: 3px solid var(--vscode-errorForeground); background: var(--vscode-textBlockQuote-background); overflow-wrap: anywhere; }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
   <span class="eyebrow">Patchwork · ${safeRoot}</span>
-  <h1>Scan to review on your phone</h1>
-  <p>Open the camera on your phone and scan this code. Both devices must be on the same Wi‑Fi network.</p>
-  <div class="card">${qr}</div>
-  <p class="manual">If scanning still fails, use the full link below with your phone’s browser.</p>
-  <code>${safeUrl}</code>
-  <div class="actions"><button id="copy">Copy pairing link</button><button class="secondary" id="open">Open on this laptop</button></div>
-  <p class="note"><strong>Read-only companion.</strong> Patchwork can show your uncommitted changes and answer questions, but it cannot stage, edit, reset, or commit files.</p>
+  ${content}
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
-    document.getElementById('copy').addEventListener('click', () => vscode.postMessage({ type: 'copy' }));
-    document.getElementById('open').addEventListener('click', () => vscode.postMessage({ type: 'open' }));
+    const post = (id, type) => document.getElementById(id)?.addEventListener('click', () => vscode.postMessage({ type }));
+    post('copy', 'copy');
+    post('open', 'open');
+    post('retry', 'retry');
+    post('stop', 'stop');
   </script>
 </body>
 </html>`;
+}
+
+function readyPairingContent(url, safeUrl) {
+  return `<h1>Scan to review</h1>
+  <p>Use your phone camera to scan this code. Keep both devices on the same Wi‑Fi network.</p>
+  <div class="card">${qrSvg(url)}</div>
+  <p class="manual">If scanning fails, open the full link below on your phone.</p>
+  <code>${safeUrl}</code>
+  <div class="actions"><button id="copy">Copy pairing link</button><button class="secondary" id="open">Open on this laptop</button></div>
+  <button class="link" id="stop">Stop companion</button>
+  <p class="note"><strong>Read-only companion.</strong> Patchwork can show uncommitted changes and answer questions, but it cannot stage, edit, reset, or commit files.</p>`;
+}
+
+function startingPairingContent() {
+  return `<h1>Starting Patchwork</h1>
+  <div class="state"><span class="spinner" aria-hidden="true"></span><strong>Preparing your pairing link…</strong></div>
+  <p>The QR code will appear here when the companion is ready.</p>`;
+}
+
+function errorPairingContent(error) {
+  return `<h1>Patchwork needs attention</h1>
+  <p class="error">${error || 'The companion could not start.'}</p>
+  <div class="actions"><button id="retry">Try again</button></div>`;
+}
+
+function stoppedPairingContent() {
+  return `<h1>Pair your phone</h1>
+  <p>Patchwork starts when you open this view. It reads your workspace locally and shows a QR code for your phone.</p>`;
 }
 
 function escapeHtml(value) {

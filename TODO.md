@@ -18,7 +18,9 @@ One source is fetched and cached when opened, so an already-viewed file remains 
 
 - [ ] Add first-run HTTPS setup in the VS Code extension, preferably detecting or generating a local `mkcert` certificate for the laptop LAN address.
 - [ ] Show clear phone certificate-trust instructions and keep HTTP as an explicit quick-preview fallback.
-- [ ] Build and locally install a distributable `.vsix`; decide on Marketplace publishing after the local workflow is stable.
+- [x] Build and locally install a distributable `.vsix`.
+- [x] Add a proper VS Code Activity Bar entry with an on-demand pairing sidebar; keep companion auto-start opt-in.
+- [ ] Decide on Marketplace publishing after the local workflow is stable.
 - [ ] Exercise one real Codex and one real Claude Code subscription request end to end, including clear auth/provider errors.
 
 ## Later: motivation and product depth
