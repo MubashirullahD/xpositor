@@ -1,0 +1,11 @@
+{
+  "name": "patchwork",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "companion": "node companion.mjs",
+    "serve": "python3 -m http.server 4173",
+    "test:smoke": "node tests/companion-ai-smoke.mjs"
+  }
+}
