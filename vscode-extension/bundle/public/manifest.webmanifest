@@ -1,0 +1,16 @@
+{
+  "name": "Patchwork — Code review companion",
+  "short_name": "Patchwork",
+  "description": "Review uncommitted code from your laptop, one focused file at a time.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f7f4",
+  "theme_color": "#f7f7f4",
+  "orientation": "portrait",
+  "icons": [{
+    "src": "/icon.svg",
+    "sizes": "any",
+    "type": "image/svg+xml",
+    "purpose": "any maskable"
+  }]
+}

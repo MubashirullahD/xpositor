@@ -67,6 +67,8 @@ OPENAI_API_KEY="your-key" OPENAI_MODEL="gpt-5" \
 
 Without `OPENAI_API_KEY`, the UI stays in a local preview mode with deterministic sample answers. With a key configured, questions go through the Responses API and are requested with `store: false`.
 
+The laptop companion can also reuse an existing local Codex or Claude Code login. Set `PATCHWORK_AI_PROVIDER=codex` or `PATCHWORK_AI_PROVIDER=claude` before starting it; `PATCHWORK_AI_PROVIDER=auto` prefers Codex, then Claude Code, then the API key provider. The CLI runs on the laptop in read-only, non-persistent mode, so the phone never receives CLI credentials. When using an existing subscription, Patchwork removes API-key environment overrides by default to avoid silently switching to metered API billing; explicitly opt in with `PATCHWORK_CODEX_USE_API_KEY=true` or `PATCHWORK_CLAUDE_USE_API_KEY=true` if that is intentional.
+
 The provider contract can be checked without a real key or external request:
 
 ```sh
@@ -74,3 +76,9 @@ npm run test:smoke
 ```
 
 The gentle nudge asks for browser notification permission and schedules a 7:30 PM reminder while the app is running. If the app was closed at reminder time, the next launch shows an in-app one-file nudge. Reliable OS notification delivery while the app is fully closed will still need a push service or a native wrapper.
+
+## VS Code launcher (phase two)
+
+The `vscode-extension/` folder contains the laptop-side launcher. Run `npm install` in that folder once, open it in VS Code, press `F5` to start an Extension Development Host, open a Git repository there, and run `Patchwork: Start for Workspace` from the Command Palette. The extension starts the read-only companion automatically and opens a pairing QR panel. Enable `patchwork.autoStart` if you want it to start whenever VS Code opens with a workspace.
+
+The extension bundles the companion during `vscode:prepublish` and uses the sibling script while developing from this repository. Configure `patchwork.aiProvider` to choose `auto`, Codex, Claude Code, or the API provider. HTTPS certificate setup and a distributable `.vsix` are still next-phase packaging work.

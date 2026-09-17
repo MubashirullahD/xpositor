@@ -6,6 +6,9 @@
   "scripts": {
     "companion": "node companion.mjs",
     "serve": "python3 -m http.server 4173",
-    "test:smoke": "node tests/companion-ai-smoke.mjs"
+    "test:smoke": "node tests/companion-ai-smoke.mjs",
+    "test:providers": "node tests/cli-provider-smoke.mjs",
+    "test:extension": "node vscode-extension/test/qr-smoke.cjs",
+    "extension:bundle": "node vscode-extension/prepare-bundle.mjs"
   }
 }

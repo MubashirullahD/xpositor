@@ -1,0 +1,78 @@
+{
+  "name": "patchwork-vscode",
+  "displayName": "Patchwork",
+  "description": "Start a read-only Patchwork companion for the current workspace and pair a phone with a QR code.",
+  "version": "0.1.0",
+  "publisher": "patchwork-dev",
+  "license": "MIT",
+  "type": "commonjs",
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:patchwork.start",
+    "onCommand:patchwork.stop",
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "scripts": {
+    "vscode:prepublish": "node prepare-bundle.mjs"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "patchwork.start",
+        "title": "Patchwork: Start for Workspace"
+      },
+      {
+        "command": "patchwork.stop",
+        "title": "Patchwork: Stop Companion"
+      }
+    ],
+    "configuration": {
+      "title": "Patchwork",
+      "properties": {
+        "patchwork.autoStart": {
+          "type": "boolean",
+          "default": false,
+          "description": "Start the read-only companion when VS Code finishes starting with a workspace open."
+        },
+        "patchwork.port": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 65535,
+          "description": "LAN port used by the Patchwork companion. Use 0 to choose an available port automatically."
+        },
+        "patchwork.aiProvider": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "codex",
+            "claude",
+            "api"
+          ],
+          "enumDescriptions": [
+            "Use Codex if installed, then Claude Code, then the API key provider.",
+            "Use the locally authenticated Codex CLI subscription.",
+            "Use the locally authenticated Claude Code subscription.",
+            "Use the OpenAI Responses API configured in the companion environment."
+          ],
+          "default": "auto",
+          "description": "AI provider used by the laptop companion. Local CLI providers reuse their existing laptop login."
+        },
+        "patchwork.companionPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional absolute path to companion.mjs. Leave empty when developing from the Patchwork repository."
+        }
+      }
+    }
+  }
+}

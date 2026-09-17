@@ -19,7 +19,7 @@ const providerPort = provider.address().port;
 const companionPort = 4330;
 const companion = spawn(process.execPath, ['companion.mjs', '/Users/mubashir/Documents/Repository/map-of-experience'], {
   cwd: appRoot,
-  env: { ...process.env, PATCHWORK_PORT: String(companionPort), OPENAI_API_KEY: 'stub-key', OPENAI_MODEL: 'stub-model', OPENAI_API_URL: `http://127.0.0.1:${providerPort}/responses` },
+  env: { ...process.env, PATCHWORK_PORT: String(companionPort), PATCHWORK_AI_PROVIDER: 'api', OPENAI_API_KEY: 'stub-key', OPENAI_MODEL: 'stub-model', OPENAI_API_URL: `http://127.0.0.1:${providerPort}/responses` },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let output = '';
@@ -34,7 +34,7 @@ await new Promise((resolveReady, rejectReady) => {
 
 try {
   const config = await fetch(`http://127.0.0.1:${companionPort}/api/config`);
-  assert.deepEqual(await config.json(), { aiEnabled: true, model: 'stub-model' });
+  assert.deepEqual(await config.json(), { aiEnabled: true, provider: 'api', model: 'stub-model' });
   const ai = await fetch(`http://127.0.0.1:${companionPort}/api/ai`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
