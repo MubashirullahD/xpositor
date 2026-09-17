@@ -6,8 +6,11 @@ const vscode = require('vscode');
 const { qrSvg } = require('./qr');
 
 let companionProcess;
+let tunnelProcess;
 let pairingView;
 let pairingUrl;
+let tunnelUrl;
+let sessionToken;
 let statusBar;
 let stopping = false;
 let companionStatus = 'stopped';
@@ -17,7 +20,7 @@ function activate(context) {
   statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   statusBar.command = 'patchwork.start';
   statusBar.text = '$(broadcast) Patchwork';
-  statusBar.tooltip = 'Start Patchwork and show the phone pairing QR';
+  statusBar.tooltip = 'Start Patchwork over a secure Quick Tunnel and show the phone pairing QR';
   statusBar.show();
   context.subscriptions.push(statusBar);
   context.subscriptions.push(vscode.window.registerWebviewViewProvider('patchwork.pairing', new PairingViewProvider(), {
@@ -69,6 +72,17 @@ function companionPath() {
   return path.resolve(__dirname, '..', 'companion.mjs');
 }
 
+function cloudflaredPath() {
+  const configured = String(vscode.workspace.getConfiguration('patchwork').get('cloudflaredPath', 'cloudflared')).trim();
+  if (configured && configured !== 'cloudflared') return configured;
+  const candidates = process.platform === 'darwin'
+    ? ['/opt/homebrew/bin/cloudflared', '/usr/local/bin/cloudflared']
+    : process.platform === 'win32'
+      ? [path.join(process.env.LOCALAPPDATA || '', 'cloudflared', 'cloudflared.exe')]
+      : ['/usr/local/bin/cloudflared', '/usr/bin/cloudflared'];
+  return candidates.find((candidate) => candidate && fs.existsSync(candidate)) || configured || 'cloudflared';
+}
+
 function startCompanion() {
   const root = workspaceRoot();
   if (!root) {
@@ -80,7 +94,7 @@ function startCompanion() {
   if (companionProcess) {
     renderPairingView();
     if (pairingUrl) void revealPairingView();
-    else vscode.window.showInformationMessage('Patchwork is still starting. The pairing QR will appear when the companion is ready.');
+    else vscode.window.showInformationMessage('Patchwork is still starting. The secure pairing QR will appear when the tunnel is ready.');
     return;
   }
 
@@ -97,16 +111,27 @@ function startCompanion() {
   const parsedPort = Number(configuredPort);
   const port = parsedPort === 0 ? 0 : Math.max(1024, Math.min(65535, parsedPort || 4321));
   const aiProvider = String(patchworkConfig.get('aiProvider', 'auto'));
+  const tunnelExecutable = cloudflaredPath();
   const electronHost = Boolean(process.versions.electron);
   const nodeArgs = [script, root];
   stopping = false;
   pairingUrl = '';
+  tunnelUrl = '';
+  // Base64url keeps the 144-bit token compact enough for a Quick Tunnel QR URL.
+  sessionToken = crypto.randomBytes(18).toString('base64url');
   lastError = '';
   setStatus('starting');
   let stderrBuffer = '';
   companionProcess = spawn(process.execPath, nodeArgs, {
     cwd: root,
-    env: { ...process.env, ...(electronHost ? { ELECTRON_RUN_AS_NODE: '1' } : {}), PATCHWORK_HOST: '0.0.0.0', PATCHWORK_PORT: String(port), PATCHWORK_AI_PROVIDER: aiProvider },
+    env: {
+      ...process.env,
+      ...(electronHost ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
+      PATCHWORK_HOST: '127.0.0.1',
+      PATCHWORK_PORT: String(port),
+      PATCHWORK_TOKEN: sessionToken,
+      PATCHWORK_AI_PROVIDER: aiProvider,
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
@@ -118,13 +143,8 @@ function startCompanion() {
     outputBuffer = lines.pop() || '';
     lines.forEach((line) => {
       const candidate = line.trim();
-      if (!candidate.includes('?token=')) return;
-      if (candidate.includes('0.0.0.0') || candidate.includes('127.0.0.1') || candidate.includes('localhost')) return;
-      if (!/^https?:\/\/[^\s]+\/\?token=[^\s]+$/.test(candidate)) return;
-      pairingUrl = candidate;
-      lastError = '';
-      setStatus('ready');
-      void revealPairingView();
+      const readyMatch = candidate.match(/^Patchwork companion: http:\/\/(?:127\.0\.0\.1|localhost):(\d+)$/);
+      if (readyMatch) startQuickTunnel(Number(readyMatch[1]), tunnelExecutable, stderrBuffer);
     });
   };
   companionProcess.stdout.on('data', readOutput);
@@ -142,11 +162,17 @@ function startCompanion() {
   companionProcess.once('exit', (code) => {
     companionProcess = undefined;
     pairingUrl = '';
-    if (!stopping && code) {
+    if (!stopping && code && !tunnelProcess) {
       const detail = stderrBuffer.trim().split(/\r?\n/).filter(Boolean).at(-1) || 'No diagnostic output was captured.';
       lastError = `The companion stopped before pairing (exit ${code}). ${detail}`;
       setStatus('error');
       vscode.window.showErrorMessage(`Patchwork companion stopped before pairing (exit ${code}). ${detail}`);
+      return;
+    }
+    if (!stopping && tunnelProcess) {
+      failStart(tunnelUrl
+        ? 'The Patchwork companion stopped unexpectedly. The secure tunnel was closed.'
+        : 'The Patchwork companion stopped before the secure tunnel was ready.');
       return;
     }
     lastError = '';
@@ -154,14 +180,80 @@ function startCompanion() {
   });
 }
 
-function stopCompanion(showMessage) {
+function startQuickTunnel(localPort, cloudflaredPath, companionStderr) {
+  if (stopping || tunnelProcess || tunnelUrl) return;
+  const localOrigin = `http://127.0.0.1:${localPort}`;
+  let tunnelOutput = '';
+  let tunnelStderr = '';
+  tunnelProcess = spawn(cloudflaredPath, ['tunnel', '--url', localOrigin], {
+    cwd: workspaceRoot(),
+    env: process.env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+  });
+
+  const readTunnelOutput = (chunk) => {
+    tunnelOutput += chunk.toString();
+    const match = tunnelOutput.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com(?:\/)?/i);
+    if (!match) return;
+    tunnelUrl = match[0].replace(/\/$/, '');
+    pairingUrl = `${tunnelUrl}/?token=${encodeURIComponent(sessionToken)}`;
+    lastError = '';
+    setStatus('ready');
+    void revealPairingView();
+  };
+
+  tunnelProcess.stdout.on('data', readTunnelOutput);
+  tunnelProcess.stderr.on('data', (chunk) => {
+    tunnelStderr += chunk.toString();
+    if (tunnelStderr.length > 2000) tunnelStderr = tunnelStderr.slice(-2000);
+    readTunnelOutput(chunk);
+  });
+  tunnelProcess.once('error', (error) => {
+    if (stopping) return;
+    const installHint = cloudflaredPath.includes('/') || cloudflaredPath.includes('\\')
+      ? `Check patchwork.cloudflaredPath (${cloudflaredPath}).`
+      : process.platform === 'darwin'
+        ? `Install it once with "brew install cloudflared" or set patchwork.cloudflaredPath to its executable path.`
+        : 'Install cloudflared from https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/ or set patchwork.cloudflaredPath to its executable path.';
+    failStart(`Quick Tunnel could not start: ${error.message}. ${installHint}`);
+  });
+  tunnelProcess.once('exit', (code) => {
+    tunnelProcess = undefined;
+    if (stopping) return;
+    const detail = tunnelStderr.trim().split(/\r?\n/).filter(Boolean).at(-1)
+      || String(companionStderr || '').trim().split(/\r?\n/).filter(Boolean).at(-1)
+      || 'No diagnostic output was captured.';
+    failStart(`Quick Tunnel stopped${code ? ` (exit ${code})` : ''}. ${detail}`);
+  });
+}
+
+function failStart(message) {
   stopping = true;
+  if (tunnelProcess) tunnelProcess.kill();
   if (companionProcess) companionProcess.kill();
+  tunnelProcess = undefined;
   companionProcess = undefined;
   pairingUrl = '';
+  tunnelUrl = '';
+  sessionToken = '';
+  lastError = message;
+  setStatus('error');
+  vscode.window.showErrorMessage(message);
+}
+
+function stopCompanion(showMessage) {
+  stopping = true;
+  if (tunnelProcess) tunnelProcess.kill();
+  if (companionProcess) companionProcess.kill();
+  tunnelProcess = undefined;
+  companionProcess = undefined;
+  pairingUrl = '';
+  tunnelUrl = '';
+  sessionToken = '';
   lastError = '';
   setStatus('stopped');
-  if (showMessage) vscode.window.showInformationMessage('Patchwork companion stopped.');
+  if (showMessage) vscode.window.showInformationMessage('Patchwork companion and secure tunnel stopped.');
 }
 
 function setStatus(status) {
@@ -259,19 +351,19 @@ function pairingHtml(webview, state) {
 
 function readyPairingContent(url, safeUrl) {
   return `<h1>Scan to review</h1>
-  <p>Use your phone camera to scan this code. Keep both devices on the same Wi‑Fi network.</p>
+  <p>Use your phone camera to scan this secure link. Your phone and laptop can be on different networks.</p>
   <div class="card">${qrSvg(url)}</div>
   <p class="manual">If scanning fails, open the full link below on your phone.</p>
   <code>${safeUrl}</code>
   <div class="actions"><button id="copy">Copy pairing link</button><button class="secondary" id="open">Open on this laptop</button></div>
   <button class="link" id="stop">Stop companion</button>
-  <p class="note"><strong>Read-only companion.</strong> Patchwork can show uncommitted changes and answer questions, but it cannot stage, edit, reset, or commit files.</p>`;
+  <p class="note"><strong>Secure, read-only companion.</strong> Keep this pairing link private. HTTPS protects it from local-network snooping; the connection is relayed through Cloudflare. Patchwork can show uncommitted changes and answer questions, but it cannot stage, edit, reset, or commit files.</p>`;
 }
 
 function startingPairingContent() {
-  return `<h1>Starting Patchwork</h1>
-  <div class="state"><span class="spinner" aria-hidden="true"></span><strong>Preparing your pairing link…</strong></div>
-  <p>The QR code will appear here when the companion is ready.</p>`;
+  return `<h1>Creating secure link</h1>
+  <div class="state"><span class="spinner" aria-hidden="true"></span><strong>Starting the companion and Quick Tunnel…</strong></div>
+  <p>The QR code will appear here when the secure tunnel is ready.</p>`;
 }
 
 function errorPairingContent(error) {
@@ -282,7 +374,7 @@ function errorPairingContent(error) {
 
 function stoppedPairingContent() {
   return `<h1>Pair your phone</h1>
-  <p>Patchwork starts when you open this view. It reads your workspace locally and shows a QR code for your phone.</p>`;
+  <p>Patchwork starts a temporary HTTPS tunnel when you open this view. No phone certificate setup is required.</p>`;
 }
 
 function escapeHtml(value) {

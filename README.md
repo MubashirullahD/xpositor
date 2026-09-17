@@ -34,28 +34,13 @@ The included read-only companion can expose the current `git diff HEAD` and fetc
 node companion.mjs /absolute/path/to/your/repository
 ```
 
-By default it binds to `127.0.0.1:4321`. To open it from a phone on the same network, explicitly bind it to the laptop’s LAN interface and open the laptop’s LAN IP on the phone:
+By default it binds to `127.0.0.1:4321`. For phone access, use the VS Code launcher below, which starts a temporary HTTPS Quick Tunnel and keeps the companion bound to the laptop only. The direct LAN command remains available for local development and trusted-network debugging:
 
 ```sh
 PATCHWORK_HOST=0.0.0.0 node companion.mjs /absolute/path/to/your/repository
 ```
 
-LAN mode prints an ephemeral pairing token. On the phone, open `http://<laptop-lan-ip>:4321/?token=<printed-token>` once; Patchwork stores the token locally and removes it from the visible URL. You can also provide a stable `PATCHWORK_TOKEN` yourself. Plain HTTP mode is intended for a trusted local-network preview; use the HTTPS mode below when the phone needs reliable offline reloads.
-
-For reliable offline reloads on a phone, serve the companion over HTTPS so the browser can install the service worker on the LAN origin. Provide a certificate whose SAN includes the laptop’s LAN IP (a locally trusted certificate from `mkcert` is the smoothest option):
-
-```sh
-mkcert -install
-mkcert <laptop-lan-ip>
-PATCHWORK_HOST=0.0.0.0 \
-PATCHWORK_TLS_KEY=./<laptop-lan-ip>-key.pem \
-PATCHWORK_TLS_CERT=./<laptop-lan-ip>.pem \
-node companion.mjs /absolute/path/to/your/repository
-```
-
-The companion prints `https://` pairing links when both TLS variables are set. Plain HTTP remains useful for a quick preview, but it cannot provide the same service-worker guarantee on a phone.
-
-The phone must trust the certificate’s issuing CA; otherwise the browser may show the page but will not install the service worker. With `mkcert`, install its local CA on the phone using the platform’s certificate settings, or use a certificate from a CA already trusted by the phone.
+When run directly with `PATCHWORK_HOST=0.0.0.0`, the companion prints an ephemeral pairing token. This HTTP mode is only for a trusted local-network preview; do not use it on public Wi‑Fi. The VS Code Quick Tunnel flow is the supported phone workflow because it provides a publicly trusted HTTPS URL without installing a certificate on the phone.
 
 ## Enable the Code guide
 
@@ -78,9 +63,11 @@ npm run test:smoke
 
 The gentle nudge asks for browser notification permission and schedules a 7:30 PM reminder while the app is running. If the app was closed at reminder time, the next launch shows an in-app one-file nudge. Reliable OS notification delivery while the app is fully closed will still need a push service or a native wrapper.
 
-## VS Code launcher (phase two)
+## VS Code launcher
 
-The `vscode-extension/` folder contains the laptop-side launcher. Run `npm install` in that folder once, open it in VS Code, press `F5` to start an Extension Development Host, and open a Git repository there. The extension contributes a Patchwork icon to the Activity Bar; click it to open the pairing view and start the read-only companion on demand. `Patchwork: Start for Workspace` remains available from the Command Palette. `patchwork.autoStart` is off by default and can be enabled if you want it to start whenever VS Code opens with a workspace.
+The `vscode-extension/` folder contains the laptop-side launcher. Install Cloudflare's `cloudflared` helper once (`brew install cloudflared` on macOS), open the extension in VS Code, press `F5` to start an Extension Development Host, and open a Git repository there. The extension contributes a Patchwork icon to the Activity Bar; click it to open the pairing view and start the read-only companion behind a temporary HTTPS Quick Tunnel on demand. `Patchwork: Start Secure Tunnel` remains available from the Command Palette. `patchwork.autoStart` is off by default and can be enabled if you want it to start whenever VS Code opens with a workspace.
+
+Quick Tunnels are free and do not require a Cloudflare account or domain, but they are intended for development/testing and have no uptime guarantee. They let the phone connect over cellular or another Wi‑Fi network, provided both devices have Internet access. The tunnel relays traffic through Cloudflare, so it protects against local-network snooping while treating Cloudflare as a trusted intermediary. The pairing link includes a short-lived token and should be kept private.
 
 The extension bundles the companion during `vscode:prepublish` and uses the sibling script while developing from this repository. Configure `patchwork.aiProvider` to choose `auto`, Codex, Claude Code, or the API provider.
 

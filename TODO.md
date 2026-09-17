@@ -16,8 +16,9 @@ One source is fetched and cached when opened, so an already-viewed file remains 
 
 ## Then: make the connection effortless and reliable
 
-- [ ] Add first-run HTTPS setup in the VS Code extension, preferably detecting or generating a local `mkcert` certificate for the laptop LAN address.
-- [ ] Show clear phone certificate-trust instructions and keep HTTP as an explicit quick-preview fallback.
+- [x] Use a Cloudflare Quick Tunnel for HTTPS pairing without requiring phone certificate installation.
+- [x] Add clear Quick Tunnel dependency/setup guidance and a friendly missing-`cloudflared` recovery flow.
+- [ ] Evaluate a named Cloudflare Tunnel or Patchwork-managed relay for production reliability after the Quick Tunnel workflow is stable.
 - [x] Build and locally install a distributable `.vsix`.
 - [x] Add a proper VS Code Activity Bar entry with an on-demand pairing sidebar; keep companion auto-start opt-in.
 - [ ] Decide on Marketplace publishing after the local workflow is stable.
@@ -28,6 +29,7 @@ One source is fetched and cached when opened, so an already-viewed file remains 
 - [ ] Improve reminders and review streak/progress cues without making the experience noisy.
 - [ ] Support reliable notifications while the app is closed through push or a native mobile wrapper.
 - [ ] Add richer review context and optional future actions only after the read-only review flow is dependable.
+- [ ] Low priority: add application-level end-to-end encryption between the phone and laptop so the tunnel provider cannot read review traffic; pursue only if the added complexity is small.
 
 ## Completed
 

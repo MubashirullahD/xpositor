@@ -1,7 +1,7 @@
 {
   "name": "patchwork-vscode",
   "displayName": "Patchwork",
-  "description": "Start a read-only Patchwork companion for the current workspace and pair a phone with a QR code.",
+  "description": "Start a read-only Patchwork companion over a secure temporary tunnel and pair a phone with a QR code.",
   "version": "0.1.0",
   "publisher": "patchwork-dev",
   "license": "MIT",
@@ -30,7 +30,7 @@
     "commands": [
       {
         "command": "patchwork.start",
-        "title": "Patchwork: Start for Workspace"
+        "title": "Patchwork: Start Secure Tunnel"
       },
       {
         "command": "patchwork.stop",
@@ -93,6 +93,12 @@
           "type": "string",
           "default": "",
           "description": "Optional absolute path to companion.mjs. Leave empty when developing from the Patchwork repository."
+        },
+        "patchwork.cloudflaredPath": {
+          "type": "string",
+          "default": "cloudflared",
+          "scope": "machine",
+          "description": "Path to the cloudflared executable used to create a temporary Cloudflare Quick Tunnel."
         }
       }
     }
