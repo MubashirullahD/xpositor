@@ -155,6 +155,9 @@ const state = {
   selectedFile: initialSelectedFile,
   reviewed: saved.reviewed || { service: true, spec: true },
   activeTab: saved.activeTab || 'diff',
+  queueCollapsed: Boolean(saved.queueCollapsed),
+  guideCollapsed: Boolean(saved.guideCollapsed),
+  filesOpen: false,
   chatOpen: false,
   chat: savedChats[initialSelectedFile] || (cachedSnapshot ? defaultChatFor(files.find((file) => file.id === initialSelectedFile)) : saved.chat || defaultChat),
   chats: savedChats,
@@ -170,6 +173,8 @@ const state = {
   aiProvider: '',
   apiToken: initialApiToken || localStorage.getItem('patchwork-api-token') || '',
   pairingRequired: false,
+  sourceLoading: '',
+  sourceError: '',
   snapshotAt: cachedSnapshot?.generatedAt || null,
 };
 
@@ -213,6 +218,8 @@ function saveState() {
     selectedFile: state.selectedFile,
     reviewed: state.reviewed,
     activeTab: state.activeTab,
+    queueCollapsed: state.queueCollapsed,
+    guideCollapsed: state.guideCollapsed,
     chat: state.chat,
     chats: state.chats,
     notes: state.notes,
@@ -289,9 +296,12 @@ function selectFile(fileId) {
   saveState();
   state.selectedFile = fileId;
   state.chat = state.chats[fileId] || defaultChatFor(nextFile);
-  state.filesOpen = false;
+  if (state.activeTab === 'preview' && !isPreviewable(nextFile)) state.activeTab = 'diff';
+  state.sourceError = '';
+  setFilesOpen(false);
   saveState();
   render();
+  if (state.activeTab === 'source' || state.activeTab === 'preview') hydrateFileSource(nextFile);
 }
 
 function fileCount() {
@@ -331,9 +341,149 @@ function renderChatMessage(message) {
 }
 
 function renderCode(file) {
-  return file.lines.map(([kind, number, text]) => `<div class="code-line ${kind}">
+  return (file.lines || []).map(([kind, number, text]) => `<div class="code-line ${kind}">
     <span class="line-number">${number}</span><span class="line-sign">${kind === 'added' ? '+' : kind === 'removed' ? '−' : ''}</span><code>${escapeHtml(text) || '&nbsp;'}</code>
   </div>`).join('');
+}
+
+function isPreviewable(file) {
+  return Boolean(file && (file.type === 'MD' || /\.(md|markdown)$/i.test(file.path || '')));
+}
+
+function fileSource(file) {
+  if (typeof file.source === 'string') return file.source;
+  return (file.lines || [])
+    .filter(([kind]) => kind !== 'removed')
+    .map(([, , text]) => text || '')
+    .join('\n');
+}
+
+function renderSourceLines(source) {
+  return source.split(/\r?\n/).map((line, index) => `<div class="source-line"><span class="line-number">${index + 1}</span><code>${escapeHtml(line) || '&nbsp;'}</code></div>`).join('');
+}
+
+function renderSourceUnavailable(file) {
+  const offline = !state.online;
+  return `<section class="source-empty"><div class="source-empty-icon">${icon(offline ? 'wifi' : 'branch', 20)}</div><span class="eyebrow">${offline ? 'OFFLINE SOURCE' : 'SOURCE UNAVAILABLE'}</span><h3>${offline ? 'This file has not been cached yet.' : (state.sourceError || 'The current file could not be loaded.')}</h3><p>${offline ? 'Reconnect to the laptop once while viewing this file. After that, its normal source will be available offline.' : 'The diff is still available. Try loading the current file again when the companion is reachable.'}</p>${offline ? '' : '<button class="secondary-button" data-action="retry-source">Try again</button>'}</section>`;
+}
+
+function renderSource(file) {
+  const hasSource = typeof file.source === 'string' || state.source === 'sample';
+  if (state.sourceLoading === file.id) return `<section class="source-empty"><div class="source-loading"><span></span><span></span><span></span></div><span class="eyebrow">READING CURRENT FILE</span><h3>Loading the normal file view…</h3><p>The laptop companion is sending the file as it exists in your working tree.</p></section>`;
+  if (!hasSource) return renderSourceUnavailable(file);
+  const source = fileSource(file);
+  return `<section class="code-card source-card"><div class="code-toolbar"><span>${icon('branch', 15)} Current file</span><span class="source-badge">normal source</span></div><div class="code-meta"><span>${escapeHtml(file.path)}</span><span>${file.size} · ${source.split(/\r?\n/).length} lines</span></div><div class="code-viewer source-viewer">${renderSourceLines(source)}</div></section>`;
+}
+
+function inlineMarkdown(text) {
+  let value = escapeHtml(text);
+  value = value.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+  value = value.replace(/`([^`]+)`/g, '<code>$1</code>');
+  value = value.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  value = value.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  return value;
+}
+
+function renderMarkdown(source) {
+  const output = [];
+  const lines = source.split(/\r?\n/);
+  let inCode = false;
+  let listType = '';
+  const closeList = () => {
+    if (listType) output.push(`</${listType}>`);
+    listType = '';
+  };
+
+  for (const line of lines) {
+    if (/^\s*```/.test(line)) {
+      if (inCode) output.push('</code></pre>');
+      else output.push('<pre><code>');
+      inCode = !inCode;
+      continue;
+    }
+    if (inCode) {
+      output.push(escapeHtml(line) || '\n');
+      continue;
+    }
+    const unordered = line.match(/^\s*[-*+]\s+(.+)/);
+    const ordered = line.match(/^\s*\d+\.\s+(.+)/);
+    if (unordered || ordered) {
+      const nextType = unordered ? 'ul' : 'ol';
+      if (listType !== nextType) {
+        closeList();
+        listType = nextType;
+        output.push(`<${listType}>`);
+      }
+      output.push(`<li>${inlineMarkdown((unordered || ordered)[1])}</li>`);
+      continue;
+    }
+    closeList();
+    if (!line.trim()) continue;
+    const heading = line.match(/^\s*(#{1,6})\s+(.+)/);
+    if (heading) {
+      const level = heading[1].length;
+      output.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`);
+    } else if (/^\s*>\s?/.test(line)) {
+      output.push(`<blockquote>${inlineMarkdown(line.replace(/^\s*>\s?/, ''))}</blockquote>`);
+    } else {
+      output.push(`<p>${inlineMarkdown(line)}</p>`);
+    }
+  }
+  closeList();
+  if (inCode) output.push('</code></pre>');
+  return output.join('');
+}
+
+function renderPreview(file) {
+  if (!isPreviewable(file)) return renderSource(file);
+  const hasSource = typeof file.source === 'string' || state.source === 'sample';
+  if (state.sourceLoading === file.id) return `<section class="source-empty"><div class="source-loading"><span></span><span></span><span></span></div><span class="eyebrow">RENDERING MARKDOWN</span><h3>Loading the normal file first…</h3><p>Preview uses the current file, not only the changed lines.</p></section>`;
+  if (!hasSource) return renderSourceUnavailable(file);
+  const source = fileSource(file);
+  return `<section class="code-card preview-card"><div class="code-toolbar"><span>${icon('bookmark', 15)} Rendered Markdown</span><span class="source-badge">preview</span></div><div class="code-meta"><span>${escapeHtml(file.path)}</span><span>${source.split(/\r?\n/).length} lines</span></div><article class="markdown-preview">${renderMarkdown(source)}</article></section>`;
+}
+
+function renderReviewContent(file) {
+  if (state.activeTab === 'source') return renderSource(file);
+  if (state.activeTab === 'preview') return renderPreview(file);
+  if (state.activeTab === 'overview') return `<section class="overview-card"><div class="overview-illustration"><span></span><span></span><span></span></div><div><span class="eyebrow">FILE OVERVIEW</span><h3>${file.summary}</h3><p>This change touches one focused part of the project. Read the diff below as a short story: what changed, why it changed, and what might surprise you later.</p><div class="overview-chips"><span>+${file.added} additions</span><span>−${file.removed} removals</span><span>${file.type}</span></div></div></section>`;
+  if (state.activeTab === 'notes') return `<section class="notes-card"><div class="notes-icon">${icon('bookmark', 21)}</div><div><h3>Keep a note for future-you</h3><p>Notes stay on this device, even when you are offline. Capture a question, a follow-up, or the part you want to revisit.</p><textarea data-note-input placeholder="Add a note about this file…">${escapeHtml(state.notes[file.id] || '')}</textarea><div class="note-save-status" data-note-status>${state.notes[file.id] ? 'Saved on this device' : 'Private note · saved on this device'}</div></div></section>`;
+  return `<section class="code-card"><div class="code-toolbar"><span>${icon('branch', 15)} Working tree changes</span><span class="code-toolbar-right"><span class="diff-legend"><i class="add-dot"></i> additions <i class="remove-dot"></i> removals</span><button aria-label="More diff actions">${icon('more', 17)}</button></span></div><div class="code-meta"><span>${escapeHtml(file.path)}</span><span>${file.size} · ${file.changed}</span></div><div class="code-viewer">${renderCode(file)}</div></section>`;
+}
+
+function setActiveTab(tab) {
+  const file = selectedFile();
+  if (!file || !['diff', 'source', 'preview', 'overview', 'notes'].includes(tab)) return;
+  if (tab === 'preview' && !isPreviewable(file)) return;
+  state.activeTab = tab;
+  state.sourceError = '';
+  saveState();
+  render();
+  if (tab === 'source' || tab === 'preview') hydrateFileSource(file);
+}
+
+async function hydrateFileSource(file) {
+  if (!file || typeof file.source === 'string') return;
+  if (!state.online || state.source === 'sample') {
+    render();
+    return;
+  }
+  state.sourceLoading = file.id;
+  state.sourceError = '';
+  render();
+  try {
+    const response = await apiFetch(`/api/file?path=${encodeURIComponent(file.path)}`, { cache: 'no-store' });
+    if (!response.ok) throw new Error('The current file is unavailable.');
+    const payload = await response.json();
+    if (typeof payload.source !== 'string') throw new Error('The companion returned no file contents.');
+    file.source = payload.source;
+    cacheSnapshot({ workspaceName: state.workspaceName, branch: state.branchName, generatedAt: state.snapshotAt || new Date().toISOString(), files });
+  } catch (error) {
+    state.sourceError = error instanceof Error ? error.message : 'The current file could not be loaded.';
+  } finally {
+    if (state.sourceLoading === file.id) state.sourceLoading = '';
+    if (state.selectedFile === file.id) render();
+  }
 }
 
 function render() {
@@ -346,14 +496,16 @@ function render() {
   const reviewedCount = files.length - fileCount();
   const progress = Math.round((reviewedCount / files.length) * 100);
   const next = files.find((item) => item.id !== file.id && !state.reviewed[item.id]);
+  document.body.classList.toggle('files-menu-open', state.filesOpen);
 
   document.querySelector('#root').innerHTML = `
-    <div class="app-shell ${state.chatOpen ? 'chat-is-open' : ''} ${state.filesOpen ? 'files-is-open' : ''}">
+    <div class="app-shell ${state.chatOpen ? 'chat-is-open' : ''} ${state.filesOpen ? 'files-is-open' : ''} ${state.queueCollapsed ? 'queue-is-collapsed' : ''} ${state.guideCollapsed ? 'guide-is-collapsed' : ''}">
       <header class="mobile-topbar">
         <button class="icon-button" data-action="toggle-files" aria-label="Open files">${icon('menu', 21)}</button>
         <div class="mobile-wordmark"><span class="wordmark-mark">${icon('logo', 22)}</span>patchwork</div>
         <button class="icon-button ${state.chatOpen ? 'active' : ''}" data-action="toggle-chat" aria-label="Open code guide">${icon('message', 20)}</button>
       </header>
+      ${state.filesOpen ? '<button class="file-drawer-scrim" data-action="toggle-files" aria-label="Close file list"></button>' : ''}
 
       <aside class="sidebar">
         <div class="brand"><span class="brand-mark">${icon('logo', 24)}</span><span>patchwork</span><span class="brand-dot"></span></div>
@@ -376,8 +528,7 @@ function render() {
       <aside class="file-panel">
         <div class="file-panel-header">
           <div><span class="eyebrow">WORKSPACE</span><h1>Review queue</h1></div>
-          <button class="close-files" data-action="toggle-files" aria-label="Close files">${icon('close', 19)}</button>
-          <button class="panel-more" aria-label="More workspace actions">${icon('more', 18)}</button>
+          <div class="file-panel-header-actions"><button class="queue-toggle" data-action="toggle-queue" aria-label="Collapse review queue">${icon('chevron', 17)}</button><button class="close-files" data-action="toggle-files" aria-label="Close files">${icon('close', 19)}</button><button class="panel-more" aria-label="More workspace actions">${icon('more', 18)}</button></div>
         </div>
         <div class="branch-row"><span class="branch-name">${icon('branch', 14)} ${escapeHtml(state.branchName)}</span><span class="branch-status">${state.source === 'companion' ? 'synced' : state.source === 'cached' ? 'cached' : 'local'}</span></div>
         ${state.pairingRequired ? '<div class="pairing-card"><span class="pairing-icon">' + icon('lock', 14) + '</span><span><b>Pair this device</b><small>Open the companion link with its token.</small></span></div>' : ''}
@@ -390,7 +541,7 @@ function render() {
       <main class="review-panel">
         <div class="review-topline">
           <div class="breadcrumbs"><span>Review queue</span>${icon('chevron', 13)}<b>${file.label}</b></div>
-          <div class="topline-actions"><span class="connection ${state.pairingRequired ? 'pairing' : state.online ? 'online' : 'offline'}"><i></i>${state.pairingRequired ? 'Pair device' : state.online ? 'Online' : 'Offline'}</span><button class="icon-button desktop-more" aria-label="More file actions">${icon('more', 18)}</button></div>
+          <div class="topline-actions">${state.queueCollapsed ? `<button class="queue-expand secondary-button" data-action="toggle-queue">${icon('branch', 14)} Show queue</button>` : ''}${state.guideCollapsed ? `<button class="guide-expand secondary-button" data-action="toggle-chat">${icon('message', 14)} Code guide</button>` : ''}<span class="connection ${state.pairingRequired ? 'pairing' : state.online ? 'online' : 'offline'}"><i></i>${state.pairingRequired ? 'Pair device' : state.online ? 'Online' : 'Offline'}</span><button class="icon-button desktop-more" aria-label="More file actions">${icon('more', 18)}</button></div>
         </div>
 
         <section class="review-heading">
@@ -398,15 +549,15 @@ function render() {
           <div class="review-heading-actions"><button class="secondary-button" data-action="explain-file">${icon('spark', 17)} Explain this file</button><button class="icon-button" aria-label="Bookmark file">${icon('bookmark', 18)}</button></div>
         </section>
 
-        <div class="review-tabs" role="tablist"><button class="review-tab ${state.activeTab === 'diff' ? 'active' : ''}" data-tab="diff">Diff <span>+${file.added} −${file.removed}</span></button><button class="review-tab ${state.activeTab === 'overview' ? 'active' : ''}" data-tab="overview">Overview</button><button class="review-tab ${state.activeTab === 'notes' ? 'active' : ''}" data-tab="notes">Notes <span class="note-count">${state.notes[file.id] ? '1' : '0'}</span></button></div>
+        <div class="review-tabs" role="tablist"><button class="review-tab ${state.activeTab === 'diff' ? 'active' : ''}" data-tab="diff">Diff <span>+${file.added} −${file.removed}</span></button><button class="review-tab ${state.activeTab === 'source' ? 'active' : ''}" data-tab="source">Source</button>${isPreviewable(file) ? `<button class="review-tab ${state.activeTab === 'preview' ? 'active' : ''}" data-tab="preview">Preview</button>` : ''}<button class="review-tab ${state.activeTab === 'overview' ? 'active' : ''}" data-tab="overview">Overview</button><button class="review-tab ${state.activeTab === 'notes' ? 'active' : ''}" data-tab="notes">Notes <span class="note-count">${state.notes[file.id] ? '1' : '0'}</span></button></div>
 
-        ${state.activeTab === 'diff' ? `<section class="code-card"><div class="code-toolbar"><span>${icon('branch', 15)} Working tree changes</span><span class="code-toolbar-right"><span class="diff-legend"><i class="add-dot"></i> additions <i class="remove-dot"></i> removals</span><button aria-label="More diff actions">${icon('more', 17)}</button></span></div><div class="code-meta"><span>${file.path}</span><span>${file.size} · ${file.changed}</span></div><div class="code-viewer">${renderCode(file)}</div></section>` : state.activeTab === 'overview' ? `<section class="overview-card"><div class="overview-illustration"><span></span><span></span><span></span></div><div><span class="eyebrow">FILE OVERVIEW</span><h3>${file.summary}</h3><p>This change touches one focused part of the project. Read the diff below as a short story: what changed, why it changed, and what might surprise you later.</p><div class="overview-chips"><span>+${file.added} additions</span><span>−${file.removed} removals</span><span>${file.type}</span></div></div></section>` : `<section class="notes-card"><div class="notes-icon">${icon('bookmark', 21)}</div><div><h3>Keep a note for future-you</h3><p>Notes stay on this device, even when you are offline. Capture a question, a follow-up, or the part you want to revisit.</p><textarea data-note-input placeholder="Add a note about this file…">${escapeHtml(state.notes[file.id] || '')}</textarea><div class="note-save-status" data-note-status>${state.notes[file.id] ? 'Saved on this device' : 'Private note · saved on this device'}</div></div></section>`}
+        ${renderReviewContent(file)}
 
         <section class="review-footer"><div class="review-prompt"><span class="prompt-icon">${icon(reviewed ? 'check' : 'spark', 16)}</span><span>${reviewed ? 'Nice. This file is in your reviewed set.' : 'A focused 6-minute review is enough for today.'}</span></div><div class="footer-actions"><button class="secondary-button" data-action="skip-file">Skip for now</button><button class="primary-button" data-action="mark-reviewed">${reviewed ? icon('check', 16) + ' Reviewed' : 'Mark as reviewed ' + icon('check', 16)}</button>${next ? `<button class="next-button" data-action="next-file">Next file ${icon('chevron', 16)}</button>` : ''}</div></section>
       </main>
 
       <aside class="chat-panel" aria-label="Code guide">
-        <div class="chat-header"><div class="chat-title"><div class="chat-avatar">${icon('spark', 17)}</div><div><h2>Code guide</h2><span>${!state.online ? 'AI needs a connection' : state.aiEnabled ? `AI guide · ${aiProviderLabel()}` : 'Demo guide · connect AI on laptop'}</span></div></div><button class="icon-button close-chat" data-action="toggle-chat" aria-label="Close code guide">${icon('close', 19)}</button></div>
+        <div class="chat-header"><div class="chat-title"><div class="chat-avatar">${icon('spark', 17)}</div><div><h2>Code guide</h2><span>${!state.online ? 'AI needs a connection' : state.aiEnabled ? `AI guide · ${aiProviderLabel()}` : 'Demo guide · connect AI on laptop'}</span></div></div><button class="icon-button close-chat" data-action="close-guide" aria-label="Close code guide">${icon('close', 19)}</button></div>
         <div class="context-chip"><span class="context-file type-${file.tone}">${file.type}</span><span>${file.label}</span><button aria-label="Change file context">${icon('down', 13)}</button></div>
         <div class="chat-scroll"><div class="conversation-label">TODAY <span></span></div>${state.chat.map(renderChatMessage).join('')}${state.chat.length === 2 ? '<div class="suggestions"><span>Try asking</span><button data-suggestion="What could break here?">What could break here?</button><button data-suggestion="Explain the offline path">Explain the offline path</button></div>' : ''}</div>
         <form class="chat-composer" data-action="send-chat"><textarea name="message" rows="1" placeholder="Ask about ${file.label}…" ${state.online ? '' : 'disabled'}></textarea><div class="composer-bottom"><span>${icon('bolt', 13)} ${state.online ? state.aiEnabled ? `Connected · ${aiProviderLabel()}` : 'Preview response · connect AI on laptop' : 'Reconnect to ask AI'}</span><button type="submit" aria-label="Send message" ${state.online ? '' : 'disabled'}>${icon('send', 17)}</button></div></form>
@@ -421,13 +572,15 @@ function render() {
 
 function renderEmpty() {
   const sourceLabel = state.source === 'companion' ? 'Laptop companion' : state.source === 'cached' ? 'Offline snapshot' : 'Sample workspace';
+  document.body.classList.toggle('files-menu-open', state.filesOpen);
   document.querySelector('#root').innerHTML = `
-    <div class="app-shell ${state.chatOpen ? 'chat-is-open' : ''} ${state.filesOpen ? 'files-is-open' : ''}">
+    <div class="app-shell ${state.chatOpen ? 'chat-is-open' : ''} ${state.filesOpen ? 'files-is-open' : ''} ${state.queueCollapsed ? 'queue-is-collapsed' : ''} ${state.guideCollapsed ? 'guide-is-collapsed' : ''}">
       <header class="mobile-topbar">
         <button class="icon-button" data-action="toggle-files" aria-label="Open files">${icon('menu', 21)}</button>
         <div class="mobile-wordmark"><span class="wordmark-mark">${icon('logo', 22)}</span>patchwork</div>
         <button class="icon-button ${state.chatOpen ? 'active' : ''}" data-action="toggle-chat" aria-label="Open code guide">${icon('message', 20)}</button>
       </header>
+      ${state.filesOpen ? '<button class="file-drawer-scrim" data-action="toggle-files" aria-label="Close file list"></button>' : ''}
       <aside class="sidebar">
         <div class="brand"><span class="brand-mark">${icon('logo', 24)}</span><span>patchwork</span><span class="brand-dot"></span></div>
         <div class="workspace-switcher"><span class="repo-avatar">${escapeHtml(state.workspaceName.slice(0, 2).toUpperCase())}</span><span><b>${escapeHtml(state.workspaceName)}</b><small>${sourceLabel.toLowerCase()}</small></span>${icon('down', 14)}</div>
@@ -438,7 +591,7 @@ function renderEmpty() {
         <div class="profile"><span class="profile-avatar">M</span><span><b>Mubashir</b><small>Solo developer</small></span>${icon('more', 18)}</div>
       </aside>
       <aside class="file-panel">
-        <div class="file-panel-header"><div><span class="eyebrow">WORKSPACE</span><h1>Review queue</h1></div><button class="close-files" data-action="toggle-files" aria-label="Close files">${icon('close', 19)}</button><button class="panel-more" aria-label="More workspace actions">${icon('more', 18)}</button></div>
+        <div class="file-panel-header"><div><span class="eyebrow">WORKSPACE</span><h1>Review queue</h1></div><div class="file-panel-header-actions"><button class="queue-toggle" data-action="toggle-queue" aria-label="Collapse review queue">${icon('chevron', 17)}</button><button class="close-files" data-action="toggle-files" aria-label="Close files">${icon('close', 19)}</button><button class="panel-more" aria-label="More workspace actions">${icon('more', 18)}</button></div></div>
         <div class="branch-row"><span class="branch-name">${icon('branch', 14)} ${escapeHtml(state.branchName)}</span><span class="branch-status">${state.source === 'companion' ? 'synced' : 'cached'}</span></div>
         ${state.pairingRequired ? '<div class="pairing-card"><span class="pairing-icon">' + icon('lock', 14) + '</span><span><b>Pair this device</b><small>Open the companion link with its token.</small></span></div>' : ''}
         <div class="queue-progress"><div class="progress-copy"><span>0 files to review</span><b>All clear</b></div><div class="progress-track"><span style="width:100%"></span></div></div>
@@ -446,23 +599,39 @@ function renderEmpty() {
         <div class="empty-file-list"><span>${icon('check', 16)}</span><p>Nothing waiting here.</p><small>Make a change on the laptop and refresh.</small></div>
       </aside>
       <main class="review-panel">
-        <div class="review-topline"><div class="breadcrumbs"><span>Review queue</span>${icon('chevron', 13)}<b>All clear</b></div><div class="topline-actions"><span class="connection ${state.pairingRequired ? 'pairing' : state.online ? 'online' : 'offline'}"><i></i>${state.pairingRequired ? 'Pair device' : state.online ? 'Online' : 'Offline'}</span><button class="icon-button desktop-more" aria-label="More file actions">${icon('more', 18)}</button></div></div>
+        <div class="review-topline"><div class="breadcrumbs"><span>Review queue</span>${icon('chevron', 13)}<b>All clear</b></div><div class="topline-actions">${state.queueCollapsed ? `<button class="queue-expand secondary-button" data-action="toggle-queue">${icon('branch', 14)} Show queue</button>` : ''}${state.guideCollapsed ? `<button class="guide-expand secondary-button" data-action="toggle-chat">${icon('message', 14)} Code guide</button>` : ''}<span class="connection ${state.pairingRequired ? 'pairing' : state.online ? 'online' : 'offline'}"><i></i>${state.pairingRequired ? 'Pair device' : state.online ? 'Online' : 'Offline'}</span><button class="icon-button desktop-more" aria-label="More file actions">${icon('more', 18)}</button></div></div>
         <section class="empty-state"><div class="empty-orbit"><span>${icon('check', 28)}</span></div><span class="eyebrow">WORKTREE CLEAR</span><h2>Nothing waiting for review.</h2><p>Your current workspace has no uncommitted changes. When you make a small change, it will appear here as a focused file-sized review.</p><button class="primary-button" data-action="refresh-snapshot">${icon('wifi', 16)} Check laptop again</button><div class="empty-tip"><span>${icon('bolt', 14)}</span><div><b>Good stopping point</b><small>A clean queue is progress too. Come back after your next small change.</small></div></div></section>
       </main>
-      <aside class="chat-panel"><div class="chat-header"><div class="chat-title"><div class="chat-avatar">${icon('spark', 17)}</div><div><h2>Code guide</h2><span>${state.online ? 'Pick a file to start a conversation' : 'AI needs a connection'}</span></div></div><button class="icon-button close-chat" data-action="toggle-chat" aria-label="Close code guide">${icon('close', 19)}</button></div><div class="empty-chat"><div class="empty-chat-icon">${icon('spark', 19)}</div><h3>Your guide is ready.</h3><p>When a file lands in the queue, Patchwork will keep its explanation and questions in that file’s own conversation.</p></div></aside>
+      <aside class="chat-panel"><div class="chat-header"><div class="chat-title"><div class="chat-avatar">${icon('spark', 17)}</div><div><h2>Code guide</h2><span>${state.online ? 'Pick a file to start a conversation' : 'AI needs a connection'}</span></div></div><button class="icon-button close-chat" data-action="close-guide" aria-label="Close code guide">${icon('close', 19)}</button></div><div class="empty-chat"><div class="empty-chat-icon">${icon('spark', 19)}</div><h3>Your guide is ready.</h3><p>When a file lands in the queue, Patchwork will keep its explanation and questions in that file’s own conversation.</p></div></aside>
       <nav class="mobile-bottom-nav" aria-label="Mobile navigation"><button class="active">${icon('grid', 19)}<span>Queue</span></button><button data-action="toggle-files">${icon('branch', 19)}<span>Files</span></button><button data-action="toggle-chat">${icon('message', 19)}<span>Guide</span></button><button>${icon('settings', 19)}<span>More</span></button></nav>
       ${state.toast ? `<div class="toast">${icon('check', 15)} ${escapeHtml(state.toast)}</div>` : ''}
     </div>`;
   wireEvents();
 }
 
+let fileMenuHistoryEntry = false;
+
+function setFilesOpen(open) {
+  if (open === state.filesOpen) return;
+  if (open) {
+    state.filesOpen = true;
+    fileMenuHistoryEntry = true;
+    history.pushState({ ...(history.state || {}), patchworkFileMenu: true }, '', location.href);
+  } else {
+    state.filesOpen = false;
+    if (fileMenuHistoryEntry) {
+      fileMenuHistoryEntry = false;
+      history.back();
+    }
+  }
+  render();
+}
+
 function wireEvents() {
   document.querySelectorAll('[data-file-id]').forEach((button) => button.addEventListener('click', () => selectFile(button.dataset.fileId)));
 
   document.querySelectorAll('[data-tab]').forEach((button) => button.addEventListener('click', () => {
-    state.activeTab = button.dataset.tab;
-    saveState();
-    render();
+    setActiveTab(button.dataset.tab);
   }));
 
   document.querySelectorAll('[data-note-input]').forEach((textarea) => textarea.addEventListener('input', () => {
@@ -479,23 +648,42 @@ function wireEvents() {
   }));
 
   document.querySelectorAll('[data-action="toggle-chat"]').forEach((button) => button.addEventListener('click', () => {
-    state.chatOpen = !state.chatOpen;
-    state.filesOpen = false;
+    state.chatOpen = !state.chatOpen || state.guideCollapsed;
+    state.guideCollapsed = false;
+    setFilesOpen(false);
     render();
     if (state.chatOpen) setTimeout(() => document.querySelector('.chat-composer textarea')?.focus(), 80);
   }));
 
+  document.querySelectorAll('[data-action="close-guide"]').forEach((button) => button.addEventListener('click', () => {
+    state.chatOpen = false;
+    state.guideCollapsed = true;
+    setFilesOpen(false);
+    render();
+  }));
+
   document.querySelectorAll('[data-action="explain-file"]').forEach((button) => button.addEventListener('click', () => {
     state.chatOpen = true;
-    state.filesOpen = false;
+    state.guideCollapsed = false;
+    setFilesOpen(false);
     render();
     requestAi('Explain this file in plain language. Point out the main behavior, why the change matters, and one thing I should verify.');
   }));
 
   document.querySelectorAll('[data-action="toggle-files"]').forEach((button) => button.addEventListener('click', () => {
-    state.filesOpen = !state.filesOpen;
     state.chatOpen = false;
+    setFilesOpen(!state.filesOpen);
+  }));
+
+  document.querySelectorAll('[data-action="toggle-queue"]').forEach((button) => button.addEventListener('click', () => {
+    state.queueCollapsed = !state.queueCollapsed;
+    saveState();
     render();
+  }));
+
+  document.querySelectorAll('[data-action="retry-source"]').forEach((button) => button.addEventListener('click', () => {
+    const file = selectedFile();
+    if (file) hydrateFileSource(file);
   }));
 
   document.querySelectorAll('[data-action="refresh-snapshot"]').forEach((button) => button.addEventListener('click', () => {
@@ -690,8 +878,19 @@ async function hydrateAiConfig() {
   }
 }
 
-window.addEventListener('online', () => { state.online = true; render(); });
+window.addEventListener('online', () => {
+  state.online = true;
+  render();
+  if (state.activeTab === 'source' || state.activeTab === 'preview') hydrateFileSource(selectedFile());
+});
 window.addEventListener('offline', () => { state.online = false; render(); });
+window.addEventListener('popstate', () => {
+  if (!state.filesOpen) return;
+  fileMenuHistoryEntry = false;
+  state.filesOpen = false;
+  state.chatOpen = false;
+  render();
+});
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 render();

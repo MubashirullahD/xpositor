@@ -35,6 +35,11 @@ await new Promise((resolveReady, rejectReady) => {
 try {
   const config = await fetch(`http://127.0.0.1:${companionPort}/api/config`);
   assert.deepEqual(await config.json(), { aiEnabled: true, provider: 'api', model: 'stub-model' });
+  const source = await fetch(`http://127.0.0.1:${companionPort}/api/file?path=${encodeURIComponent('.env.example')}`);
+  assert.equal(source.status, 200);
+  const sourcePayload = await source.json();
+  assert.equal(sourcePayload.path, '.env.example');
+  assert.match(sourcePayload.source, /DATABASE_URL/);
   const ai = await fetch(`http://127.0.0.1:${companionPort}/api/ai`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -47,7 +52,7 @@ try {
   assert.equal(request.model, 'stub-model');
   assert.match(JSON.stringify(request), /DATABASE_URL/);
   assert.match(JSON.stringify(request), /Current file contents/);
-  console.log(JSON.stringify({ aiRoute: 'ok', forwardedCurrentFile: true, store: request.store }));
+  console.log(JSON.stringify({ aiRoute: 'ok', sourceRoute: 'ok', forwardedCurrentFile: true, store: request.store }));
 } finally {
   companion.kill('SIGTERM');
   await once(companion, 'exit');

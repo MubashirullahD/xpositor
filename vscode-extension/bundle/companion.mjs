@@ -108,12 +108,13 @@ function readUntracked(path) {
   }
 }
 
-function readCurrentSource(path) {
+function readCurrentSource(path, limit = Infinity) {
   const absolutePath = resolve(repoRoot, path);
   const safePath = relative(repoRoot, absolutePath);
   if (safePath === '..' || safePath.startsWith('../') || safePath.startsWith('..\\')) return '';
   try {
-    return readFileSync(absolutePath, 'utf8').slice(0, 60000);
+    const source = readFileSync(absolutePath, 'utf8');
+    return Number.isFinite(limit) ? source.slice(0, limit) : source;
   } catch {
     return '';
   }
@@ -123,7 +124,9 @@ function snapshot() {
   const status = git(['status', '--porcelain=v1']);
   const changedPaths = parseStatus(status);
   const diffByPath = parseDiff(git(['diff', 'HEAD', '--no-ext-diff', '--unified=3', '--no-color']));
-  const paths = [...new Set([...diffByPath.keys(), ...changedPaths])].slice(0, 60);
+  // Keep the queue complete. Large repositories should be handled by the
+  // phone UI, not silently truncated at an arbitrary file count.
+  const paths = [...new Set([...diffByPath.keys(), ...changedPaths])];
   const files = paths.map((path, index) => {
     const type = fileType(path);
     const diff = diffByPath.get(path);
@@ -206,7 +209,7 @@ async function answerWithAi(input) {
   const question = String(input.message || '').trim().slice(0, 4000);
   if (!question) return { status: 400, body: { error: 'A question is required.' } };
 
-  const source = readCurrentSource(filePath);
+  const source = readCurrentSource(filePath, 60000);
   const context = `Selected file: ${filePath}\nLanguage: ${fileTypeName}\n\nCurrent file contents:\n${source || '(The current file is unavailable; use the diff below.)'}\n\nDiff or snapshot:\n${code || '(No text diff was provided.)'}`;
   const inputMessages = [
     ...history.map((item) => ({ role: item.role, content: item.text.slice(0, 4000) })),
@@ -268,6 +271,18 @@ const handleRequest = async (request, response) => {
   if (url.pathname === '/api/snapshot') {
     if (!isAuthorized(request)) return sendJson(response, 401, { error: 'Pairing required.' });
     sendJson(response, 200, snapshot());
+    return;
+  }
+  if (url.pathname === '/api/file' && request.method === 'GET') {
+    if (!isAuthorized(request)) return sendJson(response, 401, { error: 'Pairing required.' });
+    const requestedPath = String(url.searchParams.get('path') || '').trim();
+    const absolutePath = resolve(repoRoot, requestedPath);
+    const safePath = relative(repoRoot, absolutePath);
+    if (!requestedPath || safePath === '..' || safePath.startsWith('../') || safePath.startsWith('..\\') || !existsSync(absolutePath) || !statSync(absolutePath).isFile()) {
+      sendJson(response, 404, { error: 'Current file is unavailable.' });
+      return;
+    }
+    sendJson(response, 200, { path: requestedPath, source: readCurrentSource(requestedPath) });
     return;
   }
   if (url.pathname === '/api/config') {

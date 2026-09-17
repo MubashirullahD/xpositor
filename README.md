@@ -6,6 +6,7 @@ Patchwork is a mobile-first PWA prototype for reviewing uncommitted code from a 
 
 - A review queue for changed files with additions/removals and review progress.
 - A realistic diff reader with file navigation and focused review actions.
+- Diff, full current-source, and rendered Markdown views for each changed file.
 - An AI-style “Code guide” panel that explains the selected file and accepts follow-up questions.
 - Local persistence for the queue, per-file notes, and chat history through `localStorage`.
 - A service worker and manifest so the review experience is available after the first load without a network connection.
@@ -27,7 +28,7 @@ Then open `http://localhost:4173`. The service worker requires `localhost` (or H
 
 ## Connect a laptop workspace
 
-The included read-only companion can expose the current `git diff HEAD` to the PWA. It does not stage, edit, or commit anything.
+The included read-only companion can expose the current `git diff HEAD` and fetch the full current source of changed files to the PWA. It does not stage, edit, or commit anything.
 
 ```sh
 node companion.mjs /absolute/path/to/your/repository
