@@ -12,7 +12,7 @@ node companion.mjs /absolute/path/to/repository
 
 Open `http://127.0.0.1:4321`. `npm run serve` runs the companion for the current repository. A clean repository shows an empty queue; sample files appear only after choosing **Explore demo** when no snapshot is loaded. Demo mode does not fabricate AI answers.
 
-For phone access, use the VS Code launcher in [vscode-extension](vscode-extension/README.md). It starts a local companion and a temporary HTTPS Cloudflare Quick Tunnel. Install `cloudflared`, open the extension in a VS Code Extension Development Host, then choose **Patchwork: Start Secure Tunnel**. Scan the pairing QR code. The laptop must remain running and connected. Keep the pairing link private.
+For phone access, use the VS Code launcher in [vscode-extension](vscode-extension/README.md). It starts a local LAN companion immediately by default. Put both devices on the same trusted Wi-Fi and choose **Patchwork: Start Phone Review**. The pairing sidebar can switch to **HTTPS tunnel** for access from another network; that mode requires `cloudflared`. Scan the pairing QR code. The laptop must remain running and connected. Keep the pairing link private.
 
 Quick Tunnels are a development transport, with changing URLs and no uptime guarantee. Browser storage belongs to each URL's origin: **export a private backup before changing the tunnel URL**, then import it at the new one. The launcher also accepts an existing named tunnel and stable public URL; see its README for setup. Patchwork does not provision a domain, paid relay, or cloud database.
 
@@ -24,7 +24,9 @@ Advanced trusted-LAN preview: `PATCHWORK_HOST=0.0.0.0 node companion.mjs /path/t
 - Mark a file reviewed explicitly; **reviewed and next** advances through the queue. Decisions survive refresh only when that file's repository, comparison base, branch, path and content revision match.
 - Tap a line to add a private question, including an old/new side and range. Resolve questions separately from reviewing files. Notes on earlier revisions remain visible as historical notes.
 - Drafts, selection, scroll position and conversations are stored in IndexedDB. Storage failures are visible. Export a full private backup or a Markdown review summary for desktop follow-up.
-- Offline mode keeps the last snapshot, notes and sources already opened. Uncached source is labeled unavailable; a failed connection never substitutes demo data.
+- Every capture downloads diffs and all available text sources together, then saves them to the device. The status shows how many sources are saved. Offline mode keeps that snapshot and notes; a failed connection never substitutes demo data.
+
+The interface follows the system light/dark theme. LAN HTTP allows reading already loaded code while disconnected, but browsers require HTTPS for PWA installation and offline relaunch. Use the tunnel for those features.
 
 Snapshots bind diffs and source to the same captured revision. Refresh explicitly to see new laptop changes. Very large or rapidly changing worktrees fail visibly instead of silently omitting files. Current limits: 2,000 changed files, 2 MiB per file, 16 MiB per capture, and eight cached snapshots within 64 MiB. Old snapshots may expire on the companion; local review history remains on the device.
 
@@ -37,7 +39,7 @@ PATCHWORK_AI_PROVIDER=codex node companion.mjs /path/to/repo
 # Alternatives: claude, auto (default), none (disable AI)
 ```
 
-If the CLI reports that your configured model requires a newer version, update the Codex CLI or explicitly set `PATCHWORK_CODEX_MODEL` to a model that version supports. A live test on the development machine succeeded with `PATCHWORK_CODEX_MODEL=gpt-5.5`; the configured Astra model required a newer CLI.
+Open **Model settings** in Code guide to select a model and reasoning effort. Codex supplies the available choices dynamically; Patchwork does not maintain a model list. The choice applies to conversations and walkthroughs and is saved on the device. Other providers currently use their laptop configuration. Provider failures include actionable messages. If a model requires a newer CLI, update Codex on the laptop and restart the companion. Development was verified with Codex CLI 0.155.0, including a live Astra response.
 
 Codex uses its app-server conversation protocol, streams replies, and retains a bounded set of ephemeral conversation threads. Claude Code receives explicit conversation history. Both run without repository tools in an empty temporary directory. Selected captured code and the questions you send reach the chosen provider. Private notes are excluded unless you put them into a question yourself.
 

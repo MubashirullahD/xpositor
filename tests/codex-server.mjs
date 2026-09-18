@@ -15,12 +15,14 @@ readline.createInterface({input:process.stdin}).on('line', line => {
  const reply = result => output({id:m.id,result});
  if(m.method==='initialize') reply({});
  else if(m.method==='config/read') reply({config:{mcp_servers:{inherited:{command:'bad'}},features:{shell_tool:false}}});
+ else if(m.method==='model/list') reply({data:[{model:'future-model',displayName:'Future Model',supportedReasoningEfforts:[{reasoningEffort:'xhigh'}],defaultReasoningEffort:'xhigh',isDefault:true}],nextCursor:null});
  else if(m.method==='account/read') reply({account:{type:process.env.TEST_AUTH||'chatgpt',planType:process.env.TEST_PLAN||'plus'}});
  else if(m.method==='account/rateLimits/read') reply({rateLimits:{primary:{usedPercent:20}}});
  else if(m.method==='thread/start') {
   if(p.config['mcp_servers.inherited.enabled']!==false || p.sandbox!=='read-only' || p.approvalPolicy!=='never') output({id:m.id,error:{message:'Unsafe config'}});
   else reply({thread:{id:'thread-'+(++thread)}});
  } else if(m.method==='turn/start') {
+  if(p.model==='future-model'&&p.effort!=='xhigh'){output({id:m.id,error:{message:'Effort was not forwarded'}});return;}
   reply({turn:{id:'turn-1'}});
   if(p.input[0].text==='wait') return;
   output({method:'item/agentMessage/delta',params:{threadId:p.threadId,turnId:'turn-1',delta:'Hello '}});
@@ -33,11 +35,13 @@ readline.createInterface({input:process.stdin}).on('line', line => {
 await chmod(binary,0o755);
 const client = new CodexReviewClient(binary, {timeoutMs:300});
 try {
+ const catalog=await client.models();assert.equal(catalog.defaultModel,'future-model');assert.deepEqual(catalog.models[0].efforts,['xhigh']);
  const deltas=[];
  assert.equal(await client.answer('explain',{sessionKey:'device:snapshot',onDelta:t=>deltas.push(t)}),'Hello thread-1');
  assert.deepEqual(deltas,['Hello ','thread-1']);
  assert.equal(await client.answer('why',{sessionKey:'device:snapshot'}),'Hello thread-1');
  assert.equal(await client.answer('new revision',{sessionKey:'device:snapshot2'}),'Hello thread-2');
+ assert.match(await client.answer('dynamic model',{model:'future-model',effort:'xhigh'}),/Hello/);
  const controller=new AbortController();
  const pending=client.answer('wait',{sessionKey:'cancel',signal:controller.signal});
  setTimeout(()=>controller.abort(),40);

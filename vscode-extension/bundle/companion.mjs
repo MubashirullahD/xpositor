@@ -95,7 +95,10 @@ const handleRequest = async (request, response) => {
     }
     if (url.pathname.startsWith('/api/') && request.method === 'POST' && !/^application\/json(?:;|$)/i.test(request.headers['content-type'] || '')) return sendJson(response, 415, { error: 'Send application/json.' });
     if (url.pathname.startsWith('/api/') && !isAuthorized(request)) return sendJson(response, 401, { error: 'Pairing required.' });
-    if (url.pathname === '/api/snapshot' && request.method === 'GET') return sendJson(response, 200, snapshots.capture());
+    if (url.pathname === '/api/snapshot' && request.method === 'GET') {
+      const snapshot=snapshots.capture();
+      return sendJson(response, 200, {...snapshot,files:snapshot.files.map((file)=>({...file,source:snapshots.getFile(snapshot.snapshotId,{id:file.id}).source}))});
+    }
     if (url.pathname === '/api/file' && request.method === 'GET') {
       const requestedPath = url.searchParams.get('path');
       if (!requestedPath) throw new SnapshotError('An exact file path is required.', 400, 'FILE_REQUIRED');
@@ -103,6 +106,7 @@ const handleRequest = async (request, response) => {
       const { file, source } = snapshots.getFile(snapshotId, { path: requestedPath });
       return sendJson(response, 200, { snapshotId, id: file.id, path: file.path, version: file.version, source, sourceAvailable: file.sourceAvailable, sourceReason: file.sourceReason });
     }
+    if (url.pathname === '/api/models' && request.method === 'GET') return sendJson(response,200,await ai.models(url.searchParams.get('refresh')==='true'));
     if (url.pathname === '/api/config' && request.method === 'GET') return sendJson(response, 200, await ai.status(url.searchParams.get('refresh') === 'true'));
     if (['/api/ai', '/api/ai/stream', '/api/walkthrough', '/api/walkthrough/followup', '/api/walkthrough/followup/stream'].includes(url.pathname) && request.method === 'POST') {
       let input;

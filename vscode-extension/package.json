@@ -1,7 +1,7 @@
 {
   "name": "patchwork-vscode",
   "displayName": "Patchwork",
-  "description": "Start a read-only Patchwork companion over a secure temporary tunnel and pair a phone with a QR code.",
+  "description": "Review code from your phone using local LAN or an HTTPS tunnel.",
   "version": "0.1.0",
   "publisher": "patchwork-dev",
   "license": "MIT",
@@ -31,7 +31,7 @@
     "commands": [
       {
         "command": "patchwork.start",
-        "title": "Patchwork: Start Secure Tunnel"
+        "title": "Patchwork: Start Phone Review"
       },
       {
         "command": "patchwork.stop",
@@ -121,6 +121,15 @@
           "minimum": 5,
           "maximum": 300,
           "description": "Seconds to wait for the companion and tunnel to become ready before showing diagnostics."
+        },
+        "patchwork.transport": {
+          "type": "string",
+          "enum": [
+            "lan",
+            "tunnel"
+          ],
+          "default": "lan",
+          "description": "Default connection: instant local LAN over HTTP, or an HTTPS tunnel. The pairing sidebar can switch between them."
         }
       }
     }

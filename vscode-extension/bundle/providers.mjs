@@ -180,6 +180,11 @@ function codexClient(command, options) {
   return client;
 }
 
+export async function listProviderModels(info, options={}) {
+  if(info.provider!=='codex')return {models:[],defaultModel:'',message:'Model discovery is available with Codex. Other providers use their laptop configuration.'};
+  return codexClient(info.command,options).models(options.refresh);
+}
+
 export async function closeProviders() {
   await Promise.all([...codexClients.values()].map((client) => client.close()));
   codexClients.clear();
@@ -204,7 +209,7 @@ export async function answerWithCli(providerInfo, input, options = {}) {
   try {
     if (provider === 'codex') {
       const history = (input.history || []).map((item) => `${item.role}: ${item.text}`).join('\n');
-      const text = await codexClient(command, options).answer(prompt, { sessionKey: options.sessionKey, history, onDelta: options.onDelta, signal: options.signal, jsonSchema: options.jsonSchema, model: (options.env || process.env).PATCHWORK_CODEX_MODEL });
+      const text = await codexClient(command, options).answer(prompt, { sessionKey: options.sessionKey, history, onDelta: options.onDelta, signal: options.signal, jsonSchema: options.jsonSchema, model: options.model || (options.env || process.env).PATCHWORK_CODEX_MODEL, effort:options.effort });
       return { status: 200, body: { text, model: 'codex', billing: 'subscription' } };
     }
     const status = await inspectAiProvider({ ...providerInfo, available: true }, options);

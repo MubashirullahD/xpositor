@@ -38,4 +38,13 @@ Possible future low-cost experiment: device dictation plus device read-aloud, wi
 - [ ] Consider a framework migration only when incremental DOM updates and richer interaction justify it.
 - [ ] Keep reminders, streaks, push delivery, and optional application-level end-to-end encryption behind core review reliability.
 
-Development-machine compatibility: the configured Astra model rejected the installed Codex CLI as too old. A deliberate `PATCHWORK_CODEX_MODEL=gpt-5.5` override succeeded. Update the CLI or choose a supported model; Patchwork does not silently change the user's model settings or switch billing providers.
+Development-machine compatibility: upgraded the Homebrew Codex CLI from 0.146.0 to 0.155.0; verified live Astra generation and dynamic discovery of Sol, Astra, Terra, Luna and GPT-5.5. Models and effort choices now come from Codex at runtime. No user-global model setting was changed.
+
+## User-feedback polish completed
+
+- [x] Download all captured text sources with the diff and report device-save state.
+- [x] Working wrap and diff-context folding; collapsible desktop queue with unclipped counts.
+- [x] Flush-bottom opaque review actions; collapsed desktop backup controls; isolated mobile guide scrolling and centered Send icon.
+- [x] System light/dark palette and browser color-scheme metadata.
+- [x] LAN HTTP by default, with an optional HTTPS tunnel and LAN-address selection in the launcher.
+- [x] Dynamic Codex model/effort selection and actionable nested provider-error messages on mobile.

@@ -130,6 +130,22 @@ export class CodexReviewClient {
     }
   }
 
+  async models(refresh=false) {
+    await this.start();
+    if(!refresh&&this.catalog&&Date.now()-this.catalogAt<300000)return this.catalog;
+    const models=[];let cursor;
+    do {
+      const result=await this.rpc('model/list',{limit:100,includeHidden:false,...(cursor?{cursor}:{})});
+      for(const item of result.data||[]) {
+        if(item.hidden||typeof item.model!=='string')continue;
+        models.push({id:item.model,name:item.displayName||item.model,description:item.description||'',defaultEffort:item.defaultReasoningEffort,efforts:(item.supportedReasoningEfforts||[]).map((v)=>v.reasoningEffort).filter((v)=>typeof v==='string'),isDefault:Boolean(item.isDefault)});
+      }
+      cursor=result.nextCursor;
+      if(models.length>1000)throw new Error('Codex returned too many models.');
+    }while(cursor);
+    this.catalog={models,defaultModel:models.find((m)=>m.isDefault)?.id||models[0]?.id||''};this.catalogAt=Date.now();return this.catalog;
+  }
+
   async status() {
     await this.start();
     const { account } = await this.rpc('account/read', { refreshToken: false });
@@ -145,14 +161,14 @@ export class CodexReviewClient {
     return { available: true, auth: 'chatgpt', billing: 'subscription', message: 'Codex · existing ChatGPT plan', limits };
   }
 
-  async answer(prompt, { sessionKey, history = '', onDelta, signal, jsonSchema, model } = {}) {
+  async answer(prompt, { sessionKey, history = '', onDelta, signal, jsonSchema, model, effort } = {}) {
     if (this.busy) throw new Error('Another explanation is running. Wait or stop it first.');
     this.busy = true;
-    try { return await this.runAnswer(prompt, { sessionKey, history, onDelta, signal, jsonSchema, model }); }
+    try { return await this.runAnswer(prompt, { sessionKey, history, onDelta, signal, jsonSchema, model, effort }); }
     finally { this.busy = false; }
   }
 
-  async runAnswer(prompt, { sessionKey, history = '', onDelta, signal, jsonSchema, model } = {}) {
+  async runAnswer(prompt, { sessionKey, history = '', onDelta, signal, jsonSchema, model, effort } = {}) {
     const status = await this.status();
     if (!status.available) throw new Error(status.message);
     if (signal?.aborted) throw new Error('Stopped.');
@@ -199,7 +215,7 @@ export class CodexReviewClient {
       this.active = active;
       signal?.addEventListener('abort', abort, { once: true });
       if (signal?.aborted) { abort(); return; }
-      this.rpc('turn/start', { threadId, input: [{ type: 'text', text: prompt }], sandboxPolicy: { type: 'readOnly' }, ...(jsonSchema ? { outputSchema: jsonSchema } : {}) })
+      this.rpc('turn/start', { threadId, ...(model?{model}:{}), ...(effort?{effort}:{}), input: [{ type: 'text', text: prompt }], sandboxPolicy: { type: 'readOnly' }, ...(jsonSchema ? { outputSchema: jsonSchema } : {}) })
         .then((result) => {
           turnId = result.turn?.id;
           if (settled) { interrupt(); return; }

@@ -89,6 +89,7 @@ try {
   assert.equal(snapshotResponse.status, 200);
   const snapshot = await snapshotResponse.json();
   const file = snapshot.files.find((item) => item.path === 'file name.js');
+  assert.equal(file.source,'CAPTURED_SOURCE\n','snapshot eagerly carries immutable source');
   assert.ok(file?.id); assert.ok(file.version); assert.ok(snapshot.repoId); assert.ok(snapshot.head); assert.ok(snapshot.base);
   const fileUrl = `/api/file?snapshotId=${snapshot.snapshotId}&path=${encodeURIComponent(file.path)}`;
   assert.equal((await get('/api/file?path=file%20name.js')).status, 400);

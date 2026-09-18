@@ -26,13 +26,14 @@ class FakeProcess extends EventEmitter {
   }
 }
 
-function makeHarness({ configuration = {}, folders = ['/repo'] } = {}) {
+function makeHarness({ configuration = {transport:'tunnel'}, folders = ['/repo'] } = {}) {
   const errors = [];
   const infos = [];
   const commands = [];
   const spawns = [];
   const secrets = new Map();
   const timers = [];
+  configuration={transport:'tunnel',...configuration};
   const api = {
     ExtensionMode: { Development: 1 },
     workspace: {
@@ -58,6 +59,7 @@ function makeHarness({ configuration = {}, folders = ['/repo'] } = {}) {
     extensionDir: '/extension',
     dependencies: {
       fs: fakeFs,
+      networkInterfaces:()=>({wifi:[{address:'192.168.1.10',family:'IPv4',internal:false}]}),
       spawn: (file, args, options) => { const child = new FakeProcess(); spawns.push({ file, args, options, child }); return child; },
       randomBytes: (length) => Buffer.alloc(length, spawns.length + 1),
       setTimeout: (fn, ms) => { const timer = { fn, ms, active: true }; timers.push(timer); return timer; },
@@ -138,4 +140,17 @@ test('development hosts prefer the sibling companion while deployed extensions p
   assert.equal(h.extension.companionPath(), '/companion.mjs');
   h.extension.context.extensionMode = 0;
   assert.equal(h.extension.companionPath(), '/extension/bundle/companion.mjs');
+});
+
+test('LAN is ready immediately without cloudflared and can switch to a tunnel', async()=>{
+ const h=makeHarness({configuration:{transport:'lan'}});
+ await h.extension.start();
+ assert.equal(h.spawns[0].options.env.PATCHWORK_HOST,'0.0.0.0');
+ h.spawns[0].child.stdout.emit('data',Buffer.from('Patchwork companion: http://0.0.0.0:4311\n'));
+ assert.equal(h.spawns.length,1);assert.equal(h.extension.status,'ready');
+ assert.match(h.extension.session.pairingUrl,/^http:\/\/192\.168\.1\.10:4311\/\?token=/);
+ await h.extension.handlePairingMessage({type:'tunnel'});
+ assert.equal(h.spawns[1].options.env.PATCHWORK_HOST,'127.0.0.1');
+ h.spawns[1].child.stdout.emit('data',Buffer.from('Patchwork companion: http://127.0.0.1:4312\n'));
+ assert.equal(h.spawns.length,3);
 });

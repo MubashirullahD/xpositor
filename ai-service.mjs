@@ -1,4 +1,4 @@
-import { answerWithCli, inspectAiProvider, resolveAiProvider } from './providers.mjs';
+import { answerWithCli, inspectAiProvider, resolveAiProvider, listProviderModels } from './providers.mjs';
 import { SnapshotError } from './snapshot.mjs';
 
 const MAX_CONTEXT = 256 * 1024;
@@ -27,7 +27,13 @@ export function createAiService(snapshots, env = process.env) {
     try { return await statusPromise; } finally { statusPromise = null; }
   }
 
-  async function generate(prompt, { history = [], sessionKey, signal, onDelta, jsonSchema } = {}) {
+  async function models(refresh=false) {
+    const config=await status(refresh);
+    if(!config.aiEnabled)return {models:[],defaultModel:'',message:config.message};
+    return {...await listProviderModels(info,{env,refresh}),provider:info.provider};
+  }
+
+  async function generate(prompt, { history = [], sessionKey, signal, onDelta, jsonSchema, model, effort } = {}) {
     prompt = `${GUIDE_INSTRUCTIONS}\n\n${prompt}`;
     if (busy) return { status: 429, body: { error: 'Another explanation is running. Stop it or wait before asking again.' } };
     if (Buffer.byteLength(prompt) > MAX_CONTEXT) throw new SnapshotError('The selected code exceeds the guide context limit. Choose fewer files.', 413, 'AI_CONTEXT_LIMIT');
@@ -36,7 +42,15 @@ export function createAiService(snapshots, env = process.env) {
       const config = await status();
       if (!config.aiEnabled) return { status: 503, body: { error: config.message } };
       if (signal?.aborted) return { status: 499, body: { error: 'Stopped.' } };
-      if (info.provider !== 'api') return await answerWithCli(info, { prompt, history }, { env, sessionKey, signal, onDelta, jsonSchema });
+      if(model||effort) {
+        if(info.provider!=='codex')return {status:400,body:{error:'Model selection requires the Codex provider.'}};
+        const catalog=await models();const choice=catalog.models.find((item)=>item.id===(model||catalog.defaultModel));
+        if(!choice)return {status:400,body:{error:'This model is no longer available. Refresh the model list and choose another.'}};
+        model=choice.id;
+        if(effort&&!choice.efforts.includes(effort))return {status:400,body:{error:'This effort is not supported by the selected model. Choose an available effort.'}};
+        effort ||= choice.defaultEffort;
+      }
+      if (info.provider !== 'api') return await answerWithCli(info, { prompt, history }, { env, sessionKey:sessionKey?`${sessionKey}:${model||'default'}:${effort||'default'}`:undefined, signal, onDelta, jsonSchema, model, effort });
       // API mode is deliberately opt-in. Auto detection never selects an API key.
       const historyMessages = history.map((item) => ({ role: item.role, content: item.text }));
       const timeout = AbortSignal.timeout(90_000);
@@ -66,7 +80,7 @@ export function createAiService(snapshots, env = process.env) {
     if (Buffer.byteLength(JSON.stringify(history)) > 96 * 1024) throw new SnapshotError('This conversation is too long to restore in one request. Start a new conversation; the old one remains saved on your device.', 413, 'HISTORY_LIMIT');
     const context = `Snapshot: ${input.snapshotId}\nFile: ${file.path}\nFile revision: ${file.version}\nCurrent file contents:\n${source === null ? `(${file.sourceReason})` : source}\n\nDiff (old/new line references):\n${code || '(No text diff)'}`;
     const deviceSession = typeof input.sessionId === 'string' && /^[a-zA-Z0-9_-]{16,80}$/.test(input.sessionId) ? input.sessionId : null;
-    return generate(`${GUIDE_INSTRUCTIONS}\n\n${context}\n\nQuestion: ${question}`, { ...options, history, sessionKey: deviceSession ? `${deviceSession}:${input.snapshotId}:${file.id}` : undefined });
+    return generate(`${GUIDE_INSTRUCTIONS}\n\n${context}\n\nQuestion: ${question}`, { ...options, model:input.model, effort:input.effort, history, sessionKey: deviceSession ? `${deviceSession}:${input.snapshotId}:${file.id}` : undefined });
   }
-  return { status, generate, answer };
+  return { status, models, generate, answer };
 }

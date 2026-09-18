@@ -17,7 +17,7 @@ export function createWalkthroughService(snapshots, ai) {
       const context = buildGuideContext(snapshots, input.snapshotId, input.selectedId, input.fileIds);
       const prompt = buildGuidePrompt(context, { depth: input.depth ?? 'standard', timeMinutes: input.timeMinutes ?? 15 });
       assertPromptSize(prompt);
-      const result = await generate(ai, prompt, { ...safeOptions(options), jsonSchema: GUIDE_SCHEMA });
+      const result = await generate(ai, prompt, { ...safeOptions(options), model:input.model, effort:input.effort, jsonSchema: GUIDE_SCHEMA });
       if (result.status !== 200) return result;
       const value = parseGuideResponse(result.body);
       let guide;
@@ -37,7 +37,7 @@ export function createWalkthroughService(snapshots, ai) {
       const history = validateHistory(input.history);
       const prompt = buildStepPrompt(context, guide, input.stepIndex, input.question);
       assertPromptSize(prompt);
-      const result = await generate(ai, prompt, { ...safeOptions(options), history });
+      const result = await generate(ai, prompt, { ...safeOptions(options), model:input.model, effort:input.effort, history });
       if (result.status !== 200) return result;
       if (!result.body || typeof result.body.text !== 'string' || !result.body.text.trim()) return invalidModelResponse(new GuideError('The provider returned an empty follow-up response.', 502, 'GUIDE_EMPTY_RESPONSE'));
       return { status: 200, body: { ...result.body, scope: context.scope, snapshotId: context.snapshotId, selectedId: context.selectedId, stepIndex: input.stepIndex } };
@@ -72,7 +72,7 @@ function invalidModelResponse(error) {
 
 function validateCreateInput(input) {
   requireObject(input, 'Walkthrough request');
-  rejectUnknown(input, ['snapshotId', 'selectedId', 'fileIds', 'depth', 'timeMinutes'], 'Walkthrough request');
+  rejectUnknown(input, ['snapshotId', 'selectedId', 'fileIds', 'depth', 'timeMinutes', 'model', 'effort'], 'Walkthrough request');
   requiredText(input.snapshotId, 'snapshotId', 180);
   requiredText(input.selectedId, 'selectedId', 180);
   if (input.fileIds !== undefined && !Array.isArray(input.fileIds)) throw requestError('fileIds must be an array of changed file IDs.');
@@ -82,7 +82,7 @@ function validateCreateInput(input) {
 
 function validateFollowupInput(input) {
   requireObject(input, 'Walkthrough follow-up request');
-  rejectUnknown(input, ['snapshotId', 'selectedId', 'fileIds', 'guide', 'stepIndex', 'question', 'history'], 'Walkthrough follow-up request');
+  rejectUnknown(input, ['snapshotId', 'selectedId', 'fileIds', 'guide', 'stepIndex', 'question', 'history', 'model', 'effort'], 'Walkthrough follow-up request');
   requiredText(input.snapshotId, 'snapshotId', 180);
   requiredText(input.selectedId, 'selectedId', 180);
   if (input.fileIds !== undefined && !Array.isArray(input.fileIds)) throw requestError('fileIds must be an array of changed file IDs.');

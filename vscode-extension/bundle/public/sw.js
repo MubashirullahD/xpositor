@@ -1,7 +1,7 @@
 // API snapshots and source belong to the device's revision-aware IndexedDB store.
 // Never cache authenticated requests or turn failed API responses into app HTML.
-const CACHE = 'patchwork-shell-v4';
-const APP_SHELL = ['/', '/index.html', '/src/main.js', '/src/storage.js', '/src/render.js', '/src/demo.js', '/src/walkthrough.js', '/src/transport.js', '/src/styles.css', '/manifest.webmanifest', '/icon.svg'];
+const CACHE = 'patchwork-shell-v5';
+const APP_SHELL = ['/', '/index.html', '/src/main.js', '/src/storage.js', '/src/render.js', '/src/demo.js', '/src/walkthrough.js', '/src/transport.js', '/src/platform.js', '/src/styles.css', '/manifest.webmanifest', '/icon.svg'];
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(APP_SHELL)));
   // Activate on the next navigation after existing tabs close; don't replace a running app.

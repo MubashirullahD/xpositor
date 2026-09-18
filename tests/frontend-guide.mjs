@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readReply } from '../src/transport.js';
+import { readReply, errorMessage } from '../src/transport.js';
 import { emptyState, createBackup, parseBackup, mergeState } from '../src/storage.js';
 import { sanitizeWalkthrough, walkthroughKey } from '../src/walkthrough.js';
 
@@ -29,3 +29,11 @@ assert.deepEqual(deltas,['Hello 🌱']);
 await assert.rejects(readReply(new Response('{"type":"delta","text":"partial"}\n')),/connection ended/);
 await assert.rejects(readReply(new Response('{"type":"error","error":"Provider limit"}\n')),/Provider limit/);
 console.log('Frontend guide: durable progress, backup privacy, interrupted history and chunked UTF-8 streams passed.');
+
+assert.match(errorMessage({error:JSON.stringify({error:{message:'Model requires a newer version of Codex'}})}),/Update Codex on the laptop/);
+await assert.rejects(readReply(new Response(JSON.stringify({error:{message:'Update the Codex CLI'}}),{status:400,headers:{'content-type':'application/json'}})),/Update Codex on the laptop/);
+assert.equal((await readReply(new Response(JSON.stringify({text:'JSON fallback'}),{headers:{'content-type':'application/json'}}))).text,'JSON fallback');
+const terminalThenFailure=new ReadableStream({start(c){c.enqueue(new TextEncoder().encode('{"type":"done","text":"Complete"}\n'));},pull(c){c.error(new Error('Load failed'));}});
+assert.equal((await readReply(new Response(terminalThenFailure))).text,'Complete','a terminal reply survives a later transport disconnect');
+
+const upgradeMessage=errorMessage('Model requires a newer version of Codex');assert.equal(errorMessage(upgradeMessage),upgradeMessage);

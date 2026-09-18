@@ -1,6 +1,6 @@
 # Patchwork VS Code extension
 
-This is the laptop-side launcher for Patchwork. It contributes a Patchwork icon to VS Code's Activity Bar. Opening its `Pair phone` view starts the existing read-only `companion.mjs` behind a Cloudflare Quick Tunnel and shows an HTTPS QR link for the phone.
+This is the laptop-side launcher for Patchwork. It contributes a Patchwork icon to VS Code's Activity Bar. Opening its `Pair phone` view starts the existing read-only `companion.mjs` on the local LAN and shows a QR link immediately. The sidebar can switch to an HTTPS Cloudflare tunnel.
 
 ## Try it locally
 
@@ -11,17 +11,17 @@ This is the laptop-side launcher for Patchwork. It contributes a Patchwork icon 
 5. Click the Patchwork icon in the Activity Bar.
 6. Scan the QR code shown in the `Pair phone` sidebar view.
 
-Install Cloudflare's `cloudflared` helper once before opening the view:
+For the optional HTTPS tunnel, install Cloudflare's `cloudflared` helper once:
 
 ```sh
 brew install cloudflared
 ```
 
-The companion and temporary HTTPS tunnel do not start just because the extension is installed. They start when the Activity Bar view is opened, or when you run `Patchwork: Start Secure Tunnel`. The `patchwork.autoStart` setting is available for users who prefer automatic startup and defaults to `false`.
+The companion starts when the Activity Bar view is opened, or when you run `Patchwork: Start Phone Review`. LAN is the default: both devices must use the same trusted Wi-Fi. Select **HTTPS tunnel** in the pairing view to use another network. Configure `patchwork.transport` to change the default. LAN uses unencrypted HTTP; HTTPS is required for PWA installation and offline relaunch. All captured text sources are downloaded immediately, so an open LAN tab can still read them after the laptop disconnects. The `patchwork.autoStart` setting is available for users who prefer automatic startup and defaults to `false`.
 
 Quick Tunnels are free and do not require a Cloudflare account or domain, but Cloudflare documents them as development/testing tunnels without an uptime guarantee. The phone can be on cellular or another Wi‑Fi network as long as both devices can reach the Internet. The pairing link contains a short-lived access token, so keep it private. The connection is relayed through Cloudflare; this protects it from local-network snooping but treats Cloudflare as a trusted intermediary.
 
-Each Quick Tunnel receives a different HTTPS origin. Phone-local notes, review state, and installed PWA storage remain at the earlier origin, so scan the latest QR when starting a new Quick Tunnel. This is the free default and needs no account, domain, or paid service.
+Each Quick Tunnel receives a different HTTPS origin. Phone-local notes, review state, and installed PWA storage remain at the earlier origin, so scan the latest QR when starting a new Quick Tunnel. The tunnel option needs no account, domain, or paid service. LAN addresses and automatic ports can change too; use a fixed port and stable LAN address or export/import to carry review state across origins.
 
 ## Optional stable named tunnel
 
@@ -29,6 +29,7 @@ If you already operate a Cloudflare named tunnel and public hostname, configure 
 
 ```json
 {
+  "patchwork.transport": "tunnel",
   "patchwork.port": 4311,
   "patchwork.tunnelName": "my-existing-tunnel",
   "patchwork.publicUrl": "https://patchwork.example.com"
@@ -45,7 +46,7 @@ The extension asks the companion for an available local port by default, which a
 
 Set `patchwork.aiProvider` to `codex` or `claude` to reuse the CLI login already authenticated on the laptop. `auto` tries a verified Codex subscription login, then Claude Code. It never falls back to an API key automatically. Patchwork invokes the CLI locally; credentials and subscription sessions never go to the phone. Codex uses ephemeral app-server threads with tools disabled. Claude Code uses a tool-free invocation. API billing requires explicitly choosing `api`.
 
-The extension never stages, edits, resets, or commits files. It only launches the local companion and its Quick Tunnel, then manages both processes' lifetimes.
+The extension never stages, edits, resets, or commits files. It only launches the local companion and optional tunnel, then manages their lifetimes.
 
 ## Build and install a local VSIX
 
