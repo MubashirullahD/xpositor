@@ -1,40 +1,41 @@
 # Patchwork roadmap
 
-## Next: make large mobile reviews comfortable
+## Completed in the review hardening pass
 
-- [x] Remove the hard-coded 60-file snapshot limit so larger worktrees, including `map-of-experience`, are fully reviewable.
-- [x] Add a full-source view alongside the diff view so a file can be read in its normal context.
-- [x] Add a rendered Markdown preview while keeping the raw/source view available when needed.
-- [x] Fix mobile scroll locking so an open file list scrolls independently without scrolling the file being viewed underneath it.
-- [x] Let the phone back action close the file list, in addition to the visible close button, using browser history where appropriate.
+- [x] Escape repository metadata and Markdown; restrict static files; add CSP and API origin/content-type checks.
+- [x] Capture immutable diffs and source, parse exact Git paths, include nested untracked files, handle renames/deletions/binary files, and refuse symlink escapes.
+- [x] Surface Git errors and explicit resource limits instead of silently incomplete snapshots.
+- [x] Bind review decisions to repository/comparison/path/revision; retain historical notes and separate snapshot conversations.
+- [x] IndexedDB persistence, immediate draft/progress writes, storage errors, private backup/import, cached-source clearing and Markdown handoff summaries.
+- [x] Readable phone code, font controls, wrap, context folding, hunk navigation, anchored questions and sticky review actions.
+- [x] Reachable phone/tablet guide, modal focus handling, keyboard tabs, Back/Escape handling and distinct internet/laptop/provider state.
+- [x] Remove fabricated real-workspace AI replies, inert navigation and hardcoded progress cues. Demo is explicit.
+- [x] Repair launcher restart races, startup timeout/error retention, repeated sidebar activation, and multi-root selection.
+- [x] Offer existing named tunnels with stable pairing credentials; retain a free Quick Tunnel default with clear origin/backup guidance.
+- [x] Subscription-authenticated Codex app-server conversations, streamed replies, stop/cancel, bounded processes/context, and no automatic API-key fallback.
+- [x] Structured walkthroughs across related changed files: depth/time, scope disclosure, validated citations, code navigation, simpler/example/caller follow-ups, saved progress, and separate understood/reviewed decisions.
+- [x] Portable snapshot/provider/HTTP/launcher/frontend tests, mobile/tablet browser checks, and an updated local VSIX.
+- [x] Verify a live Codex ChatGPT-subscription explanation, four-step two-file walkthrough and follow-up using synthetic code.
 
-One source is fetched and cached when opened, so an already-viewed file remains available offline without making the initial mobile snapshot unnecessarily large. A future optimization can prefetch all sources when the connection is fast.
+## Voice — deferred to preserve the free app model
 
-## Next: make each file explainable
+- [ ] Revisit natural voice when subscription-backed third-party embedding has a supported, verified integration path. Keep text fully usable; do not add a separately billed audio service by default.
 
-- [ ] Replace the placeholder Overview panel with an on-demand AI-generated overview for each file: what changed, how it behaves, why it matters, likely risks, and one review question. Cache it by file and diff version, with a basic metadata fallback offline.
+Checked 18 September 2026: the [official voice documentation](https://learn.chatgpt.com/docs/features/voice) covers the ChatGPT desktop app and paired iOS Remote on supported plans, subject to rollout and workspace settings. That does not establish support for embedding the same subscription voice experience in Patchwork.
 
-## Then: make the connection effortless and reliable
+Installed `codex-cli 0.146.0` exposes `thread/realtime/*` request methods only when generating the experimental protocol. Its stable request union excludes them. The [App Server documentation](https://learn.chatgpt.com/docs/app-server) explicitly gates experimental methods. A reliable public subscription contract and account entitlement for third-party voice were not verified, so no voice session or paid audio service was added. This is a deferred feasibility item, not a claim that voice is technically impossible.
 
-- [x] Use a Cloudflare Quick Tunnel for HTTPS pairing without requiring phone certificate installation.
-- [x] Add clear Quick Tunnel dependency/setup guidance and a friendly missing-`cloudflared` recovery flow.
-- [ ] Evaluate a named Cloudflare Tunnel or Patchwork-managed relay for production reliability after the Quick Tunnel workflow is stable.
-- [x] Build and locally install a distributable `.vsix`.
-- [x] Add a proper VS Code Activity Bar entry with an on-demand pairing sidebar; keep companion auto-start opt-in.
-- [ ] Decide on Marketplace publishing after the local workflow is stable.
-- [ ] Exercise one real Codex and one real Claude Code subscription request end to end, including clear auth/provider errors.
+Possible future low-cost experiment: device dictation plus device read-aloud, with explicit controls and privacy disclosure. It would be a turn-by-turn accessibility aid, not a natural interruptible conversation.
 
-## Later: motivation and product depth
+## Release validation and later product work
 
-- [ ] Improve reminders and review streak/progress cues without making the experience noisy.
-- [ ] Support reliable notifications while the app is closed through push or a native mobile wrapper.
-- [ ] Add richer review context and optional future actions only after the read-only review flow is dependable.
-- [ ] Low priority: add application-level end-to-end encryption between the phone and laptop so the tunnel provider cannot read review traffic; pursue only if the added complexity is small.
+- [ ] Exercise a real phone/Safari PWA install, offline relaunch and reconnection over cellular. Current browser checks used Chromium at phone/tablet sizes.
+- [ ] Verify live Claude Code subscription generation. Its adapter/auth/error behavior is covered by stubs; live generation was verified with Codex only.
+- [ ] Exercise the existing named-tunnel configuration against a real hostname. Lifecycle behavior is covered by mocks; Patchwork does not provision infrastructure.
+- [ ] Expand context to explicitly selected unchanged callers with equally strict snapshot boundaries; current walkthroughs use changed files only.
+- [ ] Add branch/commit comparisons and PR review after validating the uncommitted-change workflow with users.
+- [ ] Decide on Marketplace publishing. The VSIX is built locally; it has not been published or automatically installed.
+- [ ] Consider a framework migration only when incremental DOM updates and richer interaction justify it.
+- [ ] Keep reminders, streaks, push delivery, and optional application-level end-to-end encryption behind core review reliability.
 
-## Completed
-
-- [x] Read-only LAN companion for uncommitted changes.
-- [x] Offline-capable PWA snapshot and local review state.
-- [x] VS Code launcher with automatic port selection and QR pairing.
-- [x] Local Codex/Claude Code CLI provider adapters.
-- [x] Standards-compliant QR generation and pairing-panel scanability fix.
+Development-machine compatibility: the configured Astra model rejected the installed Codex CLI as too old. A deliberate `PATCHWORK_CODEX_MODEL=gpt-5.5` override succeeded. Update the CLI or choose a supported model; Patchwork does not silently change the user's model settings or switch billing providers.

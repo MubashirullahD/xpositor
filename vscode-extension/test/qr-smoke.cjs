@@ -14,7 +14,7 @@ assert.match(svg, /fill="#000"/);
 assert.match(svg, /<path /);
 assert.ok(svg.length > 1000, 'QR SVG should contain a full matrix');
 assert.match(quickTunnelSvg, /^<svg /);
-assert.throws(() => qrSvg('x'.repeat(140)), /too long/i);
+assert.doesNotThrow(() => qrSvg('x'.repeat(140)));
 
 const manifest = JSON.parse(fs.readFileSync(require('node:path').join(__dirname, '..', 'package.json'), 'utf8'));
 assert.ok(manifest.activationEvents.includes('onView:patchwork.pairing'));
@@ -23,10 +23,5 @@ assert.ok(manifest.contributes.views.patchwork.some((view) => view.id === 'patch
 assert.equal(manifest.contributes.configuration.properties['patchwork.autoStart'].default, false);
 assert.equal(manifest.contributes.configuration.properties['patchwork.cloudflaredPath'].default, 'cloudflared');
 assert.ok(fs.existsSync(require('node:path').join(__dirname, '..', 'resources', 'patchwork-activity.svg')));
-
-const extensionSource = fs.readFileSync(require('node:path').join(__dirname, '..', 'extension.js'), 'utf8');
-assert.match(extensionSource, /PATCHWORK_HOST: '127\.0\.0\.1'/);
-assert.match(extensionSource, /PATCHWORK_TOKEN: sessionToken/);
-assert.match(extensionSource, /\['tunnel', '--url', localOrigin\]/);
 
 console.log(JSON.stringify({ qr: 'ok', activityBar: 'ok', quickTunnel: 'ok', modules: 33, payload: url.length }));

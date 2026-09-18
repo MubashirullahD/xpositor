@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "companion": "node companion.mjs",
-    "serve": "python3 -m http.server 4173",
+    "serve": "node companion.mjs",
     "test:smoke": "node tests/companion-ai-smoke.mjs",
     "test:providers": "node tests/cli-provider-smoke.mjs",
-    "test:extension": "node vscode-extension/test/qr-smoke.cjs",
-    "extension:bundle": "node vscode-extension/prepare-bundle.mjs"
+    "test:extension": "npm --prefix vscode-extension test",
+    "extension:bundle": "node vscode-extension/prepare-bundle.mjs",
+    "test": "node tests/snapshot-regression.mjs && node tests/companion-ai-smoke.mjs && node tests/cli-provider-smoke.mjs && node tests/codex-server.mjs && node tests/review-guide.mjs && node tests/walkthrough-service.mjs && node tests/frontend-state.mjs && node tests/frontend-guide.mjs && npm --prefix vscode-extension test"
   }
 }

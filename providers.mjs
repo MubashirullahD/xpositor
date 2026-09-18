@@ -1,10 +1,14 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { CodexReviewClient } from './codex-server.mjs';
 
 const MAX_OUTPUT = 160 * 1024;
 const DEFAULT_TIMEOUT_MS = 90 * 1000;
 
-const providerNames = new Set(['api', 'codex', 'claude']);
+const providerNames = new Set(['api', 'codex', 'claude', 'none']);
 
 function configuredProvider(env = process.env) {
   const value = String(env.PATCHWORK_AI_PROVIDER || 'auto').trim().toLowerCase();
@@ -32,6 +36,7 @@ function commandAvailable(command) {
 
 export function resolveAiProvider(env = process.env) {
   const requested = configuredProvider(env);
+  if (requested === 'none') return { requested, provider: 'none', command: null, available: false };
   if (requested !== 'auto') {
     return {
       requested,
@@ -47,7 +52,7 @@ export function resolveAiProvider(env = process.env) {
   if (commandAvailable(commandFor('claude', env))) {
     return { requested, provider: 'claude', command: commandFor('claude', env), available: true };
   }
-  return { requested, provider: 'api', command: null, available: Boolean(env.OPENAI_API_KEY) };
+  return { requested, provider: 'none', command: null, available: false };
 }
 
 function trimOutput(value) {
@@ -55,7 +60,7 @@ function trimOutput(value) {
   return text.length > MAX_OUTPUT ? text.slice(-MAX_OUTPUT) : text;
 }
 
-function childEnvironment(provider, env = process.env) {
+export function childEnvironment(provider, env = process.env) {
   const childEnv = { ...env };
   // The CLI should use its own local login. API-key environment variables can
   // silently switch an otherwise subscription-backed CLI to metered API use.
@@ -65,6 +70,10 @@ function childEnvironment(provider, env = process.env) {
   }
   if (provider === 'claude' && env.PATCHWORK_CLAUDE_USE_API_KEY !== 'true') {
     delete childEnv.ANTHROPIC_API_KEY;
+    delete childEnv.ANTHROPIC_AUTH_TOKEN;
+    delete childEnv.CLAUDE_CODE_USE_BEDROCK;
+    delete childEnv.CLAUDE_CODE_USE_VERTEX;
+    delete childEnv.CLAUDE_CODE_USE_FOUNDRY;
   }
   return childEnv;
 }
@@ -82,21 +91,31 @@ export function runCommand(command, args, options = {}) {
       cwd,
       env,
       shell: false,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
     const finish = (result) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      options.signal?.removeEventListener('abort', abort);
       resolveResult({ ...result, stdout: trimOutput(stdout), stderr: trimOutput(stderr) });
     };
+    const terminate = () => { child.kill('SIGTERM'); setTimeout(() => { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); }, 1_000).unref(); };
     const timer = setTimeout(() => {
-      child.kill('SIGTERM');
-      setTimeout(() => child.kill('SIGKILL'), 1_000).unref();
+      terminate();
       finish({ ok: false, reason: 'timeout', error: `The ${options.label || 'AI'} command timed out.` });
     }, timeoutMs);
-    child.stdout.on('data', (chunk) => { stdout += chunk; });
-    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    const abort = () => { terminate(); finish({ ok: false, reason: 'aborted', error: 'Stopped.' }); };
+    options.signal?.addEventListener('abort', abort, { once: true });
+    if (options.signal?.aborted) abort();
+    child.stdin.on('error', () => {});
+    child.stdin.end(options.input || '');
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk;
+      options.onChunk?.(String(chunk));
+      if (Buffer.byteLength(stdout) > MAX_OUTPUT) { terminate(); finish({ ok: false, reason: 'limit', error: 'AI response exceeded the output limit.' }); }
+    });
+    child.stderr.on('data', (chunk) => { stderr = (stderr + chunk).slice(-MAX_OUTPUT); });
     child.on('error', (error) => finish({ ok: false, reason: 'error', error: error.message }));
     child.on('close', (code, signal) => {
       if (code === 0) finish({ ok: true, code, signal });
@@ -113,26 +132,6 @@ function readText(value) {
   if (typeof value.result === 'string') return value.result.trim();
   if (typeof value.output_text === 'string') return value.output_text.trim();
   return readText(value.content || value.output || value.message || value.item);
-}
-
-function parseCodexOutput(stdout) {
-  const messages = [];
-  for (const line of stdout.split('\n')) {
-    if (!line.trim()) continue;
-    try {
-      const event = JSON.parse(line);
-      const item = event.item || event;
-      if (item.type === 'agent_message' || event.type === 'agent_message') {
-        const text = readText(item);
-        if (text) messages.push(text);
-      } else if (event.type === 'response.output_text.delta' && event.delta) {
-        messages.push(String(event.delta));
-      }
-    } catch {
-      // --json is JSONL, but a version mismatch should still leave a useful fallback.
-    }
-  }
-  return messages.join('').trim() || trimOutput(stdout);
 }
 
 function parseClaudeOutput(stdout) {
@@ -171,22 +170,55 @@ function cliPrompt(input) {
   ].join('\n');
 }
 
+const codexClients = new Map();
+function codexClient(command, options) {
+  let client = codexClients.get(command);
+  if (!client || client.closed) {
+    client = new CodexReviewClient(command, options);
+    codexClients.set(command, client);
+  }
+  return client;
+}
+
+export async function closeProviders() {
+  await Promise.all([...codexClients.values()].map((client) => client.close()));
+  codexClients.clear();
+}
+
+export async function inspectAiProvider(info, options = {}) {
+  const env = options.env || process.env;
+  if (!info.available) return { ...info, auth: 'unavailable', billing: 'none', message: 'Install Codex or Claude Code and sign in on the laptop to enable explanations.' };
+  if (info.provider === 'api') return { ...info, auth: 'api-key', billing: 'api', message: 'OpenAI API · usage billed separately (explicitly selected)' };
+  try {
+    if (info.provider === 'codex') return { ...info, ...await codexClient(info.command, options).status() };
+    const result = await runCommand(info.command, ['auth', 'status', '--json'], { env: childEnvironment('claude', env), timeoutMs: 8_000 });
+    const auth = result.ok ? JSON.parse(result.stdout) : {};
+    const subscription = auth.loggedIn === true && auth.authMethod === 'claude.ai';
+    return { ...info, available: subscription, auth: subscription ? 'claude.ai' : 'unverified', billing: subscription ? 'subscription' : 'none', message: subscription ? 'Claude Code · subscription login' : 'Sign in to Claude Code with a Claude subscription. API billing is not enabled automatically.' };
+  } catch (error) { return { ...info, available: false, auth: 'unavailable', billing: 'none', message: error.message }; }
+}
+
 export async function answerWithCli(providerInfo, input, options = {}) {
   const { provider, command } = providerInfo;
-  const prompt = cliPrompt(input);
-  const env = childEnvironment(provider, options.env || process.env);
-  const args = provider === 'codex'
-    ? ['exec', '--json', '--sandbox', 'read-only', '--ephemeral', '--skip-git-repo-check', '-C', options.repoRoot, prompt]
-    : ['-p', prompt, '--output-format', 'json', '--permission-mode', 'plan', '--max-turns', '3', '--no-session-persistence', '--tools', 'Read'];
-  const result = await runCommand(command, args, { cwd: options.repoRoot, env, label: provider, timeoutMs: options.timeoutMs });
-  if (!result.ok) {
-    return {
-      status: result.reason === 'timeout' ? 504 : 502,
-      body: { error: `The ${provider} CLI could not complete the request.`, detail: result.error },
-    };
-  }
-  const text = provider === 'codex' ? parseCodexOutput(result.stdout) : parseClaudeOutput(result.stdout);
-  return text
-    ? { status: 200, body: { text, model: provider } }
-    : { status: 502, body: { error: `The ${provider} CLI returned an empty response.` } };
+  const prompt = input.prompt || cliPrompt(input);
+  try {
+    if (provider === 'codex') {
+      const history = (input.history || []).map((item) => `${item.role}: ${item.text}`).join('\n');
+      const text = await codexClient(command, options).answer(prompt, { sessionKey: options.sessionKey, history, onDelta: options.onDelta, signal: options.signal, jsonSchema: options.jsonSchema, model: (options.env || process.env).PATCHWORK_CODEX_MODEL });
+      return { status: 200, body: { text, model: 'codex', billing: 'subscription' } };
+    }
+    const status = await inspectAiProvider({ ...providerInfo, available: true }, options);
+    if (!status.available) return { status: 503, body: { error: status.message } };
+    const cwd = await mkdtemp(join(tmpdir(), 'patchwork-claude-'));
+    try {
+      const args = ['-p', '--output-format', 'json', '--permission-mode', 'plan', '--max-turns', '1', '--no-session-persistence', '--tools', '', '--disable-slash-commands', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--setting-sources', '', '--settings', '{"disableAllHooks":true}', ...(options.jsonSchema ? ['--json-schema', JSON.stringify(options.jsonSchema)] : [])];
+      const result = await runCommand(command, args, { cwd, env: childEnvironment(provider, options.env || process.env), input: input.prompt && input.history?.length ? `Previous conversation:\n${JSON.stringify(input.history)}\n\n${prompt}` : prompt, timeoutMs: options.timeoutMs, signal: options.signal });
+      if (!result.ok) return { status: result.reason === 'timeout' ? 504 : 502, body: { error: result.reason === 'aborted' ? 'Stopped.' : 'Claude Code could not finish. Check its login and subscription allowance on the laptop.' } };
+      const payload = JSON.parse(result.stdout);
+      const text = options.jsonSchema && payload.structured_output ? JSON.stringify(payload.structured_output) : parseClaudeOutput(result.stdout);
+      if (payload.is_error || !text) return { status: 502, body: { error: 'Claude Code did not return an explanation. Check the provider on the laptop.' } };
+      options.onDelta?.(text);
+      return { status: 200, body: { text, model: 'claude', billing: 'subscription' } };
+    } finally { await rm(cwd, { recursive: true, force: true }); }
+  } catch (error) { return { status: 502, body: { error: error.message || 'The guide could not finish.' } }; }
 }

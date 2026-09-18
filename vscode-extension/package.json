@@ -23,6 +23,7 @@
   ],
   "main": "./extension.js",
   "scripts": {
+    "test": "node --test test/*.test.cjs && node test/qr-smoke.cjs",
     "vscode:prepublish": "node prepare-bundle.mjs",
     "package": "node package.mjs"
   },
@@ -78,13 +79,15 @@
             "auto",
             "codex",
             "claude",
-            "api"
+            "api",
+            "none"
           ],
           "enumDescriptions": [
-            "Use Codex if installed, then Claude Code, then the API key provider.",
+            "Try verified Codex then Claude Code subscription logins. Never automatically use API billing.",
             "Use the locally authenticated Codex CLI subscription.",
             "Use the locally authenticated Claude Code subscription.",
-            "Use the OpenAI Responses API configured in the companion environment."
+            "Use the OpenAI Responses API configured in the companion environment.",
+            "Disable AI and keep the review interface available."
           ],
           "default": "auto",
           "description": "AI provider used by the laptop companion. Local CLI providers reuse their existing laptop login."
@@ -99,6 +102,25 @@
           "default": "cloudflared",
           "scope": "machine",
           "description": "Path to the cloudflared executable used to create a temporary Cloudflare Quick Tunnel."
+        },
+        "patchwork.tunnelName": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Optional existing Cloudflare named tunnel to run. Patchwork does not create or configure this tunnel. Set patchwork.publicUrl and a fixed patchwork.port too."
+        },
+        "patchwork.publicUrl": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "HTTPS public URL already routed by patchwork.tunnelName. It is used for phone pairing and preserves the same phone storage origin."
+        },
+        "patchwork.startupTimeoutSeconds": {
+          "type": "number",
+          "default": 30,
+          "minimum": 5,
+          "maximum": 300,
+          "description": "Seconds to wait for the companion and tunnel to become ready before showing diagnostics."
         }
       }
     }

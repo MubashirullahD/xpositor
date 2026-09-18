@@ -4,7 +4,6 @@
 const QRCode = require('qrcode');
 
 function qrSvg(text) {
-  if (Buffer.byteLength(text, 'utf8') > 104) throw new Error('Pairing URL is too long for the QR code.');
   const qr = QRCode.create(text, { errorCorrectionLevel: 'L' });
   const moduleSize = qr.modules.size;
   const border = 4;

@@ -1,46 +1,33 @@
 import assert from 'node:assert/strict';
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { answerWithCli } from '../providers.mjs';
+import { join } from 'node:path';
+import { answerWithCli, childEnvironment, inspectAiProvider, resolveAiProvider, runCommand } from '../providers.mjs';
 
-const appRoot = resolve(new URL('..', import.meta.url).pathname);
 const tempRoot = await mkdtemp(join(tmpdir(), 'patchwork-cli-provider-'));
 const fakeCli = join(tempRoot, 'fake-ai');
 await writeFile(fakeCli, `#!/usr/bin/env node
-const hasOpenAiKey = Boolean(process.env.OPENAI_API_KEY);
-const hasAnthropicKey = Boolean(process.env.ANTHROPIC_API_KEY);
-if (process.argv.includes('exec')) {
-  console.log(JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'Codex answer; keys=' + [hasOpenAiKey, hasAnthropicKey].join(',') } }));
-} else {
-  console.log(JSON.stringify({ result: 'Claude answer; keys=' + [hasOpenAiKey, hasAnthropicKey].join(',') }));
+if (process.argv.includes('auth')) console.log(JSON.stringify({loggedIn:true,authMethod:process.env.TEST_API?'api_key':'claude.ai'}));
+else {
+ let prompt='';process.stdin.on('data',s=>prompt+=s);process.stdin.on('end',()=>{
+ const args=process.argv;
+ if (args[args.indexOf('--tools')+1]!=='' || !args.includes('--strict-mcp-config') || process.env.ANTHROPIC_API_KEY) process.exit(1);
+ console.log(JSON.stringify({result:'Claude answer: '+prompt.includes('Explain this file.')}));
+ });
 }
 `);
 await chmod(fakeCli, 0o755);
-
-const input = {
-  question: 'Explain this file.',
-  history: [],
-  file: { path: 'src/example.js', type: 'JS' },
-  source: 'export const answer = 42;',
-  code: '+ export const answer = 42;',
-};
-const env = {
-  ...process.env,
-  OPENAI_API_KEY: 'must-be-removed',
-  ANTHROPIC_API_KEY: 'must-be-removed',
-};
-
 try {
-  const codex = await answerWithCli({ provider: 'codex', command: fakeCli }, input, { repoRoot: appRoot, env });
-  assert.equal(codex.status, 200);
-  assert.equal(codex.body.text, 'Codex answer; keys=false,true');
-
-  const claude = await answerWithCli({ provider: 'claude', command: fakeCli }, input, { repoRoot: appRoot, env });
-  assert.equal(claude.status, 200);
-  assert.equal(claude.body.text, 'Claude answer; keys=true,false');
-
-  console.log(JSON.stringify({ codex: 'ok', claude: 'ok', subscriptionEnvSafe: true }));
-} finally {
-  await rm(tempRoot, { recursive: true, force: true });
-}
+ const env={...process.env,OPENAI_API_KEY:'must-not-bill',ANTHROPIC_API_KEY:'must-not-bill',ANTHROPIC_AUTH_TOKEN:'must-not-bill'};
+ assert.equal(childEnvironment('codex',env).OPENAI_API_KEY,undefined);
+ assert.equal(childEnvironment('claude',env).ANTHROPIC_API_KEY,undefined);
+ assert.equal(childEnvironment('claude',env).ANTHROPIC_AUTH_TOKEN,undefined);
+ assert.equal(resolveAiProvider({...env,PATCHWORK_CODEX_BIN:'/nonexistent/codex',PATCHWORK_CLAUDE_BIN:'/nonexistent/claude'}).available,false);
+ const info={provider:'claude',command:fakeCli,available:true};
+ const answer=await answerWithCli(info,{question:'Explain this file.',file:{path:'demo.js'},source:'const x=1;'}, {env});
+ assert.equal(answer.status,200);assert.equal(answer.body.text,'Claude answer: true');
+ assert.equal((await inspectAiProvider(info,{env:{...env,TEST_API:'yes'}})).available,false);
+ const aborted=new AbortController();aborted.abort();
+ assert.equal((await runCommand(process.execPath,['-e','setTimeout(()=>{},5000)'],{signal:aborted.signal})).reason,'aborted');
+ console.log('Providers: no automatic API billing, auth gates, tool isolation, stdin prompts and cancellation passed.');
+} finally { await rm(tempRoot,{recursive:true,force:true}); }

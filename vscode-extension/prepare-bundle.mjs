@@ -8,8 +8,7 @@ const bundleRoot = resolve(extensionRoot, 'bundle');
 
 rmSync(bundleRoot, { recursive: true, force: true });
 mkdirSync(bundleRoot, { recursive: true });
-cpSync(resolve(sourceRoot, 'companion.mjs'), resolve(bundleRoot, 'companion.mjs'));
-cpSync(resolve(sourceRoot, 'providers.mjs'), resolve(bundleRoot, 'providers.mjs'));
+for (const name of ['companion.mjs', 'providers.mjs', 'snapshot.mjs', 'codex-server.mjs', 'ai-service.mjs', 'review-guide.mjs', 'walkthrough-service.mjs']) cpSync(resolve(sourceRoot, name), resolve(bundleRoot, name));
 cpSync(resolve(sourceRoot, 'index.html'), resolve(bundleRoot, 'index.html'));
 cpSync(resolve(sourceRoot, 'src'), resolve(bundleRoot, 'src'), { recursive: true });
 cpSync(resolve(sourceRoot, 'public'), resolve(bundleRoot, 'public'), { recursive: true });

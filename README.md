@@ -1,83 +1,69 @@
 # Patchwork
 
-Patchwork is a mobile-first PWA prototype for reviewing uncommitted code from a laptop, one focused file at a time.
+Review a laptop's uncommitted Git changes from your phone. Patchwork is a read-only PWA with a local Node companion and an optional VS Code launcher. Notes, drafts, review decisions and walkthrough progress stay in the phone's browser.
 
-## What is in this first slice
+## Start
 
-- A review queue for changed files with additions/removals and review progress.
-- A realistic diff reader with file navigation and focused review actions.
-- Diff, full current-source, and rendered Markdown views for each changed file.
-- An AI-style “Code guide” panel that explains the selected file and accepts follow-up questions.
-- Local persistence for the queue, per-file notes, and chat history through `localStorage`.
-- A service worker and manifest so the review experience is available after the first load without a network connection.
-- Responsive layouts that switch to a drawer/bottom-nav experience on a phone-sized viewport.
-
-The UI opens with sample workspace data so it can be previewed as a standalone static page. When served by the included companion, it hydrates the `files` collection from the laptop repository while keeping review state local on the device.
-
-Notes are private to the device that created them. They are not sent to the laptop companion or included in AI requests unless you copy them into a chat message yourself.
-
-## Run locally
-
-From this directory, use any static server. For example:
+Requires Node.js 20+ and Git. No npm runtime dependencies are needed for the companion.
 
 ```sh
-python3 -m http.server 4173
+node companion.mjs /absolute/path/to/repository
 ```
 
-Then open `http://localhost:4173`. The service worker requires `localhost` (or HTTPS) to register.
+Open `http://127.0.0.1:4321`. `npm run serve` runs the companion for the current repository. A clean repository shows an empty queue; sample files appear only after choosing **Explore demo** when no snapshot is loaded. Demo mode does not fabricate AI answers.
 
-## Connect a laptop workspace
+For phone access, use the VS Code launcher in [vscode-extension](vscode-extension/README.md). It starts a local companion and a temporary HTTPS Cloudflare Quick Tunnel. Install `cloudflared`, open the extension in a VS Code Extension Development Host, then choose **Patchwork: Start Secure Tunnel**. Scan the pairing QR code. The laptop must remain running and connected. Keep the pairing link private.
 
-The included read-only companion can expose the current `git diff HEAD` and fetch the full current source of changed files to the PWA. It does not stage, edit, or commit anything.
+Quick Tunnels are a development transport, with changing URLs and no uptime guarantee. Browser storage belongs to each URL's origin: **export a private backup before changing the tunnel URL**, then import it at the new one. The launcher also accepts an existing named tunnel and stable public URL; see its README for setup. Patchwork does not provision a domain, paid relay, or cloud database.
+
+Advanced trusted-LAN preview: `PATCHWORK_HOST=0.0.0.0 node companion.mjs /path/to/repo` prints a pairing token. HTTPS is required for PWA installation on phones; optional `PATCHWORK_TLS_KEY` and `PATCHWORK_TLS_CERT` supply certificates. The tunnel is a trusted intermediary, not application-level end-to-end encryption.
+
+## Review on mobile
+
+- Read diffs, captured source and sanitized Markdown. Adjust code size, wrap long lines, fold unchanged context and jump between hunks.
+- Mark a file reviewed explicitly; **reviewed and next** advances through the queue. Decisions survive refresh only when that file's repository, comparison base, branch, path and content revision match.
+- Tap a line to add a private question, including an old/new side and range. Resolve questions separately from reviewing files. Notes on earlier revisions remain visible as historical notes.
+- Drafts, selection, scroll position and conversations are stored in IndexedDB. Storage failures are visible. Export a full private backup or a Markdown review summary for desktop follow-up.
+- Offline mode keeps the last snapshot, notes and sources already opened. Uncached source is labeled unavailable; a failed connection never substitutes demo data.
+
+Snapshots bind diffs and source to the same captured revision. Refresh explicitly to see new laptop changes. Very large or rapidly changing worktrees fail visibly instead of silently omitting files. Current limits: 2,000 changed files, 2 MiB per file, 16 MiB per capture, and eight cached snapshots within 64 MiB. Old snapshots may expire on the companion; local review history remains on the device.
+
+## Code guide and subscriptions
+
+Install and sign in to Codex or Claude Code on the laptop. By default, Patchwork tries a verified Codex ChatGPT login, then a verified Claude Code login. Credentials stay on the laptop. Requests consume that account's allowance; availability and plan limits still apply. Patchwork never automatically falls back to a paid API key.
 
 ```sh
-node companion.mjs /absolute/path/to/your/repository
+PATCHWORK_AI_PROVIDER=codex node companion.mjs /path/to/repo
+# Alternatives: claude, auto (default), none (disable AI)
 ```
 
-By default it binds to `127.0.0.1:4321`. For phone access, use the VS Code launcher below, which starts a temporary HTTPS Quick Tunnel and keeps the companion bound to the laptop only. The direct LAN command remains available for local development and trusted-network debugging:
+If the CLI reports that your configured model requires a newer version, update the Codex CLI or explicitly set `PATCHWORK_CODEX_MODEL` to a model that version supports. A live test on the development machine succeeded with `PATCHWORK_CODEX_MODEL=gpt-5.5`; the configured Astra model required a newer CLI.
+
+Codex uses its app-server conversation protocol, streams replies, and retains a bounded set of ephemeral conversation threads. Claude Code receives explicit conversation history. Both run without repository tools in an empty temporary directory. Selected captured code and the questions you send reach the chosen provider. Private notes are excluded unless you put them into a question yourself.
+
+The guided walkthrough builds a short sequence covering intent, execution, edge cases and verification across selected related changed files. Citations are checked against the captured snapshot. It shows the included scope and missing context; it cannot inspect arbitrary unchanged callers. Understanding a step never marks a file reviewed.
+
+API billing is available only by explicit opt-in:
 
 ```sh
-PATCHWORK_HOST=0.0.0.0 node companion.mjs /absolute/path/to/your/repository
+PATCHWORK_AI_PROVIDER=api OPENAI_API_KEY=your-key OPENAI_MODEL=your-model \
+  node companion.mjs /path/to/repo
 ```
 
-When run directly with `PATCHWORK_HOST=0.0.0.0`, the companion prints an ephemeral pairing token. This HTTP mode is only for a trusted local-network preview; do not use it on public Wi‑Fi. The VS Code Quick Tunnel flow is the supported phone workflow because it provides a publicly trusted HTTPS URL without installing a certificate on the phone.
+This mode is billed separately by the API provider. API requests use `store: false`. Setting an API key alone does not enable it. Native voice is deferred; see [TODO.md](TODO.md).
 
-## Enable the Code guide
-
-The companion now has an optional server-side AI route. The browser sends the selected file and recent chat context to the laptop; the API key never enters the mobile client.
+## Checks and packaging
 
 ```sh
-OPENAI_API_KEY="your-key" OPENAI_MODEL="gpt-5" \
-  node companion.mjs /absolute/path/to/your/repository
-```
-
-Without `OPENAI_API_KEY`, the UI stays in a local preview mode with deterministic sample answers. With a key configured, questions go through the Responses API and are requested with `store: false`.
-
-The laptop companion can also reuse an existing local Codex or Claude Code login. Set `PATCHWORK_AI_PROVIDER=codex` or `PATCHWORK_AI_PROVIDER=claude` before starting it; `PATCHWORK_AI_PROVIDER=auto` prefers Codex, then Claude Code, then the API key provider. The CLI runs on the laptop in read-only, non-persistent mode, so the phone never receives CLI credentials. When using an existing subscription, Patchwork removes API-key environment overrides by default to avoid silently switching to metered API billing; explicitly opt in with `PATCHWORK_CODEX_USE_API_KEY=true` or `PATCHWORK_CLAUDE_USE_API_KEY=true` if that is intentional.
-
-The provider contract can be checked without a real key or external request:
-
-```sh
-npm run test:smoke
-```
-
-The gentle nudge asks for browser notification permission and schedules a 7:30 PM reminder while the app is running. If the app was closed at reminder time, the next launch shows an in-app one-file nudge. Reliable OS notification delivery while the app is fully closed will still need a push service or a native wrapper.
-
-## VS Code launcher
-
-The `vscode-extension/` folder contains the laptop-side launcher. Install Cloudflare's `cloudflared` helper once (`brew install cloudflared` on macOS), open the extension in VS Code, press `F5` to start an Extension Development Host, and open a Git repository there. The extension contributes a Patchwork icon to the Activity Bar; click it to open the pairing view and start the read-only companion behind a temporary HTTPS Quick Tunnel on demand. `Patchwork: Start Secure Tunnel` remains available from the Command Palette. `patchwork.autoStart` is off by default and can be enabled if you want it to start whenever VS Code opens with a workspace.
-
-Quick Tunnels are free and do not require a Cloudflare account or domain, but they are intended for development/testing and have no uptime guarantee. They let the phone connect over cellular or another Wi‑Fi network, provided both devices have Internet access. The tunnel relays traffic through Cloudflare, so it protects against local-network snooping while treating Cloudflare as a trusted intermediary. The pairing link includes a short-lived token and should be kept private.
-
-The extension bundles the companion during `vscode:prepublish` and uses the sibling script while developing from this repository. Configure `patchwork.aiProvider` to choose `auto`, Codex, Claude Code, or the API provider.
-
-To build and install a local VSIX:
-
-```sh
+npm test
+npm run extension:bundle
 cd vscode-extension
 npm install
 npm run package
-code --install-extension ./patchwork-vscode-0.1.0.vsix --force
 ```
 
-This is local sideloading; Marketplace publishing is still a separate future step.
+For the browser regression, start the companion with AI disabled and run `playwright-cli open http://127.0.0.1:4321`, then `playwright-cli run-code --filename=tests/browser-review.cjs`. The scenario uses stub responses and an isolated browser, checks phone/tablet behavior and saves screenshots under `/tmp`.
+
+The automated checks use temporary repositories and stub providers; they do not spend an AI subscription or require real API credentials. HTTP tests need permission to bind loopback ports. The extension packages the companion and all required modules; source-checkout fallback is only available in extension development mode.
+
+Patchwork does not stage, edit, commit, publish comments or approve pull requests. Review decisions are local personal state, not remote repository approvals.

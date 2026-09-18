@@ -1,899 +1,340 @@
-let files = [
-  {
-    id: 'runtime',
-    path: 'src/lib/runtime.ts',
-    folder: 'src/lib',
-    label: 'runtime.ts',
-    type: 'TS',
-    added: 18,
-    removed: 5,
-    size: '4.8 KB',
-    changed: '12 min ago',
-    tone: 'lime',
-    summary: 'Request lifecycle and cached context',
-    lines: [
-      ['context', '1', 'import { createContext } from "./context";'],
-      ['context', '2', 'import { cache } from "./cache";'],
-      ['blank', '3', ''],
-      ['normal', '4', 'export async function runRequest(request: Request) {'],
-      ['removed', '5', '  const session = await getSession(request);'],
-      ['added', '5', '  const session = await cache.session(request);'],
-      ['added', '6', '  const context = createContext({ request, session });'],
-      ['normal', '7', ''],
-      ['normal', '8', '  if (context.isOffline) {'],
-      ['added', '9', '    return context.fromSnapshot();'],
-      ['normal', '10', '  }'],
-      ['normal', '11', ''],
-      ['normal', '12', '  const response = await context.execute();'],
-      ['removed', '13', '  await saveSession(session);'],
-      ['added', '13', '  await cache.persist({ session, response });'],
-      ['normal', '14', ''],
-      ['normal', '15', '  return response;'],
-      ['normal', '16', '}'],
-    ],
-  },
-  {
-    id: 'shell',
-    path: 'src/components/app/shell.tsx',
-    folder: 'src/components/app',
-    label: 'shell.tsx',
-    type: 'TSX',
-    added: 32,
-    removed: 14,
-    size: '8.1 KB',
-    changed: '24 min ago',
-    tone: 'orange',
-    summary: 'Responsive app frame and navigation',
-    lines: [
-      ['context', '1', 'import { Outlet } from "react-router";'],
-      ['context', '2', 'import { BottomNav } from "./bottom-nav";'],
-      ['blank', '3', ''],
-      ['normal', '4', 'export function AppShell() {'],
-      ['added', '5', '  const isSmallScreen = useMediaQuery("(max-width: 720px)");'],
-      ['normal', '6', ''],
-      ['removed', '7', '  return <div className="shell"><Sidebar /></div>;'],
-      ['added', '7', '  return ('],
-      ['added', '8', '    <div className={cn("shell", isSmallScreen && "compact")}>'],
-      ['added', '9', '      <Sidebar />'],
-      ['added', '10', '      <main><Outlet /></main>'],
-      ['added', '11', '      {isSmallScreen && <BottomNav />}'],
-      ['added', '12', '    </div>'],
-      ['normal', '13', '  );'],
-      ['normal', '14', '}'],
-    ],
-  },
-  {
-    id: 'service',
-    path: 'src/lib/media/service.ts',
-    folder: 'src/lib/media',
-    label: 'service.ts',
-    type: 'TS',
-    added: 11,
-    removed: 2,
-    size: '3.2 KB',
-    changed: '48 min ago',
-    tone: 'blue',
-    summary: 'Local media fallback and upload queue',
-    lines: [
-      ['normal', '1', 'export async function resolveMedia(id: string) {'],
-      ['normal', '2', '  const local = await mediaStore.get(id);'],
-      ['added', '3', '  if (local) return local;'],
-      ['normal', '4', '  return remoteMedia.fetch(id);'],
-      ['normal', '5', '}'],
-    ],
-  },
-  {
-    id: 'compose',
-    path: 'src/app/compose/page.tsx',
-    folder: 'src/app/compose',
-    label: 'page.tsx',
-    type: 'TSX',
-    added: 8,
-    removed: 1,
-    size: '2.2 KB',
-    changed: '1 hr ago',
-    tone: 'purple',
-    summary: 'Draft composer state',
-    lines: [
-      ['normal', '1', 'export default function ComposePage() {'],
-      ['added', '2', '  const draft = useDraftStore();'],
-      ['normal', '3', '  return <Composer draft={draft} />;'],
-      ['normal', '4', '}'],
-    ],
-  },
-  {
-    id: 'spec',
-    path: 'docs/SPEC.md',
-    folder: 'docs',
-    label: 'SPEC.md',
-    type: 'MD',
-    added: 4,
-    removed: 0,
-    size: '1.4 KB',
-    changed: '2 hrs ago',
-    tone: 'pink',
-    summary: 'Product notes and review checklist',
-    lines: [
-      ['normal', '1', '# Offline review notes'],
-      ['added', '2', '- Keep the latest snapshot available on device'],
-      ['added', '3', '- Explain one file at a time'],
-      ['normal', '4', '- Defer sync actions until desktop handoff'],
-    ],
-  },
-];
+import { createWalkthroughUI } from './walkthrough.js';
+import { readReply } from './transport.js';
+import { escapeHtml as esc, icon, renderMarkdown } from './render.js';
+import { demoFiles } from './demo.js';
+import { emptyState, openStorage, sanitizeState, migrateLegacy, validateSnapshot, reviewKey, sessionKey, comparisonKey, sessionFor, notesFor, noteIsCurrent, createBackup, parseBackup, mergeState, reviewSummary } from './storage.js';
 
-const snapshotStorageKey = 'patchwork-snapshot-v1';
-const cachedSnapshot = loadSnapshot();
-if (cachedSnapshot && Array.isArray(cachedSnapshot.files)) files = cachedSnapshot.files;
-
-const defaultChat = [
-  {
-    role: 'assistant',
-    text: 'This file is the request boundary for the app. It now builds a small context object, then chooses a local snapshot when the device is offline.',
-  },
-  {
-    role: 'assistant',
-    text: 'The important change is the cache lookup on line 5. It means the rest of the request can stay unaware of where its data came from.',
-    bullets: ['Offline reads happen before network work', 'The response is persisted for the next review session'],
-  },
-];
-
-const storageKey = 'patchwork-state-v1';
-const saved = loadState();
-const queryToken = new URLSearchParams(location.search).get('token') || '';
-const initialApiToken = queryToken || saved.apiToken || '';
-if (queryToken) {
-  localStorage.setItem('patchwork-api-token', queryToken);
-  history.replaceState({}, '', `${location.pathname}${location.hash}`);
+const root = document.querySelector('#root');
+export let data = emptyState();
+export const state = { snapshot:null, selectedFile:'', activeTab:'diff', online:navigator.onLine, connection:'connecting', connectionError:'', aiEnabled:false, aiProvider:'', guideMode:'walkthrough', aiMessage:'', filesOpen:false, chatOpen:false, guideCollapsed:false, sourceLoading:new Set(), sourceErrors:new Map(), toast:'', storageError:'', demo:false, apiToken:'' };
+let storage, saveTimer, scrollTimer, toastTimer, refreshSequence = 0, dialogReturnFocus;
+const sourceRequests = new Map();
+let chatController, citation;
+const walkthrough = createWalkthroughUI({getState:()=>state,getData:()=>data,save:saveState,render,apiFetch,jump:jumpCitation});
+export const selectedFile = () => state.snapshot?.files.find((f) => f.id === state.selectedFile);
+export const currentSession = () => selectedFile() ? sessionFor(data,state.snapshot,selectedFile()) : null;
+const reviewed = (file) => Boolean(data.reviews[reviewKey(state.snapshot,file)]);
+const files = () => state.snapshot?.files || [];
+const isPreviewable = (file) => /\.(md|markdown)$/i.test(file.path);
+const small = () => matchMedia('(max-width:820px)').matches;
+const overlayGuide = () => matchMedia('(max-width:1050px)').matches;
+// The companion determines auth and billing state. The browser only displays
+// that state; it never guesses that an installed CLI is usable or billed.
+const labelForProvider = () => state.aiMessage || (state.aiProvider === 'api' ? 'API billing mode' : state.aiProvider ? `${state.aiProvider} on laptop` : 'AI not connected');
+const age = () => { const at=Date.parse(state.snapshot?.generatedAt); if (!Number.isFinite(at)) return 'No snapshot'; const minutes=Math.max(0,Math.floor((Date.now()-at)/60000)); return minutes < 1 ? 'Captured just now' : minutes < 60 ? `Captured ${minutes} min ago` : `Captured ${Math.floor(minutes/60)} hr ago`; };
+function storageFailure(error) { state.storageError=`Device storage could not save this review (${error?.name || 'storage unavailable'}). Keep this tab open and export a backup.`; renderStorageError(); }
+function renderStorageError() { let box=document.querySelector('#storage-alert'); if(box) { box.hidden=!state.storageError; box.textContent=state.storageError; } }
+export function saveState(immediate = true) {
+  clearTimeout(saveTimer);
+  const save = async () => { if (!storage) return; try { await storage.put('state',data); } catch(error) { storageFailure(error); } };
+  if (immediate) return save();
+  saveTimer=setTimeout(save,150);
 }
-const initialSelectedFile = saved.selectedFile && files.some((file) => file.id === saved.selectedFile)
-  ? saved.selectedFile
-  : cachedSnapshot?.files?.[0]?.id || 'runtime';
-const savedChats = saved.chats && typeof saved.chats === 'object' ? saved.chats : {};
-const savedNotes = saved.notes && typeof saved.notes === 'object' ? saved.notes : {};
-const state = {
-  selectedFile: initialSelectedFile,
-  reviewed: saved.reviewed || { service: true, spec: true },
-  activeTab: saved.activeTab || 'diff',
-  queueCollapsed: Boolean(saved.queueCollapsed),
-  guideCollapsed: Boolean(saved.guideCollapsed),
-  filesOpen: false,
-  chatOpen: false,
-  chat: savedChats[initialSelectedFile] || (cachedSnapshot ? defaultChatFor(files.find((file) => file.id === initialSelectedFile)) : saved.chat || defaultChat),
-  chats: savedChats,
-  notes: savedNotes,
-  online: navigator.onLine,
-  toast: '',
-  source: cachedSnapshot && Array.isArray(cachedSnapshot.files) ? 'cached' : 'sample',
-  workspaceName: cachedSnapshot?.workspaceName || saved.workspaceName || 'map-of-experience',
-  branchName: cachedSnapshot?.branch || saved.branchName || 'feature/media-queue',
-  reminder: Boolean(saved.reminder),
-  lastReminderDate: saved.lastReminderDate || '',
-  aiEnabled: false,
-  aiProvider: '',
-  apiToken: initialApiToken || localStorage.getItem('patchwork-api-token') || '',
-  pairingRequired: false,
-  sourceLoading: '',
-  sourceError: '',
-  snapshotAt: cachedSnapshot?.generatedAt || null,
-};
-
-function loadState() {
-  try {
-    return JSON.parse(localStorage.getItem(storageKey) || '{}');
-  } catch {
-    return {};
-  }
+async function saveSnapshot(snapshot) { if (!storage || state.demo) return; try { await storage.put('snapshot',snapshot); } catch(error) { storageFailure(error); } }
+function capturePosition() {
+  const session=currentSession(); if (!session) return;
+  const panel=document.querySelector('.review-panel');
+  const viewer=document.querySelector('.code-viewer,.markdown-preview');
+  const chat=document.querySelector('.chat-scroll');
+  const walk=document.querySelector('.walkthrough-scroll'), record=state.snapshot&&data.walkthroughs[JSON.stringify([state.snapshot.repoId,state.snapshot.snapshotId])];
+  if(walk&&record)record.scroll=walk.scrollTop;
+  if(panel) session.scroll.panel=panel.scrollTop;
+  if(viewer) session.scroll[state.activeTab]=viewer.scrollTop;
+  if(chat) session.scroll.chat=chat.scrollTop;
+  session.scroll.window=window.scrollY;
 }
-
-function loadSnapshot() {
-  try {
-    return JSON.parse(localStorage.getItem(snapshotStorageKey) || 'null');
-  } catch {
-    return null;
-  }
-}
-
-function cacheSnapshot(payload) {
-  try {
-    localStorage.setItem(snapshotStorageKey, JSON.stringify(payload));
-  } catch {
-    // A large repository can exceed localStorage; the service worker remains the other cache layer.
-  }
-}
-
-function snapshotAge() {
-  if (!state.snapshotAt) return 'waiting for first sync';
-  const minutes = Math.max(0, Math.floor((Date.now() - new Date(state.snapshotAt).getTime()) / 60000));
-  if (minutes < 1) return 'just now';
-  if (minutes === 1) return '1 min ago';
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.floor(minutes / 60);
-  return `${hours} hr${hours === 1 ? '' : 's'} ago`;
-}
-
-function saveState() {
-  if (state.selectedFile) state.chats[state.selectedFile] = state.chat;
-  localStorage.setItem(storageKey, JSON.stringify({
-    selectedFile: state.selectedFile,
-    reviewed: state.reviewed,
-    activeTab: state.activeTab,
-    queueCollapsed: state.queueCollapsed,
-    guideCollapsed: state.guideCollapsed,
-    chat: state.chat,
-    chats: state.chats,
-    notes: state.notes,
-    workspaceName: state.workspaceName,
-    branchName: state.branchName,
-    reminder: state.reminder,
-    lastReminderDate: state.lastReminderDate,
-    apiToken: state.apiToken,
-  }));
-}
-
-function apiFetch(path, options = {}) {
+export function apiFetch(path, options={}) {
   const headers = new Headers(options.headers || {});
-  if (state.apiToken) headers.set('x-patchwork-token', state.apiToken);
-  return fetch(path, { ...options, headers });
+  if(state.apiToken) headers.set('x-patchwork-token',state.apiToken);
+  return fetch(path,{...options,headers,cache:'no-store',signal:options.signal || AbortSignal.timeout(path.startsWith('/api/ai') || path.startsWith('/api/walkthrough') ? 120000 : 20000)});
 }
-
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;');
+function toast(text) { state.toast=text; clearTimeout(toastTimer); render(); toastTimer=setTimeout(() => {state.toast=''; render();},4500); }
+export function selectFile(id) {
+  const next=files().find((f)=>f.id===id); if(!next) return;
+  capturePosition();
+  if(state.filesOpen && history.state?.patchworkPanel) history.back();
+  state.selectedFile=id; state.filesOpen=false;
+  data.selections[comparisonKey(state.snapshot)]=next.path;
+  if(state.activeTab==='preview' && !isPreviewable(next)) state.activeTab='diff';
+  saveState(); render(false);
+  if(['source','preview'].includes(state.activeTab)) hydrateFileSource(next);
 }
-
-function icon(name, size = 20) {
-  const paths = {
-    logo: '<path d="M4 4h9.5c4 0 6.8 2.5 6.8 6 0 2.4-1.3 4.2-3.5 5.1l3.9 5.1h-4.5l-3.3-4.5H8.2v4.5H4V4Zm4.2 3.4v4.8h4.5c1.7 0 2.7-.8 2.7-2.4s-1-2.4-2.7-2.4H8.2Z"/><circle cx="20" cy="4.5" r="2.5"/>',
-    grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
-    branch: '<path d="M6 4v12a3 3 0 0 0 3 3h9"/><circle cx="6" cy="4" r="2.3"/><circle cx="18" cy="19" r="2.3"/><path d="M18 7V5a3 3 0 0 0-3-3H9"/><circle cx="18" cy="7" r="2.3"/>',
-    spark: '<path d="m12 2 1.7 6.3L20 10l-6.3 1.7L12 18l-1.7-6.3L4 10l6.3-1.7L12 2Z"/><path d="m19 16 .7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7L19 16Z"/>',
-    clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.3 2"/>',
-    settings: '<path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/><circle cx="12" cy="12" r="3.2"/>',
-    chevron: '<path d="m9 18 6-6-6-6"/>',
-    down: '<path d="m6 9 6 6 6-6"/>',
-    check: '<path d="m5 12 4.2 4L19 7"/>',
-    message: '<path d="M19 15a3 3 0 0 1-3 3H9l-4 3v-6a3 3 0 0 1-1-2.4V8a3 3 0 0 1 3-3h9a3 3 0 0 1 3 3v7Z"/>',
-    lock: '<rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>',
-    send: '<path d="m21 3-7.2 18-3.2-7.6L3 10.2 21 3Z"/><path d="m10.6 13.4 4.8-4.8"/>',
-    menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
-    close: '<path d="m6 6 12 12M18 6 6 18"/>',
-    wifi: '<path d="M4 9.5a12.2 12.2 0 0 1 16 0M7.5 13a7 7 0 0 1 9 0M11 16.3a2 2 0 0 1 2 0"/><circle cx="12" cy="19" r=".8" fill="currentColor" stroke="none"/>',
-    bolt: '<path d="m13 2-8 12h6l-1 8 8-12h-6l1-8Z"/>',
-    plus: '<path d="M12 5v14M5 12h14"/>',
-    more: '<circle cx="5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1" fill="currentColor" stroke="none"/>',
-    bookmark: '<path d="M6 4.5A1.5 1.5 0 0 1 7.5 3h9A1.5 1.5 0 0 1 18 4.5V21l-6-3.5L6 21V4.5Z"/>',
-  };
-  return `<svg class="icon" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.grid}</svg>`;
-}
-
-function selectedFile() {
-  return files.find((file) => file.id === state.selectedFile) || files[0];
-}
-
-function aiProviderLabel() {
-  if (state.aiProvider === 'codex') return 'Codex subscription';
-  if (state.aiProvider === 'claude') return 'Claude Code subscription';
-  if (state.aiProvider === 'api') return 'OpenAI API';
-  return 'laptop provider';
-}
-
-function defaultChatFor(file) {
-  if (!file) return defaultChat;
-  return [
-    { role: 'assistant', text: `This is a focused change in ${file.path}. I can explain the behavior, trace the diff, or help you look for review risks.` },
-    { role: 'assistant', text: 'A useful first pass is to follow the new lines from their inputs to their outputs, then check what happens when the happy path is unavailable.', bullets: ['Start with the added control flow', 'Ask about edge cases or unfamiliar symbols'] },
-  ];
-}
-
-function selectFile(fileId) {
-  const nextFile = files.find((file) => file.id === fileId);
-  if (!nextFile) return;
+function nextFile(mark=false) {
+  const file=selectedFile(); if(!file) return;
+  if(mark) data.reviews[reviewKey(state.snapshot,file)]=true;
+  const list=files(), index=list.indexOf(file), ordered=[...list.slice(index+1),...list.slice(0,index)];
+  const next=mark ? ordered.find((f)=>!reviewed(f)) || ordered[0] : ordered[0];
   saveState();
-  state.selectedFile = fileId;
-  state.chat = state.chats[fileId] || defaultChatFor(nextFile);
-  if (state.activeTab === 'preview' && !isPreviewable(nextFile)) state.activeTab = 'diff';
-  state.sourceError = '';
-  setFilesOpen(false);
-  saveState();
-  render();
-  if (state.activeTab === 'source' || state.activeTab === 'preview') hydrateFileSource(nextFile);
+  if(next) selectFile(next.id); else render();
+  if(mark && list.every(reviewed)) toast('All files in this snapshot are reviewed. Export a summary for desktop follow-up.');
 }
-
-function fileCount() {
-  return files.filter((file) => !state.reviewed[file.id]).length;
+function setActiveTab(tab) {
+  const f=selectedFile(); if(!f || !['diff','source','preview','notes'].includes(tab) || (tab==='preview'&&!isPreviewable(f))) return;
+  capturePosition(); state.activeTab=tab; saveState(); render(false);
+  if(['source','preview'].includes(tab)) hydrateFileSource(f);
 }
-
-function nextReviewFile() {
-  return files.find((file) => !state.reviewed[file.id]) || null;
+export async function hydrateFileSource(file) {
+  const snapshot=state.snapshot;
+  if(!file || !snapshot || typeof file.source==='string' || file.sourceAvailable===false || state.demo) return;
+  const key=sessionKey(snapshot,file);
+  if(sourceRequests.has(key)) return sourceRequests.get(key);
+  if(!state.online) return;
+  state.sourceLoading.add(key); state.sourceErrors.delete(key); render();
+  const promise=(async()=>{
+    try {
+      const response=await apiFetch(`/api/file?snapshotId=${encodeURIComponent(snapshot.snapshotId)}&path=${encodeURIComponent(file.path)}`);
+      const payload=await response.json();
+      if(!response.ok) throw new Error(response.status===409 ? 'This snapshot expired on the laptop. Refresh the snapshot to read source.' : payload.error || 'Source could not be loaded.');
+      if(payload.snapshotId!==snapshot.snapshotId || payload.path!==file.path || payload.version!==file.version || typeof payload.source!=='string') throw new Error('Source did not match this exact snapshot. Refresh and try again.');
+      file.source=payload.source;
+      if(state.snapshot===snapshot) await saveSnapshot(snapshot);
+    } catch(error) { state.sourceErrors.set(key,error.message || 'The laptop is unreachable.'); }
+    finally { state.sourceLoading.delete(key); sourceRequests.delete(key); if(state.snapshot===snapshot && selectedFile()===file) render(); }
+  })();
+  sourceRequests.set(key,promise); return promise;
 }
-
-function totalChanges() {
-  return files.reduce((sum, file) => sum + file.added, 0);
-}
-
 function renderFileRow(file) {
-  const reviewed = Boolean(state.reviewed[file.id]);
-  const selected = state.selectedFile === file.id;
-  return `<button class="file-row ${selected ? 'selected' : ''} ${reviewed ? 'reviewed' : ''}" data-file-id="${file.id}" aria-current="${selected ? 'page' : 'false'}">
-    <span class="file-type type-${file.tone}">${file.type}</span>
-    <span class="file-row-copy">
-      <span class="file-name">${file.label}</span>
-      <span class="file-path">${file.folder}</span>
-    </span>
-    <span class="file-row-meta">
-      <span class="change-count"><b>+${file.added}</b>${file.removed ? `<i>−${file.removed}</i>` : ''}</span>
-      <span class="review-state">${reviewed ? icon('check', 13) : icon('chevron', 14)}</span>
-    </span>
-  </button>`;
+  const unresolved=notesFor(data,state.snapshot,file).filter((n)=>n.status==='open').length;
+  return `<button class="file-row ${file.id===state.selectedFile?'selected':''} ${reviewed(file)?'reviewed':''}" data-file-id="${esc(file.id)}" aria-current="${file.id===state.selectedFile?'page':'false'}"><span class="file-type type-${esc(file.tone)}">${esc(file.type)}</span><span class="file-row-copy"><span class="file-name">${esc(file.label)}</span><span class="file-path">${esc(file.folder)}${unresolved?` · ${unresolved} open question${unresolved===1?'':'s'}`:''}</span></span><span class="file-row-meta"><span class="change-count"><b>+${file.added}</b><i>−${file.removed}</i></span><span class="review-state" aria-label="${reviewed(file)?'Reviewed':'Needs review'}">${icon(reviewed(file)?'check':'chevron',14)}</span></span></button>`;
 }
-
-function renderChatMessage(message) {
-  const bullets = message.bullets?.length ? `<ul>${message.bullets.map((bullet) => `<li>${escapeHtml(bullet)}</li>`).join('')}</ul>` : '';
-  return `<div class="chat-message ${message.role}${message.pending ? ' pending' : ''}">
-    ${message.role === 'assistant' ? `<div class="assistant-avatar">${icon('spark', 15)}</div>` : ''}
-    <div class="message-bubble">${escapeHtml(message.text)}${bullets}</div>
-  </div>`;
-}
-
-function renderCode(file) {
-  return (file.lines || []).map(([kind, number, text]) => `<div class="code-line ${kind}">
-    <span class="line-number">${number}</span><span class="line-sign">${kind === 'added' ? '+' : kind === 'removed' ? '−' : ''}</span><code>${escapeHtml(text) || '&nbsp;'}</code>
-  </div>`).join('');
-}
-
-function isPreviewable(file) {
-  return Boolean(file && (file.type === 'MD' || /\.(md|markdown)$/i.test(file.path || '')));
-}
-
-function fileSource(file) {
-  if (typeof file.source === 'string') return file.source;
-  return (file.lines || [])
-    .filter(([kind]) => kind !== 'removed')
-    .map(([, , text]) => text || '')
-    .join('\n');
-}
-
-function renderSourceLines(source) {
-  return source.split(/\r?\n/).map((line, index) => `<div class="source-line"><span class="line-number">${index + 1}</span><code>${escapeHtml(line) || '&nbsp;'}</code></div>`).join('');
-}
-
-function renderSourceUnavailable(file) {
-  const offline = !state.online;
-  return `<section class="source-empty"><div class="source-empty-icon">${icon(offline ? 'wifi' : 'branch', 20)}</div><span class="eyebrow">${offline ? 'OFFLINE SOURCE' : 'SOURCE UNAVAILABLE'}</span><h3>${offline ? 'This file has not been cached yet.' : (state.sourceError || 'The current file could not be loaded.')}</h3><p>${offline ? 'Reconnect to the laptop once while viewing this file. After that, its normal source will be available offline.' : 'The diff is still available. Try loading the current file again when the companion is reachable.'}</p>${offline ? '' : '<button class="secondary-button" data-action="retry-source">Try again</button>'}</section>`;
-}
-
-function renderSource(file) {
-  const hasSource = typeof file.source === 'string' || state.source === 'sample';
-  if (state.sourceLoading === file.id) return `<section class="source-empty"><div class="source-loading"><span></span><span></span><span></span></div><span class="eyebrow">READING CURRENT FILE</span><h3>Loading the normal file view…</h3><p>The laptop companion is sending the file as it exists in your working tree.</p></section>`;
-  if (!hasSource) return renderSourceUnavailable(file);
-  const source = fileSource(file);
-  return `<section class="code-card source-card"><div class="code-toolbar"><span>${icon('branch', 15)} Current file</span><span class="source-badge">normal source</span></div><div class="code-meta"><span>${escapeHtml(file.path)}</span><span>${file.size} · ${source.split(/\r?\n/).length} lines</span></div><div class="code-viewer source-viewer">${renderSourceLines(source)}</div></section>`;
-}
-
-function inlineMarkdown(text) {
-  let value = escapeHtml(text);
-  value = value.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
-  value = value.replace(/`([^`]+)`/g, '<code>$1</code>');
-  value = value.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  value = value.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-  return value;
-}
-
-function renderMarkdown(source) {
-  const output = [];
-  const lines = source.split(/\r?\n/);
-  let inCode = false;
-  let listType = '';
-  const closeList = () => {
-    if (listType) output.push(`</${listType}>`);
-    listType = '';
-  };
-
-  for (const line of lines) {
-    if (/^\s*```/.test(line)) {
-      if (inCode) output.push('</code></pre>');
-      else output.push('<pre><code>');
-      inCode = !inCode;
-      continue;
-    }
-    if (inCode) {
-      output.push(escapeHtml(line) || '\n');
-      continue;
-    }
-    const unordered = line.match(/^\s*[-*+]\s+(.+)/);
-    const ordered = line.match(/^\s*\d+\.\s+(.+)/);
-    if (unordered || ordered) {
-      const nextType = unordered ? 'ul' : 'ol';
-      if (listType !== nextType) {
-        closeList();
-        listType = nextType;
-        output.push(`<${listType}>`);
-      }
-      output.push(`<li>${inlineMarkdown((unordered || ordered)[1])}</li>`);
-      continue;
-    }
-    closeList();
-    if (!line.trim()) continue;
-    const heading = line.match(/^\s*(#{1,6})\s+(.+)/);
-    if (heading) {
-      const level = heading[1].length;
-      output.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`);
-    } else if (/^\s*>\s?/.test(line)) {
-      output.push(`<blockquote>${inlineMarkdown(line.replace(/^\s*>\s?/, ''))}</blockquote>`);
-    } else {
-      output.push(`<p>${inlineMarkdown(line)}</p>`);
-    }
+function renderDiff(file) {
+  let previousChange=false, hunk=0;
+  const rows=(file.lines || []).map(([rawKind,number,text])=>{
+    const kind=['context','normal','added','removed','blank','hunk'].includes(rawKind)?rawKind:'normal';
+    const changed=kind==='added'||kind==='removed';
+    const hunkStart=(changed&&!previousChange)||kind==='hunk'; previousChange=changed;
+    const line=Number(number), validLine=Number.isInteger(line)&&line>0;
+    return `<div class="code-line ${kind} ${hunkStart?'hunk-start':''}" ${hunkStart?`data-hunk="${hunk++}"`:''}><button class="line-number" ${validLine?`data-line="${line}" data-side="${kind==='removed'?'old':'new'}" aria-label="Add a note at ${kind==='removed'?'old':'new'} line ${line}"`:'disabled aria-label="Diff separator"'}>${esc(number)}</button><span class="line-sign">${kind==='added'?'+':kind==='removed'?'−':''}</span><code>${esc(text)||'&nbsp;'}</code></div>`;
+  });
+  if(!data.preferences.compactContext) return rows.join('');
+  const output=[];
+  for(let i=0;i<rows.length;) {
+    if(['added','removed','hunk'].includes(file.lines[i][0])) {output.push(rows[i++]);continue;}
+    const start=i; while(i<rows.length&&!['added','removed','hunk'].includes(file.lines[i][0])) i++;
+    if(i-start>4) output.push(rows[start],`<details class="unchanged-context"><summary>${i-start-2} unchanged lines</summary>${rows.slice(start+1,i-1).join('')}</details>`,rows[i-1]);
+    else output.push(...rows.slice(start,i));
   }
-  closeList();
-  if (inCode) output.push('</code></pre>');
   return output.join('');
 }
-
-function renderPreview(file) {
-  if (!isPreviewable(file)) return renderSource(file);
-  const hasSource = typeof file.source === 'string' || state.source === 'sample';
-  if (state.sourceLoading === file.id) return `<section class="source-empty"><div class="source-loading"><span></span><span></span><span></span></div><span class="eyebrow">RENDERING MARKDOWN</span><h3>Loading the normal file first…</h3><p>Preview uses the current file, not only the changed lines.</p></section>`;
-  if (!hasSource) return renderSourceUnavailable(file);
-  const source = fileSource(file);
-  return `<section class="code-card preview-card"><div class="code-toolbar"><span>${icon('bookmark', 15)} Rendered Markdown</span><span class="source-badge">preview</span></div><div class="code-meta"><span>${escapeHtml(file.path)}</span><span>${source.split(/\r?\n/).length} lines</span></div><article class="markdown-preview">${renderMarkdown(source)}</article></section>`;
+function notesContent(file) {
+  const session=currentSession(), notes=notesFor(data,state.snapshot,file);
+  return `<section class="notes-card"><div class="notes-content"><h3>Questions & notes</h3><p>Private to this browser. Export a backup before changing tunnel links. Tap a code line to anchor a question.</p><form id="note-form"><div class="note-range"><label>Side <select name="side"><option value="new" ${session.noteSide==='old'?'':'selected'}>New source</option><option value="old" ${session.noteSide==='old'?'selected':''}>Old source</option></select></label><label>Start line <input name="start" type="number" min="1" step="1" value="${esc(session.noteStart)}"></label><label>End line <input name="end" type="number" min="1" step="1" value="${esc(session.noteEnd)}"></label></div><label for="note-text">Question or follow-up</label><textarea id="note-text" name="note" required placeholder="What needs another look?">${esc(session.noteDraft)}</textarea><button class="primary-button" type="submit">Save question</button><span class="note-save-status">Draft saved on this device${state.storageError?' — storage error':''}</span></form><div class="note-list">${notes.map((n)=>`<article class="review-note"><span class="eyebrow">${noteIsCurrent(n,state.snapshot,file)?'CURRENT REVISION':`HISTORICAL · ${esc(n.version.slice(0,12))}`} · ${esc(n.status)}</span><p class="note-anchor">${n.start?`${n.side==='old'?'Old':'New'} lines ${n.start}–${n.end||n.start}`:'Whole file'} · ${esc(n.createdAt)}</p><p class="note-text">${esc(n.text)}</p><button class="secondary-button" data-note-toggle="${esc(n.id)}">${n.status==='resolved'?'Reopen question':'Resolve question'}</button></article>`).join('')}</div>${data.historicalNotes.length?`<details class="legacy-notes"><summary>${data.historicalNotes.length} legacy notes (repository and revision unverified)</summary>${data.historicalNotes.map((n)=>`<article><b>${esc(n.path)}</b><p>${esc(n.text)}</p></article>`).join('')}</details>`:''}</div></section>`;
 }
-
-function renderReviewContent(file) {
-  if (state.activeTab === 'source') return renderSource(file);
-  if (state.activeTab === 'preview') return renderPreview(file);
-  if (state.activeTab === 'overview') return `<section class="overview-card"><div class="overview-illustration"><span></span><span></span><span></span></div><div><span class="eyebrow">FILE OVERVIEW</span><h3>${file.summary}</h3><p>This change touches one focused part of the project. Read the diff below as a short story: what changed, why it changed, and what might surprise you later.</p><div class="overview-chips"><span>+${file.added} additions</span><span>−${file.removed} removals</span><span>${file.type}</span></div></div></section>`;
-  if (state.activeTab === 'notes') return `<section class="notes-card"><div class="notes-icon">${icon('bookmark', 21)}</div><div><h3>Keep a note for future-you</h3><p>Notes stay on this device, even when you are offline. Capture a question, a follow-up, or the part you want to revisit.</p><textarea data-note-input placeholder="Add a note about this file…">${escapeHtml(state.notes[file.id] || '')}</textarea><div class="note-save-status" data-note-status>${state.notes[file.id] ? 'Saved on this device' : 'Private note · saved on this device'}</div></div></section>`;
-  return `<section class="code-card"><div class="code-toolbar"><span>${icon('branch', 15)} Working tree changes</span><span class="code-toolbar-right"><span class="diff-legend"><i class="add-dot"></i> additions <i class="remove-dot"></i> removals</span><button aria-label="More diff actions">${icon('more', 17)}</button></span></div><div class="code-meta"><span>${escapeHtml(file.path)}</span><span>${file.size} · ${file.changed}</span></div><div class="code-viewer">${renderCode(file)}</div></section>`;
+function renderContent(file) {
+  if(state.activeTab==='notes') return notesContent(file);
+  const sourceTab=state.activeTab!=='diff', key=sessionKey(state.snapshot,file);
+  if(sourceTab && typeof file.source!=='string') return `<section class="source-empty"><h3>${state.sourceLoading.has(key)?'Reading snapshot source…':file.sourceAvailable===false?'Source unavailable for this entry':state.online?'Source is not cached for this snapshot':'Offline — source not cached'}</h3><p>${esc(state.sourceErrors.get(key)||file.sourceReason||'The diff is available. Source must be fetched from this exact immutable snapshot.')}</p>${state.online&&file.sourceAvailable!==false&&!state.sourceLoading.has(key)?'<button class="secondary-button" data-action="retry-source">Load snapshot source</button>':''}</section>`;
+  return `<section class="code-card ${state.activeTab==='preview'?'preview-card':''}"><div class="code-toolbar"><span>${icon('branch',15)} ${sourceTab?'Snapshot source':'Working tree diff'}</span>${!sourceTab?'<button class="secondary-button" data-action="next-hunk">Next hunk ↓</button>':''}</div><div class="code-meta"><span>${esc(file.path)}</span><span>Revision ${esc(file.version.slice(0,12))}</span></div>${state.activeTab==='preview'?`<article class="markdown-preview">${renderMarkdown(file.source)}</article>`:`<div class="code-viewer ${data.preferences.wrap?'wrap-code':''}">${sourceTab?file.source.split(/\r?\n/).map((line,i)=>`<div class="source-line"><button class="line-number" data-line="${i+1}" data-side="new" aria-label="Add a note at line ${i+1}">${i+1}</button><code>${esc(line)||'&nbsp;'}</code></div>`).join(''):renderDiff(file)||'<p class="empty-diff">No textual diff available. Review the status and source where available.</p>'}</div>`}</section>`;
 }
-
-function setActiveTab(tab) {
-  const file = selectedFile();
-  if (!file || !['diff', 'source', 'preview', 'overview', 'notes'].includes(tab)) return;
-  if (tab === 'preview' && !isPreviewable(file)) return;
-  state.activeTab = tab;
-  state.sourceError = '';
-  saveState();
-  render();
-  if (tab === 'source' || tab === 'preview') hydrateFileSource(file);
-}
-
-async function hydrateFileSource(file) {
-  if (!file || typeof file.source === 'string') return;
-  if (!state.online || state.source === 'sample') {
-    render();
-    return;
+function conversationHistory(file) {
+  if(!file)return '';
+  const currentKey=sessionKey(state.snapshot,file), histories=[];
+  for(const [key,session] of Object.entries(data.sessions)) {
+    let identity;try{identity=JSON.parse(key);}catch{continue;}
+    if(identity[0]!==state.snapshot.repoId||identity[2]!==file.path)continue;
+    for(const chat of session.archives||[])histories.push({label:'Earlier conversation',chat});
+    if(key!==currentKey&&session.chat.length)histories.push({label:`Earlier snapshot · ${identity[1].slice(0,12)}`,chat:session.chat});
   }
-  state.sourceLoading = file.id;
-  state.sourceError = '';
-  render();
-  try {
-    const response = await apiFetch(`/api/file?path=${encodeURIComponent(file.path)}`, { cache: 'no-store' });
-    if (!response.ok) throw new Error('The current file is unavailable.');
-    const payload = await response.json();
-    if (typeof payload.source !== 'string') throw new Error('The companion returned no file contents.');
-    file.source = payload.source;
-    cacheSnapshot({ workspaceName: state.workspaceName, branch: state.branchName, generatedAt: state.snapshotAt || new Date().toISOString(), files });
-  } catch (error) {
-    state.sourceError = error instanceof Error ? error.message : 'The current file could not be loaded.';
-  } finally {
-    if (state.sourceLoading === file.id) state.sourceLoading = '';
-    if (state.selectedFile === file.id) render();
-  }
+  return histories.length?`<details class="chat-history"><summary>${histories.length} saved earlier conversation(s)</summary>${histories.map((h)=>`<section><h4>${esc(h.label)}</h4>${h.chat.map((m)=>`<p><b>${m.role==='user'?'You':'Guide'}:</b> ${esc(m.text)}</p>`).join('')}</section>`).join('')}</details>`:'';
 }
-
-function render() {
-  const file = selectedFile();
-  if (!file) {
-    renderEmpty();
-    return;
-  }
-  const reviewed = Boolean(state.reviewed[file.id]);
-  const reviewedCount = files.length - fileCount();
-  const progress = Math.round((reviewedCount / files.length) * 100);
-  const next = files.find((item) => item.id !== file.id && !state.reviewed[item.id]);
-  document.body.classList.toggle('files-menu-open', state.filesOpen);
-
-  document.querySelector('#root').innerHTML = `
-    <div class="app-shell ${state.chatOpen ? 'chat-is-open' : ''} ${state.filesOpen ? 'files-is-open' : ''} ${state.queueCollapsed ? 'queue-is-collapsed' : ''} ${state.guideCollapsed ? 'guide-is-collapsed' : ''}">
-      <header class="mobile-topbar">
-        <button class="icon-button" data-action="toggle-files" aria-label="Open files">${icon('menu', 21)}</button>
-        <div class="mobile-wordmark"><span class="wordmark-mark">${icon('logo', 22)}</span>patchwork</div>
-        <button class="icon-button ${state.chatOpen ? 'active' : ''}" data-action="toggle-chat" aria-label="Open code guide">${icon('message', 20)}</button>
-      </header>
-      ${state.filesOpen ? '<button class="file-drawer-scrim" data-action="toggle-files" aria-label="Close file list"></button>' : ''}
-
-      <aside class="sidebar">
-        <div class="brand"><span class="brand-mark">${icon('logo', 24)}</span><span>patchwork</span><span class="brand-dot"></span></div>
-        <div class="workspace-switcher"><span class="repo-avatar">${escapeHtml(state.workspaceName.slice(0, 2).toUpperCase())}</span><span><b>${escapeHtml(state.workspaceName)}</b><small>${state.source === 'companion' ? 'laptop companion' : state.source === 'cached' ? 'offline snapshot' : 'sample workspace'}</small></span>${icon('down', 14)}</div>
-        <nav class="primary-nav" aria-label="Primary navigation">
-          <button class="nav-item active">${icon('grid', 18)}<span>Review queue</span><em>${fileCount()}</em></button>
-          <button class="nav-item">${icon('branch', 18)}<span>Branches</span></button>
-          <button class="nav-item">${icon('bookmark', 18)}<span>Saved notes</span></button>
-        </nav>
-        <div class="sidebar-spacer"></div>
-        <div class="streak-card">
-          <div class="streak-icon">${icon('bolt', 16)}</div>
-          <div><strong>2 day streak</strong><span>One small review counts.</span></div>
-          <button class="reminder-button ${state.reminder ? 'set' : ''}" data-action="toggle-reminder">${state.reminder ? 'Nudge set · 7:30 PM' : 'Set a gentle nudge'}</button>
-        </div>
-        <button class="nav-item muted">${icon('settings', 18)}<span>Preferences</span></button>
-        <div class="profile"><span class="profile-avatar">M</span><span><b>Mubashir</b><small>Solo developer</small></span>${icon('more', 18)}</div>
-      </aside>
-
-      <aside class="file-panel">
-        <div class="file-panel-header">
-          <div><span class="eyebrow">WORKSPACE</span><h1>Review queue</h1></div>
-          <div class="file-panel-header-actions"><button class="queue-toggle" data-action="toggle-queue" aria-label="Collapse review queue">${icon('chevron', 17)}</button><button class="close-files" data-action="toggle-files" aria-label="Close files">${icon('close', 19)}</button><button class="panel-more" aria-label="More workspace actions">${icon('more', 18)}</button></div>
-        </div>
-        <div class="branch-row"><span class="branch-name">${icon('branch', 14)} ${escapeHtml(state.branchName)}</span><span class="branch-status">${state.source === 'companion' ? 'synced' : state.source === 'cached' ? 'cached' : 'local'}</span></div>
-        ${state.pairingRequired ? '<div class="pairing-card"><span class="pairing-icon">' + icon('lock', 14) + '</span><span><b>Pair this device</b><small>Open the companion link with its token.</small></span></div>' : ''}
-        <div class="queue-progress"><div class="progress-copy"><span>${reviewedCount} of ${files.length} reviewed</span><b>${progress}%</b></div><div class="progress-track"><span style="width:${progress}%"></span></div></div>
-        <div class="queue-heading"><span>CHANGED FILES <b>${files.length}</b></span><button data-action="refresh-snapshot">Refresh ${icon('wifi', 13)}</button></div>
-        <div class="file-list">${files.map(renderFileRow).join('')}</div>
-        <div class="offline-card"><span class="offline-icon">${icon('wifi', 16)}</span><span><b>${state.source === 'companion' ? 'Laptop snapshot' : 'Ready offline'}</b><small>Last snapshot · ${snapshotAge()}</small></span><span class="ready-dot"></span></div>
-      </aside>
-
-      <main class="review-panel">
-        <div class="review-topline">
-          <div class="breadcrumbs"><span>Review queue</span>${icon('chevron', 13)}<b>${file.label}</b></div>
-          <div class="topline-actions">${state.queueCollapsed ? `<button class="queue-expand secondary-button" data-action="toggle-queue">${icon('branch', 14)} Show queue</button>` : ''}${state.guideCollapsed ? `<button class="guide-expand secondary-button" data-action="toggle-chat">${icon('message', 14)} Code guide</button>` : ''}<span class="connection ${state.pairingRequired ? 'pairing' : state.online ? 'online' : 'offline'}"><i></i>${state.pairingRequired ? 'Pair device' : state.online ? 'Online' : 'Offline'}</span><button class="icon-button desktop-more" aria-label="More file actions">${icon('more', 18)}</button></div>
-        </div>
-
-        <section class="review-heading">
-          <div class="review-heading-main"><div class="file-type large type-${file.tone}">${file.type}</div><div><div class="file-title-row"><h2>${file.label}</h2>${reviewed ? '<span class="reviewed-pill">Reviewed</span>' : '<span class="needs-review-pill">Needs review</span>'}</div><p>${file.path}</p></div></div>
-          <div class="review-heading-actions"><button class="secondary-button" data-action="explain-file">${icon('spark', 17)} Explain this file</button><button class="icon-button" aria-label="Bookmark file">${icon('bookmark', 18)}</button></div>
-        </section>
-
-        <div class="review-tabs" role="tablist"><button class="review-tab ${state.activeTab === 'diff' ? 'active' : ''}" data-tab="diff">Diff <span>+${file.added} −${file.removed}</span></button><button class="review-tab ${state.activeTab === 'source' ? 'active' : ''}" data-tab="source">Source</button>${isPreviewable(file) ? `<button class="review-tab ${state.activeTab === 'preview' ? 'active' : ''}" data-tab="preview">Preview</button>` : ''}<button class="review-tab ${state.activeTab === 'overview' ? 'active' : ''}" data-tab="overview">Overview</button><button class="review-tab ${state.activeTab === 'notes' ? 'active' : ''}" data-tab="notes">Notes <span class="note-count">${state.notes[file.id] ? '1' : '0'}</span></button></div>
-
-        ${renderReviewContent(file)}
-
-        <section class="review-footer"><div class="review-prompt"><span class="prompt-icon">${icon(reviewed ? 'check' : 'spark', 16)}</span><span>${reviewed ? 'Nice. This file is in your reviewed set.' : 'A focused 6-minute review is enough for today.'}</span></div><div class="footer-actions"><button class="secondary-button" data-action="skip-file">Skip for now</button><button class="primary-button" data-action="mark-reviewed">${reviewed ? icon('check', 16) + ' Reviewed' : 'Mark as reviewed ' + icon('check', 16)}</button>${next ? `<button class="next-button" data-action="next-file">Next file ${icon('chevron', 16)}</button>` : ''}</div></section>
-      </main>
-
-      <aside class="chat-panel" aria-label="Code guide">
-        <div class="chat-header"><div class="chat-title"><div class="chat-avatar">${icon('spark', 17)}</div><div><h2>Code guide</h2><span>${!state.online ? 'AI needs a connection' : state.aiEnabled ? `AI guide · ${aiProviderLabel()}` : 'Demo guide · connect AI on laptop'}</span></div></div><button class="icon-button close-chat" data-action="close-guide" aria-label="Close code guide">${icon('close', 19)}</button></div>
-        <div class="context-chip"><span class="context-file type-${file.tone}">${file.type}</span><span>${file.label}</span><button aria-label="Change file context">${icon('down', 13)}</button></div>
-        <div class="chat-scroll"><div class="conversation-label">TODAY <span></span></div>${state.chat.map(renderChatMessage).join('')}${state.chat.length === 2 ? '<div class="suggestions"><span>Try asking</span><button data-suggestion="What could break here?">What could break here?</button><button data-suggestion="Explain the offline path">Explain the offline path</button></div>' : ''}</div>
-        <form class="chat-composer" data-action="send-chat"><textarea name="message" rows="1" placeholder="Ask about ${file.label}…" ${state.online ? '' : 'disabled'}></textarea><div class="composer-bottom"><span>${icon('bolt', 13)} ${state.online ? state.aiEnabled ? `Connected · ${aiProviderLabel()}` : 'Preview response · connect AI on laptop' : 'Reconnect to ask AI'}</span><button type="submit" aria-label="Send message" ${state.online ? '' : 'disabled'}>${icon('send', 17)}</button></div></form>
-      </aside>
-
-      <nav class="mobile-bottom-nav" aria-label="Mobile navigation"><button class="active">${icon('grid', 19)}<span>Queue</span></button><button data-action="toggle-files">${icon('branch', 19)}<span>Files</span></button><button data-action="toggle-chat">${icon('message', 19)}<span>Guide</span></button><button>${icon('settings', 19)}<span>More</span></button></nav>
-      ${state.toast ? `<div class="toast">${icon('check', 15)} ${escapeHtml(state.toast)}</div>` : ''}
-    </div>`;
-
+function statusText() {
+  if(state.demo) return 'Demo workspace';
+  if(state.connection==='connecting') return 'Connecting to laptop…';
+  if(state.connection==='connected') return 'Laptop reached';
+  if(state.connection==='pairing') return 'Pairing required';
+  return state.snapshot?'Cached snapshot · laptop unavailable':'Laptop unavailable';
+}
+function emptyContent() {
+  const clean=Boolean(state.snapshot && !state.demo && !files().length);
+  return `<section class="empty-state"><div class="empty-orbit"><span>${icon(clean?'check':'wifi',28)}</span></div><h2>${clean?'No changed files in this snapshot.':state.connection==='connecting'?'Connecting to your laptop…':'Connect a laptop to start reviewing.'}</h2><p>${clean?`Captured ${esc(state.snapshot.generatedAt)}. Refresh to check for new changes.`:esc(state.connectionError||'Open the paired companion link from your laptop. You can also import a private backup or explore an explicitly labeled demo.')}</p><button class="primary-button" data-action="refresh-snapshot">Reconnect</button>${!state.snapshot?'<button class="secondary-button" data-action="load-demo">Explore demo</button>':''}</section>`;
+}
+export function render(preservePosition=true) {
+  if(preservePosition) capturePosition();
+  const active=document.activeElement;
+  const focus=active?.id?{id:active.id,start:active.selectionStart,end:active.selectionEnd}:null;
+  const file=selectedFile(), session=currentSession(), count=files().filter(reviewed).length;
+  const guideHidden=overlayGuide()?!state.chatOpen:state.guideCollapsed;
+  const drawerHidden=small()&&!state.filesOpen;
+  const modal=small()&&state.filesOpen?'files':overlayGuide()&&state.chatOpen?'chat':null;
+  const unresolved=data.notes.filter((n)=>n.repoId===state.snapshot?.repoId&&n.status==='open').length;
+  const controls=`<div class="backup-actions"><button class="secondary-button" data-action="export-backup">Export backup</button><button class="secondary-button" data-action="import-backup">Import backup</button><button class="secondary-button" data-action="export-summary">Export summary</button><button class="secondary-button" data-action="clear-cache">Clear cached source</button></div>`;
+  root.innerHTML=`<div class="app-shell ${state.filesOpen?'files-is-open':''} ${state.chatOpen?'chat-is-open':''} ${guideHidden?'guide-is-collapsed':''}" style="--code-size:${data.preferences.codeSize}px">
+    <header class="mobile-topbar" ${modal?'inert':''}><button class="icon-button" data-action="toggle-files" aria-label="Open files">${icon('menu')}</button><div class="mobile-wordmark"><span class="wordmark-mark">${icon('logo')}</span>patchwork</div><button class="icon-button" data-action="toggle-chat" aria-label="Open code guide">${icon('message')}</button></header>
+    <aside class="sidebar" ${modal?'inert':''}><div class="brand"><span class="brand-mark">${icon('logo',24)}</span><span>patchwork</span></div><div class="workspace-switcher"><span class="repo-avatar">${esc((state.snapshot?.workspaceName||'PW').slice(0,2).toUpperCase())}</span><span><b>${esc(state.snapshot?.workspaceName||'Your workspace')}</b><small>${state.demo?'Demo · sample code':'Device-private review'}</small></span></div><div class="primary-nav"><span class="nav-item active">${icon('grid')}<span>Review queue</span></span></div><div class="sidebar-spacer"></div><p class="privacy-copy">Notes stay in this browser. A new temporary tunnel has a new browser store; carry your review with a private backup.</p>${controls}</aside>
+    ${modal?'<button class="file-drawer-scrim" data-action="close-panels" tabindex="-1" aria-label="Close panel"></button>':''}
+    <aside class="file-panel" id="file-panel" ${drawerHidden?'inert aria-hidden="true"':''} ${modal==='chat'?'inert':''} ${modal==='files'?'role="dialog" aria-modal="true" aria-label="Review files"':''}><div class="file-panel-header"><div><span class="eyebrow">WORKSPACE</span><h1>Review queue</h1></div><button class="close-files icon-button" data-action="close-panels" aria-label="Close files">${icon('close')}</button></div><div class="branch-row"><span class="branch-name">${icon('branch',14)}${esc(state.snapshot?.branch||'No branch loaded')}</span></div><div class="queue-progress"><div class="progress-copy"><span>${count} of ${files().length} reviewed</span><b>${unresolved} open questions</b></div><progress max="${files().length||1}" value="${count}" aria-label="Files reviewed"></progress></div><div class="queue-heading"><span>CHANGED FILES ${files().length}</span><button data-action="refresh-snapshot">Refresh ${icon('wifi',14)}</button></div><div class="file-list">${files().map(renderFileRow).join('')}</div><div class="offline-card"><span>${icon('wifi')}</span><span><b>${esc(statusText())}</b><small>${esc(age())}</small></span></div><details class="mobile-backups"><summary>Backup & handoff</summary><p>Backups contain private notes, chats, and code. Share only when you choose.</p>${controls}</details></aside>
+    <main class="review-panel" ${modal?'inert':''}><div class="review-topline"><div class="breadcrumbs">${esc(state.snapshot?.workspaceName||'Patchwork')}</div><button class="secondary-button" data-action="toggle-chat">${icon('message',16)} Code guide</button></div><div class="connection-details" role="status"><span>${state.online?'Internet available':'Internet offline'}</span><span>${esc(statusText())}</span><span>${esc(age())}</span></div>${state.connectionError?`<p class="connection-error">${esc(state.connectionError)}</p>`:''}<div id="storage-alert" role="alert" ${state.storageError?'':'hidden'}>${esc(state.storageError)}</div>${state.demo?'<p class="demo-banner">Demo workspace — sample files, no live repository.</p>':''}
+    ${file?`<section class="review-heading"><div class="review-heading-main"><div class="file-type large type-${esc(file.tone)}">${esc(file.type)}</div><div><div class="file-title-row"><h2>${esc(file.label)}</h2><span class="${reviewed(file)?'reviewed':'needs-review'}-pill">${reviewed(file)?'Reviewed':'Needs review'}</span></div><p>${esc(file.path)}</p><p>${esc(file.status||'modified')}${file.oldPath?` · renamed from ${esc(file.oldPath)}`:''}</p></div></div></section><div class="reading-controls"><label>Code size <select id="code-size" aria-label="Code font size">${[13,14,16,18].map((n)=>`<option value="${n}" ${data.preferences.codeSize===n?'selected':''}>${n}px</option>`).join('')}</select></label><label><input id="wrap-code" type="checkbox" ${data.preferences.wrap?'checked':''}> Wrap</label><label><input id="compact-context" type="checkbox" ${data.preferences.compactContext?'checked':''}> Fold context</label></div><div class="review-tabs" role="tablist" aria-label="File views">${['diff','source',...(isPreviewable(file)?['preview']:[]),'notes'].map((tab)=>`<button id="tab-${tab}" role="tab" aria-selected="${state.activeTab===tab}" aria-controls="review-content" tabindex="${state.activeTab===tab?'0':'-1'}" class="review-tab ${state.activeTab===tab?'active':''}" data-tab="${tab}">${tab[0].toUpperCase()+tab.slice(1)}${tab==='notes'?` (${notesFor(data,state.snapshot,file).filter((n)=>n.status==='open').length})`:''}</button>`).join('')}</div><div id="review-content" role="tabpanel" aria-labelledby="tab-${state.activeTab}" tabindex="0">${renderContent(file)}</div><section class="review-footer"><div class="footer-actions"><button class="primary-button" data-action="review-next">Reviewed & next ${icon('check',16)}</button><button class="secondary-button" data-action="question">Question</button><button class="secondary-button" data-action="skip-file">Skip</button></div>${reviewed(file)?'<button class="secondary-button" data-action="reopen-file">Reopen review</button>':''}</section>`:emptyContent()}</main>
+    <aside class="chat-panel" id="chat-panel" aria-label="Code guide" ${guideHidden?'inert aria-hidden="true"':''} ${modal==='files'?'inert':''} ${modal==='chat'?'role="dialog" aria-modal="true"':''}><div class="chat-header"><div class="chat-title"><div class="chat-avatar">${icon('spark')}</div><div><h2>Code guide</h2><span>${state.demo?'Demo · AI unavailable':esc(labelForProvider())}</span></div></div><button class="icon-button" data-action="close-guide" aria-label="Close code guide">${icon('close')}</button></div><div class="context-chip">${esc(file?.path||'Choose a file')}</div><div class="guide-modes"><button class="secondary-button" data-guide-mode="walkthrough" aria-pressed="${state.guideMode==='walkthrough'}">Walkthrough</button><button class="secondary-button" data-guide-mode="chat" aria-pressed="${state.guideMode==='chat'}">Conversation</button></div>${state.guideMode==='walkthrough'?`<div class="walkthrough-scroll">${walkthrough.html()}</div>`:`<div class="chat-scroll" role="log" aria-live="polite">${conversationHistory(file)}${session?.chat.length?session.chat.map((m)=>`<div class="chat-message ${m.role==='user'?'user':'assistant'} ${m.pending?'pending':''}"><div class="message-bubble">${esc(m.text)}</div></div>`).join(''):`<p class="guide-intro">${state.demo?'This is sample code. Connect your laptop to ask an AI guide about real changes.':esc(state.aiMessage||'Ask about the selected file’s exact snapshot. Your provider must be configured on the laptop. Questions are sent only when you press Send.')}</p>`}</div>${file?`<form class="chat-composer" id="chat-form"><label class="sr-only" for="chat-draft">Question about ${esc(file.label)}</label><textarea id="chat-draft" name="message" rows="2" placeholder="Ask about this snapshot…">${esc(session.draft)}</textarea><div class="composer-bottom"><span>${state.aiEnabled&&!state.demo?esc(labelForProvider()):esc(state.demo?'Demo · AI unavailable':labelForProvider())}</span><button type="submit" aria-label="Send question" ${!state.aiEnabled||!state.online||state.demo||session.chat.some((m)=>m.pending)?'disabled':''}>${icon('send')}</button></div><button type="button" class="secondary-button" data-action="new-chat" ${chatController?'disabled':''}>New conversation</button>${chatController?'<button type="button" class="secondary-button" data-action="stop-chat">Stop response</button>':''}</form>`:''}`}</aside>
+    <input id="backup-file" type="file" accept="application/json,.json" hidden><div class="sr-only" role="status" aria-live="polite">${esc(state.toast)}</div>${state.toast?`<div class="toast">${esc(state.toast)}</div>`:''}</div>`;
   wireEvents();
-}
-
-function renderEmpty() {
-  const sourceLabel = state.source === 'companion' ? 'Laptop companion' : state.source === 'cached' ? 'Offline snapshot' : 'Sample workspace';
-  document.body.classList.toggle('files-menu-open', state.filesOpen);
-  document.querySelector('#root').innerHTML = `
-    <div class="app-shell ${state.chatOpen ? 'chat-is-open' : ''} ${state.filesOpen ? 'files-is-open' : ''} ${state.queueCollapsed ? 'queue-is-collapsed' : ''} ${state.guideCollapsed ? 'guide-is-collapsed' : ''}">
-      <header class="mobile-topbar">
-        <button class="icon-button" data-action="toggle-files" aria-label="Open files">${icon('menu', 21)}</button>
-        <div class="mobile-wordmark"><span class="wordmark-mark">${icon('logo', 22)}</span>patchwork</div>
-        <button class="icon-button ${state.chatOpen ? 'active' : ''}" data-action="toggle-chat" aria-label="Open code guide">${icon('message', 20)}</button>
-      </header>
-      ${state.filesOpen ? '<button class="file-drawer-scrim" data-action="toggle-files" aria-label="Close file list"></button>' : ''}
-      <aside class="sidebar">
-        <div class="brand"><span class="brand-mark">${icon('logo', 24)}</span><span>patchwork</span><span class="brand-dot"></span></div>
-        <div class="workspace-switcher"><span class="repo-avatar">${escapeHtml(state.workspaceName.slice(0, 2).toUpperCase())}</span><span><b>${escapeHtml(state.workspaceName)}</b><small>${sourceLabel.toLowerCase()}</small></span>${icon('down', 14)}</div>
-        <nav class="primary-nav" aria-label="Primary navigation"><button class="nav-item active">${icon('grid', 18)}<span>Review queue</span><em>0</em></button><button class="nav-item">${icon('branch', 18)}<span>Branches</span></button><button class="nav-item">${icon('bookmark', 18)}<span>Saved notes</span></button></nav>
-        <div class="sidebar-spacer"></div>
-        <div class="streak-card"><div class="streak-icon">${icon('bolt', 16)}</div><div><strong>2 day streak</strong><span>One small review counts.</span></div><button class="reminder-button ${state.reminder ? 'set' : ''}" data-action="toggle-reminder">${state.reminder ? 'Nudge set · 7:30 PM' : 'Set a gentle nudge'}</button></div>
-        <button class="nav-item muted">${icon('settings', 18)}<span>Preferences</span></button>
-        <div class="profile"><span class="profile-avatar">M</span><span><b>Mubashir</b><small>Solo developer</small></span>${icon('more', 18)}</div>
-      </aside>
-      <aside class="file-panel">
-        <div class="file-panel-header"><div><span class="eyebrow">WORKSPACE</span><h1>Review queue</h1></div><div class="file-panel-header-actions"><button class="queue-toggle" data-action="toggle-queue" aria-label="Collapse review queue">${icon('chevron', 17)}</button><button class="close-files" data-action="toggle-files" aria-label="Close files">${icon('close', 19)}</button><button class="panel-more" aria-label="More workspace actions">${icon('more', 18)}</button></div></div>
-        <div class="branch-row"><span class="branch-name">${icon('branch', 14)} ${escapeHtml(state.branchName)}</span><span class="branch-status">${state.source === 'companion' ? 'synced' : 'cached'}</span></div>
-        ${state.pairingRequired ? '<div class="pairing-card"><span class="pairing-icon">' + icon('lock', 14) + '</span><span><b>Pair this device</b><small>Open the companion link with its token.</small></span></div>' : ''}
-        <div class="queue-progress"><div class="progress-copy"><span>0 files to review</span><b>All clear</b></div><div class="progress-track"><span style="width:100%"></span></div></div>
-        <div class="queue-heading"><span>CHANGED FILES <b>0</b></span><button data-action="refresh-snapshot">Refresh ${icon('down', 13)}</button></div>
-        <div class="empty-file-list"><span>${icon('check', 16)}</span><p>Nothing waiting here.</p><small>Make a change on the laptop and refresh.</small></div>
-      </aside>
-      <main class="review-panel">
-        <div class="review-topline"><div class="breadcrumbs"><span>Review queue</span>${icon('chevron', 13)}<b>All clear</b></div><div class="topline-actions">${state.queueCollapsed ? `<button class="queue-expand secondary-button" data-action="toggle-queue">${icon('branch', 14)} Show queue</button>` : ''}${state.guideCollapsed ? `<button class="guide-expand secondary-button" data-action="toggle-chat">${icon('message', 14)} Code guide</button>` : ''}<span class="connection ${state.pairingRequired ? 'pairing' : state.online ? 'online' : 'offline'}"><i></i>${state.pairingRequired ? 'Pair device' : state.online ? 'Online' : 'Offline'}</span><button class="icon-button desktop-more" aria-label="More file actions">${icon('more', 18)}</button></div></div>
-        <section class="empty-state"><div class="empty-orbit"><span>${icon('check', 28)}</span></div><span class="eyebrow">WORKTREE CLEAR</span><h2>Nothing waiting for review.</h2><p>Your current workspace has no uncommitted changes. When you make a small change, it will appear here as a focused file-sized review.</p><button class="primary-button" data-action="refresh-snapshot">${icon('wifi', 16)} Check laptop again</button><div class="empty-tip"><span>${icon('bolt', 14)}</span><div><b>Good stopping point</b><small>A clean queue is progress too. Come back after your next small change.</small></div></div></section>
-      </main>
-      <aside class="chat-panel"><div class="chat-header"><div class="chat-title"><div class="chat-avatar">${icon('spark', 17)}</div><div><h2>Code guide</h2><span>${state.online ? 'Pick a file to start a conversation' : 'AI needs a connection'}</span></div></div><button class="icon-button close-chat" data-action="close-guide" aria-label="Close code guide">${icon('close', 19)}</button></div><div class="empty-chat"><div class="empty-chat-icon">${icon('spark', 19)}</div><h3>Your guide is ready.</h3><p>When a file lands in the queue, Patchwork will keep its explanation and questions in that file’s own conversation.</p></div></aside>
-      <nav class="mobile-bottom-nav" aria-label="Mobile navigation"><button class="active">${icon('grid', 19)}<span>Queue</span></button><button data-action="toggle-files">${icon('branch', 19)}<span>Files</span></button><button data-action="toggle-chat">${icon('message', 19)}<span>Guide</span></button><button>${icon('settings', 19)}<span>More</span></button></nav>
-      ${state.toast ? `<div class="toast">${icon('check', 15)} ${escapeHtml(state.toast)}</div>` : ''}
-    </div>`;
-  wireEvents();
-}
-
-let fileMenuHistoryEntry = false;
-
-function setFilesOpen(open) {
-  if (open === state.filesOpen) return;
-  if (open) {
-    state.filesOpen = true;
-    fileMenuHistoryEntry = true;
-    history.pushState({ ...(history.state || {}), patchworkFileMenu: true }, '', location.href);
-  } else {
-    state.filesOpen = false;
-    if (fileMenuHistoryEntry) {
-      fileMenuHistoryEntry = false;
-      history.back();
-    }
+  walkthrough.bind(root);
+  highlightCitation();
+  const walkPanel=root.querySelector('.walkthrough-scroll'), walkRecord=state.snapshot&&data.walkthroughs[JSON.stringify([state.snapshot.repoId,state.snapshot.snapshotId])];
+  if(walkPanel&&walkRecord)walkPanel.scrollTop=walkRecord.scroll||0;
+  if(session) {
+    const viewer=document.querySelector('.code-viewer,.markdown-preview'); if(viewer) viewer.scrollTop=session.scroll[state.activeTab]||0;
+    document.querySelector('.review-panel').scrollTop=session.scroll.panel||0;
+    const chat=document.querySelector('.chat-scroll');
+  const walk=document.querySelector('.walkthrough-scroll'), record=state.snapshot&&data.walkthroughs[JSON.stringify([state.snapshot.repoId,state.snapshot.snapshotId])];
+  if(walk&&record)record.scroll=walk.scrollTop; if(chat) chat.scrollTop=session.scroll.chat||0;
+    if(small()&&!modal) window.scrollTo(0,session.scroll.window||0);
   }
-  render();
+  if(focus) {const el=document.getElementById(focus.id); if(el&&!el.closest('[inert]')) {el.focus({preventScroll:true});if(typeof el.setSelectionRange==='function'&&focus.start!==null) {try{el.setSelectionRange(focus.start,focus.end);}catch{}}}}
 }
-
+function openPanel(which) {
+  const active=document.activeElement;
+  dialogReturnFocus=active?.dataset.action||null;
+  if((which==='files'&&small())||(which==='chat'&&overlayGuide())) {
+    const method=history.state?.patchworkPanel?'replaceState':'pushState';
+    history[method]({patchworkPanel:which},'',location.href);
+  }
+  state.filesOpen=which==='files'; state.chatOpen=which==='chat'; if(which==='chat') state.guideCollapsed=false;
+  render();
+  const panel=document.querySelector(which==='files'?'#file-panel':'#chat-panel');
+  panel?.querySelector('button,textarea')?.focus();
+}
+function closePanels(fromHistory=false) {
+  if(!fromHistory&&history.state?.patchworkPanel)history.back();
+  state.filesOpen=false; state.chatOpen=false; render();
+  if(dialogReturnFocus) [...root.querySelectorAll('[data-action]')].find((el)=>el.dataset.action===dialogReturnFocus&&!el.closest('[inert]'))?.focus();
+}
+function download(name,text,type='application/json') {
+  const url=URL.createObjectURL(new Blob([text],{type})), anchor=document.createElement('a'); anchor.href=url; anchor.download=name; anchor.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+async function saveNote(form) {
+  const file=selectedFile(), session=currentSession(); if(!file) return;
+  const fields=new FormData(form), text=String(fields.get('note')||'').trim(); if(!text) return;
+  const start=fields.get('start')?Number(fields.get('start')):null, end=fields.get('end')?Number(fields.get('end')):start, side=fields.get('side')==='old'?'old':'new';
+  const lineNumbers=file.lines.filter(([kind])=>side==='old'?kind!=='added':kind!=='removed').map(([,line])=>Number(line)).filter((n)=>Number.isInteger(n)&&n>0);
+  const maxLine=side==='new'&&typeof file.source==='string'?file.source.split(/\r?\n/).length:Math.max(0,...lineNumbers);
+  if((start!==null&&(!Number.isInteger(start)||start<1||!Number.isInteger(end)||end<start||end>maxLine)) || (start===null&&end!==null)) {toast(`Use a valid ${side} line range within this snapshot (1–${maxLine}), or leave both fields empty.`);return;}
+  data.notes.push({id:crypto.randomUUID(),repoId:state.snapshot.repoId,base:state.snapshot.base,branch:state.snapshot.branch,path:file.path,version:file.version,snapshotId:state.snapshot.snapshotId,text,start,end,side,status:'open',createdAt:new Date().toISOString()});
+  session.noteDraft='';session.noteStart='';session.noteEnd='';await saveState(true);toast(state.storageError?'Question is in this tab. Export a backup: device storage failed.':'Question saved privately on this device.');
+}
 function wireEvents() {
-  document.querySelectorAll('[data-file-id]').forEach((button) => button.addEventListener('click', () => selectFile(button.dataset.fileId)));
-
-  document.querySelectorAll('[data-tab]').forEach((button) => button.addEventListener('click', () => {
-    setActiveTab(button.dataset.tab);
-  }));
-
-  document.querySelectorAll('[data-note-input]').forEach((textarea) => textarea.addEventListener('input', () => {
-    state.notes[state.selectedFile] = textarea.value;
-    saveState();
-    document.querySelectorAll('.note-count').forEach((count) => { count.textContent = textarea.value ? '1' : '0'; });
-    const status = document.querySelector('[data-note-status]');
-    if (status) status.textContent = 'Saved locally';
-  }));
-
-  document.querySelectorAll('[data-suggestion]').forEach((button) => button.addEventListener('click', () => {
-    const input = document.querySelector('.chat-composer textarea');
-    if (input) { input.value = button.dataset.suggestion; input.focus(); }
-  }));
-
-  document.querySelectorAll('[data-action="toggle-chat"]').forEach((button) => button.addEventListener('click', () => {
-    state.chatOpen = !state.chatOpen || state.guideCollapsed;
-    state.guideCollapsed = false;
-    setFilesOpen(false);
-    render();
-    if (state.chatOpen) setTimeout(() => document.querySelector('.chat-composer textarea')?.focus(), 80);
-  }));
-
-  document.querySelectorAll('[data-action="close-guide"]').forEach((button) => button.addEventListener('click', () => {
-    state.chatOpen = false;
-    state.guideCollapsed = true;
-    setFilesOpen(false);
-    render();
-  }));
-
-  document.querySelectorAll('[data-action="explain-file"]').forEach((button) => button.addEventListener('click', () => {
-    state.chatOpen = true;
-    state.guideCollapsed = false;
-    setFilesOpen(false);
-    render();
-    requestAi('Explain this file in plain language. Point out the main behavior, why the change matters, and one thing I should verify.');
-  }));
-
-  document.querySelectorAll('[data-action="toggle-files"]').forEach((button) => button.addEventListener('click', () => {
-    state.chatOpen = false;
-    setFilesOpen(!state.filesOpen);
-  }));
-
-  document.querySelectorAll('[data-action="toggle-queue"]').forEach((button) => button.addEventListener('click', () => {
-    state.queueCollapsed = !state.queueCollapsed;
-    saveState();
-    render();
-  }));
-
-  document.querySelectorAll('[data-action="retry-source"]').forEach((button) => button.addEventListener('click', () => {
-    const file = selectedFile();
-    if (file) hydrateFileSource(file);
-  }));
-
-  document.querySelectorAll('[data-action="refresh-snapshot"]').forEach((button) => button.addEventListener('click', () => {
-    state.toast = 'Checking the laptop companion…';
-    render();
-    hydrateFromCompanion();
-  }));
-
-  document.querySelectorAll('[data-action="mark-reviewed"]').forEach((button) => button.addEventListener('click', () => {
-    state.reviewed[state.selectedFile] = !state.reviewed[state.selectedFile];
-    state.toast = state.reviewed[state.selectedFile] ? 'Added to your reviewed set' : 'Moved back to your queue';
-    saveState();
-    scheduleReminder();
-    render();
-    setTimeout(() => { state.toast = ''; render(); }, 2600);
-  }));
-
-  document.querySelectorAll('[data-action="toggle-reminder"]').forEach((button) => button.addEventListener('click', async () => {
-    if (state.reminder) {
-      state.reminder = false;
-      clearTimeout(reminderTimer);
-      state.toast = 'Gentle nudge turned off';
-    } else if (!('Notification' in window)) {
-      state.toast = 'This browser cannot schedule notifications';
-    } else {
-      const permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
-      if (permission === 'granted') {
-        state.reminder = true;
-        scheduleReminder();
-        state.toast = 'Gentle nudge planned for 7:30 PM';
-      } else {
-        state.toast = 'Notifications are blocked in this browser';
-      }
-    }
-    saveState();
-    render();
-    setTimeout(() => { state.toast = ''; render(); }, 2600);
-  }));
-
-  document.querySelectorAll('[data-action="next-file"], [data-action="skip-file"]').forEach((button) => button.addEventListener('click', () => {
-    const currentIndex = files.findIndex((item) => item.id === state.selectedFile);
-    const pending = files.filter((item) => !state.reviewed[item.id]);
-    const next = pending.find((item) => files.indexOf(item) > currentIndex) || pending[0] || files[(currentIndex + 1) % files.length];
-    if (next) {
-      saveState();
-      state.selectedFile = next.id;
-      state.chat = state.chats[next.id] || defaultChatFor(next);
-    }
-    state.toast = button.dataset.action === 'skip-file' ? 'We’ll keep this one in your queue' : '';
-    saveState();
-    render();
-    if (state.toast) setTimeout(() => { state.toast = ''; render(); }, 2600);
-  }));
-
-  const form = document.querySelector('.chat-composer');
-  form?.addEventListener('submit', (event) => {
-    event.preventDefault();
-    const input = form.querySelector('textarea');
-    const text = input?.value.trim();
-    if (!text || !state.online) return;
-    input.value = '';
-    requestAi(text);
+  root.querySelectorAll('[data-guide-mode]').forEach((el)=>el.addEventListener('click',()=>{state.guideMode=el.dataset.guideMode;render();}));
+  root.querySelectorAll('[data-file-id]').forEach((el)=>el.addEventListener('click',()=>selectFile(el.dataset.fileId)));
+  root.querySelectorAll('[data-tab]').forEach((el)=>{
+    el.addEventListener('click',()=>setActiveTab(el.dataset.tab));
+    el.addEventListener('keydown',(e)=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const tabs=[...root.querySelectorAll('[data-tab]')],index=tabs.indexOf(el),next=e.key==='Home'?0:e.key==='End'?tabs.length-1:(index+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;setActiveTab(tabs[next].dataset.tab);document.getElementById(`tab-${tabs[next].dataset.tab}`)?.focus();});
   });
-}
-
-let reminderTimer;
-
-function scheduleReminder() {
-  clearTimeout(reminderTimer);
-  if (!state.reminder || !('Notification' in window) || Notification.permission !== 'granted') return;
-  const target = nextReviewFile();
-  if (!target) return;
-  const next = new Date();
-  next.setHours(19, 30, 0, 0);
-  if (next.getTime() <= Date.now()) next.setDate(next.getDate() + 1);
-  reminderTimer = setTimeout(() => {
-    state.lastReminderDate = reminderDateKey();
-    saveState();
-    new Notification('One file is enough', { body: `Open Patchwork to review ${target.label} · a focused 6-minute pass.`, icon: '/icon.svg', tag: 'patchwork-review' });
-    scheduleReminder();
-  }, Math.min(next.getTime() - Date.now(), 2_147_000_000));
-}
-
-function reminderDateKey(date = new Date()) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-}
-
-function maybeShowOverdueReminder() {
-  if (!state.reminder || !files.length || !nextReviewFile()) return;
-  const now = new Date();
-  const due = new Date(now);
-  due.setHours(19, 30, 0, 0);
-  const today = reminderDateKey(now);
-  if (now < due || state.lastReminderDate === today) return;
-  state.lastReminderDate = today;
-  state.toast = `One file is enough · ${nextReviewFile().label}`;
-  saveState();
-  render();
-  setTimeout(() => {
-    if (state.toast.startsWith('One file is enough')) { state.toast = ''; render(); }
-  }, 5000);
-}
-
-async function requestAi(question) {
-  const file = selectedFile();
-  if (!question || !state.online) return;
-  const history = state.chat.filter((message) => !message.pending && (message.role === 'user' || message.role === 'assistant')).slice(-10);
-  state.chat.push({ role: 'user', text: question });
-  const pending = { role: 'assistant', text: state.aiEnabled ? 'Reading the diff…' : 'Thinking through the diff…', pending: true };
-  state.chat.push(pending);
-  saveState();
-  render();
-  document.querySelector('.chat-scroll')?.scrollTo({ top: 99999, behavior: 'smooth' });
-
-  if (!state.aiEnabled) {
-    setTimeout(() => {
-      pending.pending = false;
-      pending.text = answerFor(question, file);
-      saveState();
-      render();
-      document.querySelector('.chat-scroll')?.scrollTo({ top: 99999, behavior: 'smooth' });
-    }, 520);
-    return;
-  }
-
-  try {
-    const response = await apiFetch('/api/ai', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ message: question, history, file }),
-    });
-    const payload = await response.json();
-    pending.pending = false;
-    pending.text = response.ok && payload.text ? payload.text : `${payload.error || 'The AI guide could not answer right now.'}${payload.detail ? ` ${payload.detail}` : ''}`;
-  } catch {
-    pending.pending = false;
-    pending.text = 'The laptop companion could not reach the AI provider. Your review is still available offline.';
-  }
-  saveState();
-  render();
-  document.querySelector('.chat-scroll')?.scrollTo({ top: 99999, behavior: 'smooth' });
-}
-
-function answerFor(question, file) {
-  const normalized = question.toLowerCase();
-  if (normalized.includes('break') || normalized.includes('risk')) return `The main risk is keeping the snapshot fresh. If cache.persist fails after execute(), the next offline session can look one step behind. I would add a small error boundary or telemetry around that write.`;
-  if (normalized.includes('offline')) return `The offline path starts at line 8. context.isOffline short-circuits the network call and returns the last snapshot. That keeps the UI useful without pretending the latest response is available.`;
-  return `${file.label} keeps the change focused: it moves session lookup behind cache.session() and gives the rest of the request a single context object. I’d review the cache invalidation rules next.`;
-}
-
-async function hydrateFromCompanion() {
-  try {
-    const response = await apiFetch('/api/snapshot', { cache: 'no-store' });
-    if (response.status === 401) { state.pairingRequired = true; render(); return; }
-    if (!response.ok) return;
-    const payload = await response.json();
-    if (!Array.isArray(payload.files)) return;
-    files = payload.files;
-    cacheSnapshot(payload);
-    if (files.length && !files.some((item) => item.id === state.selectedFile)) state.selectedFile = files[0].id;
-    state.chat = files.length ? state.chats[state.selectedFile] || defaultChatFor(selectedFile()) : defaultChat;
-    state.source = 'companion';
-    state.pairingRequired = false;
-    state.workspaceName = payload.workspaceName || state.workspaceName;
-    state.branchName = payload.branch || state.branchName;
-    state.snapshotAt = payload.generatedAt || new Date().toISOString();
-    saveState();
-    render();
-  } catch {
-    // Static hosting and offline launches intentionally keep the sample workspace.
-  } finally {
-    if (state.toast === 'Checking the laptop companion…') {
-      state.toast = '';
-      render();
+  root.querySelectorAll('[data-line]').forEach((el)=>el.addEventListener('click',()=>{const s=currentSession();s.noteStart=el.dataset.line;s.noteEnd=el.dataset.line;s.noteSide=el.dataset.side;setActiveTab('notes');document.querySelector('#note-text')?.focus();}));
+  root.querySelectorAll('[data-note-toggle]').forEach((el)=>el.addEventListener('click',()=>{const n=data.notes.find((n)=>n.id===el.dataset.noteToggle);if(n)n.status=n.status==='open'?'resolved':'open';saveState();render();}));
+  root.querySelectorAll('[data-action]').forEach((el)=>el.addEventListener('click',async()=>{
+    switch(el.dataset.action) {
+      case 'new-chat': {const s=currentSession();if(!s||chatController)break;s.archives||=[];if(s.chat.length)s.archives.push(s.chat);s.chat=[];s.conversationId=crypto.randomUUID();saveState();render();break;}
+      case 'stop-chat':chatController?.abort();break;
+      case 'toggle-files': state.filesOpen?closePanels():openPanel('files');break;
+      case 'toggle-chat': (state.chatOpen||(!overlayGuide()&&!state.guideCollapsed))?(state.guideCollapsed=true,closePanels()):openPanel('chat');break;
+      case 'close-guide': state.guideCollapsed=true;closePanels();break;
+      case 'close-panels':closePanels();break;
+      case 'refresh-snapshot':await hydrateFromCompanion();await hydrateAiConfig();break;
+      case 'review-next':nextFile(true);break;
+      case 'skip-file':nextFile();break;
+      case 'reopen-file':delete data.reviews[reviewKey(state.snapshot,selectedFile())];saveState();render();break;
+      case 'question':setActiveTab('notes');document.querySelector('#note-text')?.focus();break;
+      case 'retry-source':hydrateFileSource(selectedFile());break;
+      case 'load-demo':loadDemo();break;
+      case 'next-hunk':{const viewer=root.querySelector('.code-viewer');if(!viewer)break;const hunks=[...viewer.querySelectorAll('[data-hunk]')];const next=hunks.find((h)=>h.offsetTop-viewer.offsetTop>viewer.scrollTop+8)||hunks[0];if(next)viewer.scrollTo({top:next.offsetTop-viewer.offsetTop,behavior:'smooth'});break;}
+      case 'export-backup':capturePosition();download('patchwork-private-backup.json',JSON.stringify(createBackup(data,state.demo?null:state.snapshot),null,2));break;
+      case 'import-backup':document.querySelector('#backup-file').click();break;
+      case 'export-summary':download('patchwork-review.md',reviewSummary(data,state.snapshot),'text/markdown');break;
+      case 'clear-cache':if(state.snapshot){for(const f of files())delete f.source;await saveSnapshot(state.snapshot);toast('Cached source cleared. Notes and review decisions are retained.');}break;
     }
-    scheduleReminder();
-    maybeShowOverdueReminder();
-  }
+  }));
+  root.querySelector('#code-size')?.addEventListener('change',(e)=>{data.preferences.codeSize=Number(e.target.value);saveState();render();});
+  root.querySelector('#wrap-code')?.addEventListener('change',(e)=>{data.preferences.wrap=e.target.checked;saveState();render();});
+  root.querySelector('#compact-context')?.addEventListener('change',(e)=>{data.preferences.compactContext=e.target.checked;saveState();render();});
+  root.querySelector('#chat-draft')?.addEventListener('input',(e)=>{currentSession().draft=e.target.value;saveState();});
+  root.querySelector('#chat-form')?.addEventListener('submit',(e)=>{e.preventDefault();sendChat();});
+  const noteForm=root.querySelector('#note-form');
+  noteForm?.addEventListener('input',()=>{const s=currentSession();s.noteDraft=noteForm.elements.note.value;s.noteStart=noteForm.elements.start.value;s.noteEnd=noteForm.elements.end.value;s.noteSide=noteForm.elements.side.value;saveState();});
+  noteForm?.addEventListener('submit',(e)=>{e.preventDefault();saveNote(noteForm);});
+  root.querySelector('#backup-file')?.addEventListener('change',async(e)=>{
+    const file=e.target.files[0];if(!file)return;
+    try { if(file.size>50*1024*1024)throw new Error('Backup exceeds the 50 MB import limit.');const imported=parseBackup(await file.text());capturePosition();data=mergeState(data,imported.data);if(imported.snapshot){state.snapshot=imported.snapshot;state.demo=false;state.connection='cached';state.connectionError='Imported snapshot — reconnect to check the laptop.';state.selectedFile=files().find((f)=>f.path===data.selections[comparisonKey(state.snapshot)])?.id||files()[0]?.id||'';await saveSnapshot(state.snapshot);}await saveState(true);toast('Backup imported privately into this browser.'); }
+    catch(error){toast(`Import failed: ${error.message}`);}
+  });
+  root.querySelectorAll('.code-viewer,.markdown-preview,.review-panel,.chat-scroll,.walkthrough-scroll').forEach((el)=>el.addEventListener('scroll',()=>{clearTimeout(scrollTimer);scrollTimer=setTimeout(()=>{capturePosition();saveState();},100);},{passive:true}));
 }
-
-async function hydrateAiConfig() {
+/** Provider boundary: only explicit sends reach the laptop, using immutable context. */
+export async function requestAi({ message, history=[], file, snapshotId, sessionId, signal, onDelta }) {
+  const response=await apiFetch('/api/ai/stream',{method:'POST',headers:{'content-type':'application/json'},signal,body:JSON.stringify({message,history,file:{id:file.id,path:file.path},snapshotId,sessionId})});
+  return readReply(response,onDelta);
+}
+async function sendChat() {
+  const file=selectedFile(), snapshot=state.snapshot, session=currentSession();
+  const question=session?.draft.trim();if(!file||!question||!state.aiEnabled||!state.online||state.demo||chatController)return;
+  const history=session.chat.filter((m)=>!m.pending&&!m.error).map((m)=>({role:m.role,text:m.text}));
+  session.conversationId ||= crypto.randomUUID();
+  session.draft='';session.chat.push({role:'user',text:question});const pending={role:'assistant',text:'',pending:true};session.chat.push(pending);
+  const controller=new AbortController();chatController=controller;saveState();render();let lastRender=0;
+  try {const payload=await requestAi({message:question,history,file,snapshotId:snapshot.snapshotId,sessionId:session.conversationId,signal:AbortSignal.any([controller.signal,AbortSignal.timeout(120000)]),onDelta:(text)=>{pending.text+=text;if(Date.now()-lastRender>100&&state.snapshot===snapshot&&selectedFile()===file){lastRender=Date.now();render();}}});pending.text=payload.text;}
+  catch(error){pending.error=true;pending.text=controller.signal.aborted?'Stopped.':`Guide unavailable: ${error.message}. Your question remains in this conversation.`;}
+  finally {pending.pending=false;chatController=null;saveState();render();}
+}
+async function jumpCitation(target) {
+  const file=state.snapshot?.files.find((f)=>f.id===target.fileId);if(!file)return;
+  citation={...target,snapshotId:state.snapshot.snapshotId};
+  if(history.state?.patchworkPanel)history.back();
+  state.activeTab=target.side==='old'?'diff':'source';state.chatOpen=false;state.filesOpen=false;
+  selectFile(file.id);
+  if(target.side==='new')await hydrateFileSource(file);
+  render();
+  const line=root.querySelector('.citation-highlight');
+  if(line){line.closest('details')?.setAttribute('open','');line.scrollIntoView({block:'center',behavior:'smooth'});}
+}
+function highlightCitation() {
+  if(!citation||citation.snapshotId!==state.snapshot?.snapshotId||citation.fileId!==state.selectedFile)return;
+  root.querySelectorAll('[data-line]').forEach((el)=>{if(el.dataset.side===citation.side&&Number(el.dataset.line)>=citation.startLine&&Number(el.dataset.line)<=citation.endLine)el.closest('.code-line,.source-line')?.classList.add('citation-highlight');});
+}
+export async function hydrateFromCompanion() {
+  const sequence=++refreshSequence;
+  state.connection='connecting';state.connectionError='';render();
   try {
-    const response = await apiFetch('/api/config', { cache: 'no-store' });
-    if (response.status === 401) { state.pairingRequired = true; render(); return; }
-    if (!response.ok) return;
-    const payload = await response.json();
-    state.aiEnabled = Boolean(payload.aiEnabled);
-    state.aiProvider = typeof payload.provider === 'string' ? payload.provider : '';
-    render();
-  } catch {
-    // Static hosting intentionally remains in preview mode.
-  }
+    const response=await apiFetch('/api/snapshot');
+    if(response.status===401) {if(sequence===refreshSequence){state.connection='pairing';state.connectionError='Open the pairing link from the laptop to authorize this browser.';}return;}
+    const payload=await response.json();if(!response.ok)throw new Error(payload.error||'The laptop could not capture the repository.');
+    const snapshot=validateSnapshot(payload);if(sequence!==refreshSequence)return;
+    capturePosition();const old=state.snapshot;
+    // Sources are reusable only when both immutable snapshot identity and revision match.
+    if(old?.repoId===snapshot.repoId&&old.snapshotId===snapshot.snapshotId) for(const file of snapshot.files){const prior=old.files.find((f)=>f.path===file.path&&f.version===file.version);if(typeof prior?.source==='string')file.source=prior.source;}
+    state.snapshot=snapshot;state.demo=false;state.connection='connected';state.connectionError='';
+    state.selectedFile=snapshot.files.find((f)=>f.path===data.selections[comparisonKey(snapshot)])?.id||snapshot.files[0]?.id||'';
+    if(selectedFile()&&state.activeTab==='preview'&&!isPreviewable(selectedFile()))state.activeTab='diff';
+    await saveSnapshot(snapshot);saveState();render(false);
+    if(['source','preview'].includes(state.activeTab))hydrateFileSource(selectedFile());
+  }catch(error){if(sequence===refreshSequence){state.connection=state.snapshot?'cached':'error';state.connectionError=`Laptop snapshot unavailable: ${error.message || 'connection failed'}. ${state.snapshot?'Showing the previously captured snapshot.':'No repository snapshot is loaded.'}`;}}
+  finally{if(sequence===refreshSequence)render(false);}
 }
-
-window.addEventListener('online', () => {
-  state.online = true;
+async function hydrateAiConfig() {
+  try {const response=await apiFetch('/api/config');if(!response.ok)throw new Error('Provider unavailable');const config=await response.json();state.aiEnabled=Boolean(config.aiEnabled);state.aiProvider=typeof config.provider==='string'?config.provider:'';state.aiMessage=typeof config.message==='string'?config.message:'';}
+  catch {state.aiEnabled=false;state.aiProvider='';state.aiMessage='AI status is unavailable while the laptop cannot be reached.';}
   render();
-  if (state.activeTab === 'source' || state.activeTab === 'preview') hydrateFileSource(selectedFile());
+}
+function loadDemo(){capturePosition();state.demo=true;state.snapshot=validateSnapshot({repoId:'patchwork-demo',base:'demo-base',head:'demo-head',branch:'demo',snapshotId:'demo-v2',generatedAt:new Date().toISOString(),workspaceName:'Sample workspace',files:demoFiles.map((f)=>({...f,version:`demo-${f.id}-v2`,status:'modified',sourceAvailable:true,source:f.lines.filter(([kind])=>kind!=='removed').map(([, ,text])=>text).join('\n')}))});state.selectedFile=files()[0].id;state.connectionError='';render(false);}
+async function initialize() {
+  let legacy={}, legacySnapshot=null;
+  try {legacy=JSON.parse(localStorage.getItem('patchwork-state-v1')||'{}');legacySnapshot=JSON.parse(localStorage.getItem('patchwork-snapshot-v1')||'null');state.apiToken=new URLSearchParams(location.search).get('token')||localStorage.getItem('patchwork-api-token')||legacy.apiToken||'';if(state.apiToken)localStorage.setItem('patchwork-api-token',state.apiToken);}
+  catch(error){storageFailure(error);state.apiToken=new URLSearchParams(location.search).get('token')||'';}
+  if(new URLSearchParams(location.search).has('token')){const url=new URL(location.href);url.searchParams.delete('token');history.replaceState(null,'',url.pathname+url.search+url.hash);}
+  try {storage=await openStorage();const saved=await storage.get('state');data=saved?sanitizeState(saved):migrateLegacy(legacy,legacySnapshot);const snapshot=await storage.get('snapshot');if(snapshot){state.snapshot=validateSnapshot(snapshot);state.connection='cached';state.selectedFile=files().find((f)=>f.path===data.selections[comparisonKey(state.snapshot)])?.id||files()[0]?.id||'';}await storage.put('state',data);try{localStorage.removeItem('patchwork-state-v1');localStorage.removeItem('patchwork-snapshot-v1');}catch{}}
+  catch(error){storageFailure(error);data=migrateLegacy(legacy,legacySnapshot);}
+  render(false);await Promise.allSettled([hydrateFromCompanion(),hydrateAiConfig()]);
+}
+window.addEventListener('popstate',()=>closePanels(true));
+window.addEventListener('online',()=>{state.online=true;hydrateFromCompanion();hydrateAiConfig();});
+window.addEventListener('offline',()=>{state.online=false;state.connection=state.snapshot?'cached':'error';state.aiEnabled=false;render();});
+window.addEventListener('resize',()=>render());
+window.addEventListener('scroll',()=>{clearTimeout(scrollTimer);scrollTimer=setTimeout(()=>{capturePosition();saveState();},100);},{passive:true});
+window.addEventListener('pagehide',()=>{capturePosition();saveState(true);});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){capturePosition();saveState(true);}});
+document.addEventListener('keydown',(e)=>{
+  const panel=small()&&state.filesOpen?root.querySelector('#file-panel'):overlayGuide()&&state.chatOpen?root.querySelector('#chat-panel'):null;if(!panel)return;
+  if(e.key==='Escape'){e.preventDefault();closePanels();return;}
+  if(e.key==='Tab'){const focusable=[...panel.querySelectorAll('button:not([disabled]),textarea,input,select,a[href],summary')].filter((el)=>el.getClientRects().length);const first=focusable[0],last=focusable.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}
 });
-window.addEventListener('offline', () => { state.online = false; render(); });
-window.addEventListener('popstate', () => {
-  if (!state.filesOpen) return;
-  fileMenuHistoryEntry = false;
-  state.filesOpen = false;
-  state.chatOpen = false;
-  render();
-});
-
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
-render();
-hydrateFromCompanion();
-hydrateAiConfig();
-scheduleReminder();
+if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js',{updateViaCache:'none'}).catch(()=>{});
+render(false);
+initialize();
