@@ -4,11 +4,11 @@ async page => {
  const lines=[...Array.from({length:3},(_,i)=>['normal',String(i+1),source.split('\n')[i]]),['added','4',source.split('\n')[3]],...Array.from({length:3},(_,i)=>['normal',String(i+5),source.split('\n')[i+4]])];
  const file={id:'a',path:'src/long-name-example.js',label:'long-name-example.js',folder:'src',version:'v1',sourceAvailable:true,source,lines,added:1234,removed:56,type:'JS',tone:'lime'};
  const snapshot={repoId:'feedback',base:'base',head:'head',branch:'main',snapshotId:'capture',generatedAt:new Date().toISOString(),workspaceName:'Feedback fixture',files:[file]};
- let sent;
+ let sent,releaseReply;
  await page.route('**/api/**',async route=>{
   const path='/api/'+route.request().url().split('/api/')[1].split('?')[0];
   let body=path==='/api/snapshot'?snapshot:path==='/api/config'?{aiEnabled:true,provider:'codex',message:'Codex · existing ChatGPT plan'}:path==='/api/models'?{models:[{id:'future-small',name:'Future Small',efforts:['low','xhigh'],defaultEffort:'low'}]}:{error:'Unexpected request'};
-  if(path==='/api/ai/stream'){sent=route.request().postDataJSON();await route.fulfill({status:400,contentType:'application/json',body:JSON.stringify({error:JSON.stringify({error:{message:'The selected model requires a newer version of Codex. Please upgrade the CLI.'}})})});return;}
+  if(path==='/api/ai/stream'){sent=route.request().postDataJSON();if(sent.message==='Wait for interruption'){await new Promise(resolve=>{releaseReply=resolve;});await route.abort().catch(()=>{});return;}await route.fulfill({status:400,contentType:'application/json',body:JSON.stringify({error:JSON.stringify({error:{message:'The selected model requires a newer version of Codex. Please upgrade the CLI.'}})})});return;}
   await route.fulfill({contentType:'application/json',body:JSON.stringify(body)});
  });
  await page.setViewportSize({width:1440,height:900});await page.goto(base);
@@ -24,6 +24,10 @@ async page => {
  await page.getByRole('button',{name:'Close files',exact:true}).click();
  if(await page.locator('#file-panel').getAttribute('inert')===null)throw Error('Queue did not collapse');
  await page.getByRole('button',{name:'Review queue',exact:true}).click();
+ if(await page.locator('#chat-panel').getAttribute('inert')===null)throw Error('Guide should start collapsed');
+ if(await page.locator('.offline-card,.connection-details').count())throw Error('Successful connection status should be quiet');
+ await page.getByRole('button',{name:'Code guide',exact:true}).click();
+ await page.getByRole('button',{name:'Conversation',exact:true}).click();
  await page.locator('.model-settings summary').click();
  await page.locator('#guide-model').selectOption('future-small');
  await page.locator('#guide-effort').selectOption('xhigh');
@@ -33,12 +37,28 @@ async page => {
  await page.getByText(/Update Codex on the laptop, restart Patchwork/).waitFor();
  if(sent.model!=='future-small'||sent.effort!=='xhigh')throw Error('Model choice not sent');
  await page.emulateMedia({colorScheme:'dark'});
+ await page.waitForFunction(()=>document.documentElement.dataset.theme==='dark');
  if(await page.locator('body').evaluate(el=>getComputedStyle(el).backgroundColor)!=='rgb(23, 28, 25)')throw Error('Dark theme not applied');
+ await page.getByRole('button',{name:/Theme: system/}).click();
+ if(await page.locator('html').getAttribute('data-theme')!=='light')throw Error('Light override failed');
+ await page.getByRole('button',{name:/Theme: light/}).click();
+ if(await page.locator('html').getAttribute('data-theme')!=='dark')throw Error('Dark override failed');
+ await page.getByRole('button',{name:/Theme: dark/}).click();
+ await page.locator('.model-settings summary').click();
  await page.screenshot({path:'/tmp/patchwork-feedback-desktop-dark.png'});
+ await page.getByRole('button',{name:'Close code guide',exact:true}).click();
  await page.setViewportSize({width:390,height:844});
  await page.getByRole('button',{name:'Open code guide',exact:true}).click();
  const before=await page.evaluate(()=>scrollY);await page.locator('.chat-scroll').hover();await page.mouse.wheel(0,-1400);
  if(await page.evaluate(()=>scrollY)!==before)throw Error('Guide scroll moved review background');
+ const newBox=await page.getByRole('button',{name:'New conversation',exact:true}).boundingBox(),sendBox=await page.getByRole('button',{name:'Send question',exact:true}).boundingBox();
+ if(newBox.x>=sendBox.x||Math.abs(newBox.y+newBox.height-sendBox.y-sendBox.height)>2)throw Error('Composer buttons misaligned');
+ await page.locator('#chat-draft').fill('Wait for interruption');
+ await page.getByRole('button',{name:'Send question',exact:true}).click();
+ await page.getByRole('button',{name:'Stop response',exact:true}).click();
+ await page.getByText('Stopped.',{exact:true}).waitFor();
+ releaseReply?.();
+ await page.getByRole('button',{name:'Send question',exact:true}).waitFor();
  await page.screenshot({path:'/tmp/patchwork-feedback-mobile-dark.png'});
  await page.getByRole('button',{name:'Close code guide',exact:true}).click();
  await page.getByRole('tab',{name:'Source',exact:true}).click();

@@ -150,7 +150,27 @@ test('LAN is ready immediately without cloudflared and can switch to a tunnel', 
  assert.equal(h.spawns.length,1);assert.equal(h.extension.status,'ready');
  assert.match(h.extension.session.pairingUrl,/^http:\/\/192\.168\.1\.10:4311\/\?token=/);
  await h.extension.handlePairingMessage({type:'tunnel'});
- assert.equal(h.spawns[1].options.env.PATCHWORK_HOST,'127.0.0.1');
- h.spawns[1].child.stdout.emit('data',Buffer.from('Patchwork companion: http://127.0.0.1:4312\n'));
- assert.equal(h.spawns.length,3);
+ assert.deepEqual(h.spawns[1].args,['tunnel','--url','http://127.0.0.1:4311']);
+ assert.equal(h.spawns.length,2);
+ assert.equal(h.spawns[0].child.killed,false);
+});
+
+test('LAN and tunnel switches preserve the companion, token, and tunnel URL', async () => {
+  const h=makeHarness({configuration:{transport:'lan'}});
+  await h.extension.start();
+  h.spawns[0].child.stdout.emit('data',Buffer.from('Patchwork companion: http://0.0.0.0:4311\n'));
+  const lanUrl=h.extension.session.pairingUrl;
+  await h.extension.handlePairingMessage({type:'tunnel'});
+  assert.equal(h.spawns.length,2);
+  await h.extension.handlePairingMessage({type:'lan'});
+  h.spawns[1].child.stderr.emit('data',Buffer.from('https://retained.trycloudflare.com\n'));
+  assert.equal(h.extension.session.pairingUrl,lanUrl);
+  await h.extension.handlePairingMessage({type:'tunnel'});
+  assert.match(h.extension.session.pairingUrl,/retained.trycloudflare.com/);
+  await h.extension.handlePairingMessage({type:'lan'});
+  await h.extension.handlePairingMessage({type:'tunnel'});
+  assert.equal(h.spawns.length,2);
+  assert.ok(h.spawns.every(({child})=>!child.killed));
+  await h.extension.stop(false);
+  assert.ok(h.spawns.every(({child})=>child.killed));
 });

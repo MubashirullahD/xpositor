@@ -39,7 +39,7 @@ PATCHWORK_AI_PROVIDER=codex node companion.mjs /path/to/repo
 # Alternatives: claude, auto (default), none (disable AI)
 ```
 
-Open **Model settings** in Code guide to select a model and reasoning effort. Codex supplies the available choices dynamically; Patchwork does not maintain a model list. The choice applies to conversations and walkthroughs and is saved on the device. Other providers currently use their laptop configuration. Provider failures include actionable messages. If a model requires a newer CLI, update Codex on the laptop and restart the companion. Development was verified with Codex CLI 0.155.0, including a live Astra response.
+Open the model selector in the conversation composer (or below the walkthrough) to select a model and reasoning effort. Codex supplies the available choices dynamically; Patchwork does not maintain a model list. The choice applies to conversations and walkthroughs and is saved on the device. Other providers currently use their laptop configuration. Provider failures include actionable messages. If a model requires a newer CLI, update Codex on the laptop and restart the companion. Development was verified with Codex CLI 0.155.0, including a live Astra response.
 
 Codex uses its app-server conversation protocol, streams replies, and retains a bounded set of ephemeral conversation threads. Claude Code receives explicit conversation history. Both run without repository tools in an empty temporary directory. Selected captured code and the questions you send reach the chosen provider. Private notes are excluded unless you put them into a question yourself.
 

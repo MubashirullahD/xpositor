@@ -48,3 +48,13 @@ Development-machine compatibility: upgraded the Homebrew Codex CLI from 0.146.0 
 - [x] System light/dark palette and browser color-scheme metadata.
 - [x] LAN HTTP by default, with an optional HTTPS tunnel and LAN-address selection in the launcher.
 - [x] Dynamic Codex model/effort selection and actionable nested provider-error messages on mobile.
+
+## Latest feedback
+
+- [x] Quiet successful connection state; capture age in the Refresh tooltip.
+- [x] System/light/dark theme toggle, dark hover states, and initially collapsed Code Guide.
+- [x] Composer model controls, icon-only new conversation, and shared send/interrupt button.
+- [x] One-click walkthrough start and simpler step navigation, with options/overview tucked away.
+- [x] Reuse the companion and tunnel when switching transport; add pairing-button spacing.
+- [ ] Replace bounded prompts with a repository-aware agent harness and branched conversations; see [design and acceptance criteria](docs/agent-guide-design.md).
+- [ ] Add explicit Unstaged / Staged / All review scope without treating partially staged files as approved.

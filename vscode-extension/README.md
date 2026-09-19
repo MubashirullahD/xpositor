@@ -1,6 +1,6 @@
 # Patchwork VS Code extension
 
-This is the laptop-side launcher for Patchwork. It contributes a Patchwork icon to VS Code's Activity Bar. Opening its `Pair phone` view starts the existing read-only `companion.mjs` on the local LAN and shows a QR link immediately. The sidebar can switch to an HTTPS Cloudflare tunnel.
+This is the laptop-side launcher for Patchwork. It contributes a Patchwork icon to VS Code's Activity Bar. Opening its `Pair phone` view starts the existing read-only `companion.mjs` on the local LAN and shows a QR link immediately. The sidebar can switch to an HTTPS Cloudflare tunnel. Switching reuses the same companion and any running tunnel; only stopping or restarting the session creates a new Quick Tunnel. The companion remains accessible on the LAN in either mode.
 
 ## Try it locally
 

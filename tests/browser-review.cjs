@@ -25,10 +25,11 @@ async page => {
  await page.getByRole('button',{name:'Open code guide',exact:true}).click();
  await page.getByRole('button',{name:'Start walkthrough',exact:true}).click();
  await page.getByRole('heading',{name:'Trace the doubling change',exact:true}).waitFor();
- await page.getByRole('button',{name:'I understand · next',exact:true}).click();
+ await page.getByRole('button',{name:'Next',exact:true}).click();
  if(!await page.getByRole('heading',{name:'Trace',exact:true}).isVisible())throw Error('Step did not advance');
  if(await page.getByText('Reviewed',{exact:true}).count())throw Error('Understanding auto-reviewed a file');
- await page.getByRole('button',{name:'Give an example',exact:true}).click();
+ await page.locator('#walk-draft').fill('Give an example');
+ await page.getByRole('button',{name:'Ask guide',exact:true}).click();
  await page.getByText('For zero, the result is zero.',{exact:true}).waitFor();
  await page.screenshot({path:'/tmp/patchwork-walkthrough-phone.png'});
  await page.getByRole('button',{name:'src/calc.js · new 1–1',exact:true}).click();
