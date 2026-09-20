@@ -96,7 +96,7 @@ const handleRequest = async (request, response) => {
     if (url.pathname.startsWith('/api/') && request.method === 'POST' && !/^application\/json(?:;|$)/i.test(request.headers['content-type'] || '')) return sendJson(response, 415, { error: 'Send application/json.' });
     if (url.pathname.startsWith('/api/') && !isAuthorized(request)) return sendJson(response, 401, { error: 'Pairing required.' });
     if (url.pathname === '/api/snapshot' && request.method === 'GET') {
-      const snapshot=snapshots.capture();
+      const snapshot=snapshots.capture(url.searchParams.get('scope')||'all');
       return sendJson(response, 200, {...snapshot,files:snapshot.files.map((file)=>({...file,source:snapshots.getFile(snapshot.snapshotId,{id:file.id}).source}))});
     }
     if (url.pathname === '/api/file' && request.method === 'GET') {

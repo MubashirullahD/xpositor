@@ -1,3 +1,4 @@
+import { newTimer, sanitizeTimer } from './focus-timer.js';
 import { sanitizeWalkthrough } from './walkthrough.js';
 /** Device-private, revision-scoped review state. No credentials enter this module. */
 export const SCHEMA = 2;
@@ -7,7 +8,7 @@ export const comparisonKey = (snapshot) => JSON.stringify([snapshot.repoId, snap
 // comparison, path, and exact file revision are all unchanged.
 export const reviewKey = (snapshot, file) => JSON.stringify([snapshot.repoId, snapshot.base, snapshot.branch, file.path, file.version]);
 export const sessionKey = (snapshot, file) => JSON.stringify([snapshot.repoId, snapshot.snapshotId, file.path, file.version]);
-export const emptyState = () => ({ schema: SCHEMA, reviews: {}, sessions: {}, walkthroughs: {}, notes: [], selections: {}, preferences: { theme:'system', model:'', effort:'', codeSize: 14, wrap: true, compactContext: true }, historicalNotes: [] });
+export const emptyState = () => ({ schema: SCHEMA, pomodoro:newTimer(), reviews: {}, sessions: {}, walkthroughs: {}, notes: [], selections: {}, preferences: { scope:'unstaged', guideWidth:310, theme:'system', model:'', effort:'', codeSize: 14, wrap: true, compactContext: true }, historicalNotes: [] });
 export function sessionFor(data, snapshot, file) {
   const key = sessionKey(snapshot, file);
   if (!own(data.sessions, key)) data.sessions[key] = { draft: '', chat: [], archives: [], scroll: {}, noteDraft: '', noteStart: '', noteEnd: '', noteSide: 'new' };
@@ -23,7 +24,7 @@ export function validateSnapshot(value) {
     ids.add(file.id); paths.add(file.path);
     return { ...file, lines: (Array.isArray(file.lines) ? file.lines : []).filter((line) => Array.isArray(line) && line.length >= 3).map(([kind, number, text]) => [String(kind), String(number), String(text)]), label: String(file.label ?? file.path.split('/').at(-1)), folder: String(file.folder ?? file.path.split('/').slice(0,-1).join('/')), type: String(file.type ?? 'FILE'), tone: ['lime','orange','blue','purple','pink'].includes(file.tone) ? file.tone : 'lime', added: Math.max(0, Number(file.added) || 0), removed: Math.max(0, Number(file.removed) || 0) };
   });
-  return { ...value, files };
+  return { ...value, scope:['all','staged','unstaged'].includes(value.scope)?value.scope:'all', files };
 }
 export function migrateLegacy(legacy = {}, snapshot = null) {
   const data = emptyState();
@@ -39,6 +40,7 @@ export function sanitizeState(value) {
   const data = emptyState();
   if (!value || value.schema !== SCHEMA) return data;
   const validKey = (key, length) => { try { const parsed = JSON.parse(key); return Array.isArray(parsed) && parsed.length === length && parsed.every((x) => typeof x === 'string'); } catch { return false; } };
+  data.pomodoro=sanitizeTimer(value.pomodoro);
   for (const [key, review] of Object.entries(value.reviews || {})) if (validKey(key, 5) && review === true) data.reviews[key] = true;
   for (const [key, item] of Object.entries(value.sessions || {})) {
     if (!validKey(key, 4) || !item || typeof item !== 'object') continue;
@@ -48,12 +50,12 @@ export function sanitizeState(value) {
   data.notes = (Array.isArray(value.notes) ? value.notes : []).filter((n) => n && ['id','repoId','base','branch','path','version','snapshotId','text','createdAt'].every((key) => typeof n[key] === 'string')).map((n) => ({ id:n.id, repoId:n.repoId, base:n.base, branch:n.branch, path:n.path, version:n.version, snapshotId:n.snapshotId, text:n.text, createdAt:n.createdAt, status:n.status === 'resolved' ? 'resolved' : 'open', start: Number.isInteger(n.start) && n.start > 0 ? n.start : null, end: Number.isInteger(n.end) && n.end > 0 ? n.end : null, side:n.side === 'old' ? 'old' : 'new' }));
   data.historicalNotes = (Array.isArray(value.historicalNotes) ? value.historicalNotes : []).filter((n) => n && typeof n.text === 'string').map((n) => ({ id:String(n.id || ''), path:String(n.path || ''), text:n.text, label:'Legacy note — repository and revision unverified', createdAt:String(n.createdAt || '') }));
   for (const [key, path] of Object.entries(value.selections || {})) if (validKey(key,3) && typeof path === 'string') data.selections[key] = path;
-  data.preferences = { theme:['system','light','dark'].includes(value.preferences?.theme)?value.preferences.theme:'system', model:typeof value.preferences?.model==='string'?value.preferences.model:'', effort:typeof value.preferences?.effort==='string'?value.preferences.effort:'', codeSize: [13,14,16,18].includes(value.preferences?.codeSize) ? value.preferences.codeSize : 14, wrap: typeof value.preferences?.wrap==='boolean'?value.preferences.wrap:true, compactContext: typeof value.preferences?.compactContext==='boolean'?value.preferences.compactContext:true };
+  data.preferences = { guideWidth:Number.isFinite(value.preferences?.guideWidth)?Math.max(260,Math.min(640,value.preferences.guideWidth)):310, scope:['all','staged','unstaged'].includes(value.preferences?.scope)?value.preferences.scope:'unstaged', theme:['system','light','dark'].includes(value.preferences?.theme)?value.preferences.theme:'system', model:typeof value.preferences?.model==='string'?value.preferences.model:'', effort:typeof value.preferences?.effort==='string'?value.preferences.effort:'', codeSize: [13,14,16,18].includes(value.preferences?.codeSize) ? value.preferences.codeSize : 14, wrap: typeof value.preferences?.wrap==='boolean'?value.preferences.wrap:true, compactContext: typeof value.preferences?.compactContext==='boolean'?value.preferences.compactContext:true };
   return data;
 }
 function cleanSnapshot(value) {
   const s = validateSnapshot(value);
-  return Object.fromEntries(['repoId','base','head','branch','snapshotId','generatedAt','workspaceName','files'].map((key) => [key, key === 'files' ? s.files.map((f) => Object.fromEntries(['id','path','oldPath','version','status','sourceAvailable','sourceReason','source','label','folder','type','tone','added','removed','size','changed','summary','lines'].filter((k) => f[k] !== undefined).map((k) => [k, f[k]]))) : s[key]]));
+  return Object.fromEntries(['repoId','scope','base','head','branch','snapshotId','generatedAt','workspaceName','files'].map((key) => [key, key === 'files' ? s.files.map((f) => Object.fromEntries(['id','path','oldPath','version','status','sourceAvailable','sourceReason','source','label','folder','type','tone','added','removed','size','changed','summary','lines'].filter((k) => f[k] !== undefined).map((k) => [k, f[k]]))) : s[key]]));
 }
 export function createBackup(data, snapshot) { return { format:'patchwork-private-backup', schema:SCHEMA, exportedAt:new Date().toISOString(), state:sanitizeState(data), snapshot:snapshot ? cleanSnapshot(snapshot) : null }; }
 export function parseBackup(text) {

@@ -35,6 +35,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
 await chmod(binary,0o755);
 const client = new CodexReviewClient(binary, {timeoutMs:300});
 try {
+ await assert.rejects(client.answer('Do not enable tools here', { repositoryTools: {} }), /dedicated guide process/);
  const catalog=await client.models();assert.equal(catalog.defaultModel,'future-model');assert.deepEqual(catalog.models[0].efforts,['xhigh']);
  const deltas=[];
  assert.equal(await client.answer('explain',{sessionKey:'device:snapshot',onDelta:t=>deltas.push(t)}),'Hello thread-1');

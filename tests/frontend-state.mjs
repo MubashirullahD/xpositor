@@ -62,3 +62,8 @@ assert.equal(emptyState().preferences.wrap,true);
 assert.equal(emptyState().preferences.compactContext,true);
 assert.equal(sanitizeState({schema:2}).preferences.wrap,true);
 assert.equal(sanitizeState({schema:2,preferences:{wrap:false,compactContext:false}}).preferences.wrap,false);
+
+const workspacePreferences = sanitizeState({ ...emptyState(), preferences: { guideWidth: 470, scope: 'staged' } }).preferences;
+assert.equal(workspacePreferences.guideWidth, 470);
+assert.equal(workspacePreferences.scope, 'staged');
+assert.equal(sanitizeState({ ...emptyState(), preferences: { guideWidth: 1000 } }).preferences.guideWidth, 640);

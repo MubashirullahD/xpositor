@@ -1,6 +1,6 @@
 # Repository-wide conversational guide
 
-Status: proposed next architectural change. The current implementation still sends bounded snapshot context and disables repository tools. Simplifying its controls does not remove those limits.
+Status: implementation in progress. Repository snapshots now capture unchanged tracked context alongside changes, and paginated read/search tools have coverage and protocol tests. Guide generation still uses bounded context. Live retrieval has been verified with the explicitly approved tool host in a dedicated repository-guide process; global CLI configuration is unchanged. Sessions, branching and the conversational UI are not implemented yet.
 
 ## Experience
 
@@ -28,3 +28,11 @@ Source checked 19 September 2026: [official Codex App Server documentation](http
 ## Staging and review scope
 
 Offer **Unstaged / Staged / All changes**, with Unstaged as a useful preference for this user's workflow. Staged is a workflow signal, not an automatic whole-file approval: partially staged files can contain both reviewed and new hunks. Implement distinct Git comparisons (`index → worktree`, `HEAD → index`, `HEAD → worktree`) and bind notes/review decisions to the chosen comparison and content revision. Keep staged code available as context to the agent even when it is outside the review queue.
+
+## Integration groundwork (not yet wired into the guide)
+
+`agent-plan.mjs` validates complete changed-file assignment, a suggested order, captured old/new citations and actual retrieval coverage. The 101-file fixture rejects omissions, duplicates, out-of-scope paths and fabricated citations.
+
+`guide-runs.mjs` owns generation independently of HTTP observers. Stable request IDs prevent duplicate generation after a tab reconnects; disconnecting an observer does not cancel the run, while an explicit stop does. Run history and replies are bounded. This registry is currently in memory and is not yet connected to the HTTP routes; companion-restart persistence still needs implementation.
+
+Live retrieval is now verified after explicit user authorization for `code_mode_host=true` only in dedicated repository-guide processes. Text-only processes retain the disabled host; native shell, network, plugins and writes remain restricted. The live Luna smoke check invoked the captured repository tools and answered from their returned source. Patchwork supplies the setting at process launch; users do not need to change global CLI settings.

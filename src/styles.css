@@ -656,7 +656,7 @@ html.modal-open,body.modal-open { overflow:hidden!important; overscroll-behavior
 .utility-menu p {font-size:13px;line-height:1.6;color:var(--muted);}
 .utility-menu .backup-actions {display:grid;gap:8px;}
 @media(min-width:821px) {
- .app-shell {--sidebar-col:54px;--queue-col:250px;--chat-col:310px;grid-template-columns:54px var(--queue-col) minmax(0,1fr) var(--chat-col);}
+ .app-shell {--sidebar-col:54px;--queue-col:250px;--chat-col:var(--guide-width,310px);grid-template-columns:54px var(--queue-col) minmax(0,1fr) var(--chat-col);}
  .app-shell.guide-is-collapsed {--chat-col:0px;}
  .app-shell.queue-is-collapsed {--queue-col:0px;}
  .sidebar.rail {display:flex;align-items:center;gap:8px;padding:12px 6px;overflow:visible;}
@@ -693,3 +693,18 @@ html.modal-open,body.modal-open { overflow:hidden!important; overscroll-behavior
 .review-complete p {color:var(--muted);font-size:16px;line-height:1.6;}
 .review-complete>div {display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin:24px 0 12px;}
 .review-complete button {font-size:13px;min-height:44px;}
+.scope-control {display:flex;align-items:center;justify-content:space-between;gap:8px;margin:10px 7px 16px;color:var(--muted);font-size:13px;}
+.scope-control select {min-width:0;max-width:170px;padding:8px;border:1px solid var(--line-strong);border-radius:6px;background:var(--panel);color:var(--ink);font:inherit;}
+.rail .rail-timer {height:auto;min-height:40px;gap:3px;padding:6px 0;}
+.rail-timer-label {font-size:10px;font-variant-numeric:tabular-nums;}
+.focus-controls {text-align:center;}
+.focus-controls #focus-clock {display:block;font-size:44px;font-variant-numeric:tabular-nums;line-height:1.4;color:var(--ink);}
+.focus-controls>div {display:flex;gap:8px;justify-content:center;}
+.focus-controls .break-suggestions {text-align:left;margin-top:22px;}
+
+.guide-resizer {display:none;}
+@media(min-width:1051px) {
+ .chat-panel {position:relative;}
+ .guide-resizer {display:block;position:absolute;z-index:10;inset:0 auto 0 0;width:7px;cursor:col-resize;touch-action:none;}
+ .guide-resizer:hover,.guide-resizer:focus-visible,.guide-resizer.resizing {background:var(--lime-deep);outline:0;}
+}

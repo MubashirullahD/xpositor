@@ -172,10 +172,12 @@ function cliPrompt(input) {
 
 const codexClients = new Map();
 function codexClient(command, options) {
-  let client = codexClients.get(command);
+  const repositoryMode = Boolean(options.repositoryTools);
+  const key = `${command}:${repositoryMode ? 'repository' : 'text'}`;
+  let client = codexClients.get(key);
   if (!client || client.closed) {
-    client = new CodexReviewClient(command, options);
-    codexClients.set(command, client);
+    client = new CodexReviewClient(command, { ...options, repositoryMode });
+    codexClients.set(key, client);
   }
   return client;
 }
@@ -209,7 +211,7 @@ export async function answerWithCli(providerInfo, input, options = {}) {
   try {
     if (provider === 'codex') {
       const history = (input.history || []).map((item) => `${item.role}: ${item.text}`).join('\n');
-      const text = await codexClient(command, options).answer(prompt, { sessionKey: options.sessionKey, history, onDelta: options.onDelta, signal: options.signal, jsonSchema: options.jsonSchema, model: options.model || (options.env || process.env).PATCHWORK_CODEX_MODEL, effort:options.effort });
+      const text = await codexClient(command, options).answer(prompt, { sessionKey: options.sessionKey, history, onDelta: options.onDelta, signal: options.signal, jsonSchema: options.jsonSchema, model: options.model || (options.env || process.env).PATCHWORK_CODEX_MODEL, effort:options.effort, repositoryTools: options.repositoryTools, onActivity: options.onActivity });
       return { status: 200, body: { text, model: 'codex', billing: 'subscription' } };
     }
     const status = await inspectAiProvider({ ...providerInfo, available: true }, options);

@@ -32,7 +32,6 @@ Possible future low-cost experiment: device dictation plus device read-aloud, wi
 - [ ] Exercise a real phone/Safari PWA install, offline relaunch and reconnection over cellular. Current browser checks used Chromium at phone/tablet sizes.
 - [ ] Verify live Claude Code subscription generation. Its adapter/auth/error behavior is covered by stubs; live generation was verified with Codex only.
 - [ ] Exercise the existing named-tunnel configuration against a real hostname. Lifecycle behavior is covered by mocks; Patchwork does not provision infrastructure.
-- [ ] Expand context to explicitly selected unchanged callers with equally strict snapshot boundaries; current walkthroughs use changed files only.
 - [ ] Add branch/commit comparisons and PR review after validating the uncommitted-change workflow with users.
 - [ ] Decide on Marketplace publishing. The VSIX is built locally; it has not been published or automatically installed.
 - [ ] Consider a framework migration only when incremental DOM updates and richer interaction justify it.
@@ -56,7 +55,24 @@ Development-machine compatibility: upgraded the Homebrew Codex CLI from 0.146.0 
 - [x] Composer model controls, icon-only new conversation, and shared send/interrupt button.
 - [x] One-click walkthrough start and simpler step navigation, with options/overview tucked away.
 - [x] Reuse the companion and tunnel when switching transport; add pairing-button spacing.
-- [ ] Replace bounded prompts with a repository-aware agent harness and branched conversations; see [design and acceptance criteria](docs/agent-guide-design.md).
-- [ ] Add explicit Unstaged / Staged / All review scope without treating partially staged files as approved.
 
 - [x] Implement the approved narrow desktop rail, consolidated Preferences, single file heading, and full-height code reader.
+
+## Next implementation priorities
+
+Implementation is in progress. Follow the sequence below for review scope and the agent guide; see the [agent-guide design and acceptance criteria](docs/agent-guide-design.md).
+
+1. [x] **Review scope:** Add Unstaged / Staged / All changes and remember the user's selection. Handle partially staged files correctly, keep review decisions tied to the chosen comparison and revision, and retain staged code as agent context without automatically marking entire files reviewed.
+2. [ ] **Repository-wide agent guide:** Replace bounded prompts with read-only repository exploration using the existing subscription connection. Let the agent search and read relevant changed and unchanged files, including callers; account for every changed file in large reviews and disclose any omissions.
+3. [ ] **Guided review:** Generate an overview and suggested file order, then walk through changes conversationally with navigable code references and saved progress.
+4. [ ] **Branched conversations:** Allow a follow-up question to open its own conversation without losing the main walkthrough's place or context.
+
+## Focus and workspace improvements
+
+- [x] **Built-in Pomodoro:** Add a 25-minute focus period followed by a 5-minute break, with start, pause/resume, and reset controls. Preserve the review position and keep timer state accurate when the tab is backgrounded or reloaded. Keep the timer unobtrusive while reviewing.
+- [x] **Screen-free break suggestions:** Encourage doing nothing, walking, stretching, having a conversation, or optionally enjoying a small sweet snack. Suggest avoiding scrolling and feeds during the break. Present these as optional activities, not medical or nutritional claims.
+- [x] **Resizable Code Guide column:** Add a draggable divider between the reader and Code Guide on desktop. Support keyboard resizing, sensible minimum/maximum widths, and a remembered width preference. Preserve the existing mobile drawer behavior.
+
+Implementation check, 20 September 2026: scope, Pomodoro and divider behavior passed unit and desktop/mobile browser checks. The repository retrieval foundation captures unchanged context and provides paginated inventory/read/search/diff tools with coverage tracking; its 100-file and protocol tests pass. It is not connected to guide generation yet. Live Codex retrieval is now verified after explicit approval to enable the tool host only in dedicated repository-guide processes. Existing text-only guide behavior remains in use. Persistent agent sessions, complete review plans and conversation branches remain unfinished.
+
+Additional groundwork: complete-plan/citation validation passes a 101-file fixture, and the in-memory run registry passes request deduplication, reconnect, explicit cancellation and bounded-history tests. These components are not yet wired into the UI or persistent agent sessions. Explicit authorization for `code_mode_host=true` in dedicated repository-guide processes has been received and implemented. A live Luna check invoked inventory/read tools and answered from synthetic captured code; global CLI configuration remains unchanged.

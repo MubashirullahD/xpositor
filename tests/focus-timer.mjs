@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import {newTimer,sanitizeTimer,toggleTimer,advanceTimer,remainingTime,timerLabel,FOCUS_MS,BREAK_MS} from '../src/focus-timer.js';
+const timer=newTimer(),now=100000;
+assert.equal(timerLabel(timer),'25:00');toggleTimer(timer,now);assert.equal(timer.endsAt,now+FOCUS_MS);
+assert.equal(remainingTime(timer,now+1000),FOCUS_MS-1000);
+toggleTimer(timer,now+2000);assert.equal(timer.endsAt,null);assert.equal(timer.remainingMs,FOCUS_MS-2000);
+toggleTimer(timer,now+5000);const focusEnd=timer.endsAt;
+assert.match(advanceTimer(timer,focusEnd+1000),/Focus complete/);assert.equal(timer.phase,'break');assert.equal(timer.endsAt,focusEnd+BREAK_MS);
+const restored=sanitizeTimer(JSON.parse(JSON.stringify(timer)));assert.equal(timerLabel(restored,focusEnd+1000),'4:59');
+assert.match(advanceTimer(restored,focusEnd+BREAK_MS),/Break complete/);assert.equal(restored.phase,'focus');assert.equal(restored.endsAt,null);
+const delayed=newTimer();toggleTimer(delayed,now);advanceTimer(delayed,now+FOCUS_MS+BREAK_MS+100000);assert.deepEqual(delayed,newTimer());
+assert.equal(sanitizeTimer({remainingMs:-100}).remainingMs,0);assert.equal(sanitizeTimer({endsAt:'invalid'}).endsAt,null);
+console.log('Focus timer passed: pause/resume, deadlines, background/reload recovery and no unattended restart.');
