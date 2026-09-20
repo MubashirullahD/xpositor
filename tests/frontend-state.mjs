@@ -58,3 +58,7 @@ assert.equal(migrated.historicalNotes[0].label, 'Legacy note — repository and 
 assert.deepEqual(sanitizeState({ schema: 2, apiToken: 'must-not-export', reviews: {} }).apiToken, undefined);
 
 console.log('frontend state and rendering tests passed');
+assert.equal(emptyState().preferences.wrap,true);
+assert.equal(emptyState().preferences.compactContext,true);
+assert.equal(sanitizeState({schema:2}).preferences.wrap,true);
+assert.equal(sanitizeState({schema:2,preferences:{wrap:false,compactContext:false}}).preferences.wrap,false);

@@ -58,3 +58,5 @@ Development-machine compatibility: upgraded the Homebrew Codex CLI from 0.146.0 
 - [x] Reuse the companion and tunnel when switching transport; add pairing-button spacing.
 - [ ] Replace bounded prompts with a repository-aware agent harness and branched conversations; see [design and acceptance criteria](docs/agent-guide-design.md).
 - [ ] Add explicit Unstaged / Staged / All review scope without treating partially staged files as approved.
+
+- [x] Implement the approved narrow desktop rail, consolidated Preferences, single file heading, and full-height code reader.

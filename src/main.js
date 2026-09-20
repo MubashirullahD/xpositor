@@ -7,7 +7,7 @@ import { emptyState, openStorage, sanitizeState, migrateLegacy, validateSnapshot
 
 const root = document.querySelector('#root');
 export let data = emptyState();
-export const state = { snapshot:null, selectedFile:'', activeTab:'diff', online:navigator.onLine, connection:'connecting', connectionError:'', aiEnabled:false, aiProvider:'', guideMode:'walkthrough', aiMessage:'', models:[], modelSettingsOpen:false, modelsLoading:false, modelsError:'', queueCollapsed:false, snapshotSaved:false, filesOpen:false, chatOpen:false, guideCollapsed:true, sourceLoading:new Set(), sourceErrors:new Map(), toast:'', storageError:'', demo:false, apiToken:'' };
+export const state = { snapshot:null, selectedFile:'', activeTab:'diff', online:navigator.onLine, connection:'connecting', connectionError:'', aiEnabled:false, aiProvider:'', guideMode:'walkthrough', aiMessage:'', models:[], modelSettingsOpen:false, modelsLoading:false, modelsError:'', queueCollapsed:false, utilityMenu:'', snapshotSaved:false, filesOpen:false, chatOpen:false, guideCollapsed:true, sourceLoading:new Set(), sourceErrors:new Map(), toast:'', storageError:'', demo:false, apiToken:'' };
 let storage, saveTimer, scrollTimer, toastTimer, refreshSequence = 0, dialogReturnFocus;
 const sourceRequests = new Map();
 let chatController, citation;
@@ -60,14 +60,27 @@ export function selectFile(id) {
   saveState(); render(false);
   if(['source','preview'].includes(state.activeTab)) hydrateFileSource(next);
 }
+function restoredSelection(snapshot) {
+  const path=data.selections[comparisonKey(snapshot)];
+  const pending=snapshot.files.find(f=>!data.reviews[reviewKey(snapshot,f)]);
+  if(path===''&&!pending)return '';
+  return snapshot.files.find(f=>f.path===path)?.id||pending?.id||snapshot.files[0]?.id||'';
+}
 function nextFile(mark=false) {
   const file=selectedFile(); if(!file) return;
   if(mark) data.reviews[reviewKey(state.snapshot,file)]=true;
   const list=files(), index=list.indexOf(file), ordered=[...list.slice(index+1),...list.slice(0,index)];
-  const next=mark ? ordered.find((f)=>!reviewed(f)) || ordered[0] : ordered[0];
-  saveState();
-  if(next) selectFile(next.id); else render();
-  if(mark && list.every(reviewed)) toast('All files in this snapshot are reviewed. Export a summary for desktop follow-up.');
+  if(mark&&list.every(reviewed)) {
+    capturePosition();state.selectedFile='';data.selections[comparisonKey(state.snapshot)]='';
+    state.guideCollapsed=true;state.chatOpen=false;saveState();render(false);
+    root.querySelector('#review-complete-title')?.focus();return;
+  }
+  const next=mark ? ordered.find(f=>!reviewed(f)) : list[index+1];
+  saveState();if(next)selectFile(next.id);else render();
+}
+function completionContent() {
+  const questions=data.notes.filter(n=>n.repoId===state.snapshot.repoId&&n.status==='open').length;
+  return `<section class="review-complete"><span class="completion-mark">${icon('check',32)}</span><h2 id="review-complete-title" tabindex="-1">Nice work. Review complete!</h2><p>You reviewed all ${files().length} file${files().length===1?'':'s'} in this snapshot.</p>${questions?`<p>${questions} open question${questions===1?' remains':'s remain'} in your notes.</p>`:''}<div><button class="primary-button" data-action="export-summary">Export review summary</button><button class="secondary-button" data-action="browse-reviewed">Browse reviewed files</button></div><button class="next-button" data-action="refresh-snapshot">Check for new changes</button></section>`;
 }
 function setActiveTab(tab) {
   const f=selectedFile(); if(!f || !['diff','source','preview','notes'].includes(tab) || (tab==='preview'&&!isPreviewable(f))) return;
@@ -125,7 +138,7 @@ function renderContent(file) {
   if(state.activeTab==='notes') return notesContent(file);
   const sourceTab=state.activeTab!=='diff', key=sessionKey(state.snapshot,file);
   if(sourceTab && typeof file.source!=='string') return `<section class="source-empty"><h3>${state.sourceLoading.has(key)?'Reading snapshot source…':file.sourceAvailable===false?'Source unavailable for this entry':state.online?'Source is not cached for this snapshot':'Offline — source not cached'}</h3><p>${esc(state.sourceErrors.get(key)||file.sourceReason||'The diff is available. Source must be fetched from this exact immutable snapshot.')}</p>${state.online&&file.sourceAvailable!==false&&!state.sourceLoading.has(key)?'<button class="secondary-button" data-action="retry-source">Load snapshot source</button>':''}</section>`;
-  return `<section class="code-card ${state.activeTab==='preview'?'preview-card':''}"><div class="code-toolbar"><span>${icon('branch',15)} ${sourceTab?'Snapshot source':'Working tree diff'}</span>${!sourceTab?'<button class="secondary-button" data-action="next-hunk">Next hunk ↓</button>':''}</div><div class="code-meta"><span>${esc(file.path)}</span><span>Revision ${esc(file.version.slice(0,12))}</span></div>${state.activeTab==='preview'?`<article class="markdown-preview">${renderMarkdown(file.source)}</article>`:`<div class="code-viewer ${data.preferences.wrap?'wrap-code':''}">${sourceTab?file.source.split(/\r?\n/).map((line,i)=>`<div class="source-line"><button class="line-number" data-line="${i+1}" data-side="new" aria-label="Add a note at line ${i+1}">${i+1}</button><code>${esc(line)||'&nbsp;'}</code></div>`).join(''):renderDiff(file)||'<p class="empty-diff">No textual diff available. Review the status and source where available.</p>'}</div>`}</section>`;
+  return `<section class="code-card ${state.activeTab==='preview'?'preview-card':''}">${state.activeTab==='preview'?`<article class="markdown-preview">${renderMarkdown(file.source)}</article>`:`<div class="code-viewer ${data.preferences.wrap?'wrap-code':''}">${sourceTab?file.source.split(/\r?\n/).map((line,i)=>`<div class="source-line"><button class="line-number" data-line="${i+1}" data-side="new" aria-label="Add a note at line ${i+1}">${i+1}</button><code>${esc(line)||'&nbsp;'}</code></div>`).join(''):renderDiff(file)||'<p class="empty-diff">No textual diff available. Review the status and source where available.</p>'}</div>`}</section>`;
 }
 function modelControls() {
   if(state.aiProvider!=='codex')return '';
@@ -164,6 +177,7 @@ function emptyContent() {
 const systemTheme = matchMedia('(prefers-color-scheme:dark)');
 systemTheme.addEventListener('change',()=>render());
 export function render(preservePosition=true) {
+  stopKeyboardScroll();
   const theme=data.preferences.theme||'system';
   document.documentElement.dataset.theme=theme==='system'?(systemTheme.matches?'dark':'light'):theme;
   const modelPanel=root.querySelector('.model-settings');if(modelPanel)state.modelSettingsOpen=modelPanel.open;
@@ -177,16 +191,22 @@ export function render(preservePosition=true) {
   const unresolved=data.notes.filter((n)=>n.repoId===state.snapshot?.repoId&&n.status==='open').length;
   const controls=`<div class="backup-actions"><button class="secondary-button" data-action="export-backup">Export backup</button><button class="secondary-button" data-action="import-backup">Import backup</button><button class="secondary-button" data-action="export-summary">Export summary</button><button class="secondary-button" data-action="clear-cache">Clear cached source</button></div>`;
   root.innerHTML=`<div class="app-shell ${state.queueCollapsed?'queue-is-collapsed':''} ${state.filesOpen?'files-is-open':''} ${state.chatOpen?'chat-is-open':''} ${guideHidden?'guide-is-collapsed':''}" style="--code-size:${data.preferences.codeSize}px">
-    <header class="mobile-topbar" ${modal?'inert':''}><button class="icon-button" data-action="toggle-files" aria-label="Open files">${icon('menu')}</button><div class="mobile-wordmark"><span class="wordmark-mark">${icon('logo')}</span>patchwork</div><button class="icon-button" data-action="toggle-chat" aria-label="Open code guide">${icon('message')}</button></header>
-    <aside class="sidebar" ${modal?'inert':''}><div class="brand"><span class="brand-mark">${icon('logo',24)}</span><span>patchwork</span></div><div class="workspace-switcher"><span class="repo-avatar">${esc((state.snapshot?.workspaceName||'PW').slice(0,2).toUpperCase())}</span><span><b>${esc(state.snapshot?.workspaceName||'Your workspace')}</b><small>${state.demo?'Demo · sample code':'Device-private review'}</small></span></div><div class="primary-nav"><span class="nav-item active">${icon('grid')}<span>Review queue</span></span></div><div class="sidebar-spacer"></div><p class="privacy-copy">Notes stay in this browser. A new temporary tunnel has a new browser store; carry your review with a private backup.</p><details class="desktop-backups"><summary>Backup & handoff</summary>${controls}</details></aside>
+    <header class="mobile-topbar" ${modal?'inert':''}><button class="icon-button" data-action="toggle-files" aria-label="Open files">${icon('menu')}</button><div class="mobile-wordmark"><span class="wordmark-mark">${icon('logo')}</span>patchwork</div><button class="icon-button" data-action="preferences" aria-label="Preferences" title="Preferences">${icon('sliders')}</button><button class="icon-button" data-action="toggle-chat" aria-label="Open code guide">${icon('message')}</button></header>
+    <nav class="sidebar rail" aria-label="Workspace navigation" ${modal?'inert':''}><div class="rail-brand" title="Patchwork" aria-label="Patchwork">${icon('logo',24)}</div><button class="icon-button" data-action="toggle-files" aria-label="Review queue" aria-controls="file-panel" aria-expanded="${!drawerHidden}" title="Review queue">${icon('panel')}</button><button class="icon-button" data-action="toggle-chat" aria-label="Code guide" aria-controls="chat-panel" aria-expanded="${!guideHidden}" title="Code guide">${icon('message')}</button><div class="rail-bottom"><button class="icon-button" data-action="backups" aria-label="Backup & handoff" aria-expanded="${state.utilityMenu==='backups'}" title="Backup & handoff">${icon('archive')}</button><button class="icon-button" data-action="preferences" aria-label="Preferences" aria-expanded="${state.utilityMenu==='preferences'}" title="Preferences">${icon('sliders')}</button></div></nav>
     ${modal?'<button class="file-drawer-scrim" data-action="close-panels" tabindex="-1" aria-label="Close panel"></button>':''}
-    <aside class="file-panel" id="file-panel" ${drawerHidden?'inert aria-hidden="true"':''} ${modal==='chat'?'inert':''} ${modal==='files'?'role="dialog" aria-modal="true" aria-label="Review files"':''}><div class="file-panel-header"><div><span class="eyebrow">WORKSPACE</span><h1>Review queue</h1></div><button class="close-files icon-button" data-action="close-queue" aria-label="Close files">${icon('close')}</button></div><div class="branch-row"><span class="branch-name">${icon('branch',14)}${esc(state.snapshot?.branch||'No branch loaded')}</span></div><div class="queue-progress"><div class="progress-copy"><span>${count} of ${files().length} reviewed</span><b>${unresolved} open questions</b></div><progress max="${files().length||1}" value="${count}" aria-label="Files reviewed"></progress></div><div class="queue-heading"><span>CHANGED FILES ${files().length}</span><button data-action="refresh-snapshot" title="${esc(age())}">Refresh ${icon('wifi',14)}</button></div><div class="file-list">${files().map(renderFileRow).join('')}</div><details class="mobile-backups"><summary>Backup & handoff</summary><p>Backups contain private notes, chats, and code. Share only when you choose.</p>${controls}</details></aside>
-    <main class="review-panel" ${modal?'inert':''}><div class="review-topline"><button class="secondary-button queue-expand" data-action="toggle-files">Review queue</button><div class="breadcrumbs">${esc(state.snapshot?.workspaceName||'Patchwork')}</div><button class="icon-button theme-toggle" data-action="theme" aria-label="Theme: ${theme}. Switch to ${theme==='system'?'light':theme==='light'?'dark':'system'}" title="Theme: ${theme}">${icon(theme==='system'?'monitor':theme==='dark'?'moon':'settings')}</button><button class="secondary-button" data-action="toggle-chat">${icon('message',16)} Code guide</button></div>${state.connection!=='connected'&&!state.connectionError?`<p class="connection-details" role="status">${esc(statusText())}</p>`:''}${state.connectionError?`<p class="connection-error">${esc(state.connectionError)}</p>`:''}<div id="storage-alert" role="alert" ${state.storageError?'':'hidden'}>${esc(state.storageError)}</div>${state.demo?'<p class="demo-banner">Demo workspace — sample files, no live repository.</p>':''}
-    ${file?`<section class="review-heading"><div class="review-heading-main"><div class="file-type large type-${esc(file.tone)}">${esc(file.type)}</div><div><div class="file-title-row"><h2>${esc(file.label)}</h2><span class="${reviewed(file)?'reviewed':'needs-review'}-pill">${reviewed(file)?'Reviewed':'Needs review'}</span></div><p>${esc(file.path)}</p><p>${esc(file.status||'modified')}${file.oldPath?` · renamed from ${esc(file.oldPath)}`:''}</p></div></div></section><div class="reading-controls"><label>Code size <select id="code-size" aria-label="Code font size">${[13,14,16,18].map((n)=>`<option value="${n}" ${data.preferences.codeSize===n?'selected':''}>${n}px</option>`).join('')}</select></label><label><input id="wrap-code" type="checkbox" ${data.preferences.wrap?'checked':''}> Wrap</label><label><input id="compact-context" type="checkbox" ${state.activeTab!=='diff'?'disabled title="Applies to the diff view"':''} ${data.preferences.compactContext?'checked':''}> Fold context</label></div><div class="review-tabs" role="tablist" aria-label="File views">${['diff','source',...(isPreviewable(file)?['preview']:[]),'notes'].map((tab)=>`<button id="tab-${tab}" role="tab" aria-selected="${state.activeTab===tab}" aria-controls="review-content" tabindex="${state.activeTab===tab?'0':'-1'}" class="review-tab ${state.activeTab===tab?'active':''}" data-tab="${tab}">${tab[0].toUpperCase()+tab.slice(1)}${tab==='notes'?` (${notesFor(data,state.snapshot,file).filter((n)=>n.status==='open').length})`:''}</button>`).join('')}</div><div id="review-content" role="tabpanel" aria-labelledby="tab-${state.activeTab}" tabindex="0">${renderContent(file)}</div><section class="review-footer"><div class="footer-actions"><button class="primary-button" data-action="review-next">Reviewed & next ${icon('check',16)}</button><button class="secondary-button" data-action="question">Question</button><button class="secondary-button" data-action="skip-file">Skip</button></div>${reviewed(file)?'<button class="secondary-button" data-action="reopen-file">Reopen review</button>':''}</section>`:emptyContent()}</main>
+    <aside class="file-panel" id="file-panel" ${drawerHidden?'inert aria-hidden="true"':''} ${modal==='chat'?'inert':''} ${modal==='files'?'role="dialog" aria-modal="true" aria-label="Review files"':''}><div class="file-panel-header"><div><h1>${esc(state.snapshot?.workspaceName||'Review queue')}</h1></div><button class="close-files icon-button" data-action="close-queue" aria-label="Close files">${icon('close')}</button></div><div class="branch-row"><span class="branch-name">${icon('branch',14)}${esc(state.snapshot?.branch||'No branch loaded')}</span></div><div class="queue-progress"><div class="progress-copy"><span>${count} of ${files().length} reviewed</span><b>${unresolved} open questions</b></div><progress max="${files().length||1}" value="${count}" aria-label="Files reviewed"></progress></div><div class="queue-heading"><span>CHANGED FILES ${files().length}</span><button data-action="refresh-snapshot" title="${esc(age())}">Refresh ${icon('wifi',14)}</button></div><div class="file-list">${files().map(renderFileRow).join('')}</div><details class="mobile-backups"><summary>Backup & handoff</summary><p>Backups contain private notes, chats, and code. Share only when you choose.</p>${controls}</details></aside>
+    <main class="review-panel" ${modal?'inert':''}>${state.connection!=='connected'&&!state.connectionError?`<p class="connection-details" role="status">${esc(statusText())}</p>`:''}${state.connectionError?`<p class="connection-error">${esc(state.connectionError)}</p>`:''}<div id="storage-alert" role="alert" ${state.storageError?'':'hidden'}>${esc(state.storageError)}</div>${state.demo?'<p class="demo-banner">Demo workspace — sample files, no live repository.</p>':''}
+    ${file?`<header class="file-heading"><h2 aria-label="${esc(file.label)}" title="${esc(file.path)} · ${esc(file.status||'modified')} · Revision ${esc(file.version.slice(0,12))}"><span>${esc(file.path.slice(0,-file.label.length))}</span>${esc(file.label)}</h2>${file.oldPath?`<small class="rename-detail">Renamed from ${esc(file.oldPath)}</small>`:''}</header><div class="view-toolbar"><div class="review-tabs" role="tablist" aria-label="File views">${['diff','source',...(isPreviewable(file)?['preview']:[]),'notes'].map((tab)=>`<button id="tab-${tab}" role="tab" aria-selected="${state.activeTab===tab}" aria-controls="review-content" tabindex="${state.activeTab===tab?'0':'-1'}" class="review-tab ${state.activeTab===tab?'active':''}" data-tab="${tab}">${tab[0].toUpperCase()+tab.slice(1)}${tab==='notes'?` (${notesFor(data,state.snapshot,file).filter((n)=>n.status==='open').length})`:''}</button>`).join('')}</div>${state.activeTab==='diff'?'<button class="next-hunk-button" data-action="next-hunk">Next change ↓</button>':''}</div><div id="review-content" role="tabpanel" aria-labelledby="tab-${state.activeTab}" tabindex="0">${renderContent(file)}</div><section class="review-footer"><div class="footer-actions"><button class="primary-button" data-action="review-next" title="Reviewed & next (Return)" aria-keyshortcuts="Enter">Reviewed & next ${icon('check',16)}</button><button class="secondary-button" data-action="question">Question</button><button class="secondary-button" data-action="skip-file">Skip</button></div>${reviewed(file)?'<button class="secondary-button" data-action="reopen-file">Reopen review</button>':''}</section>`:files().length&&files().every(reviewed)?completionContent():emptyContent()}</main>
     <aside class="chat-panel" id="chat-panel" aria-label="Code guide" ${guideHidden?'inert aria-hidden="true"':''} ${modal==='files'?'inert':''} ${modal==='chat'?'role="dialog" aria-modal="true"':''}><div class="chat-header"><div class="chat-title"><div class="chat-avatar">${icon('spark')}</div><div><h2>Code guide</h2><span>${state.demo?'Demo · AI unavailable':esc(labelForProvider())}</span></div></div><button class="icon-button" data-action="close-guide" aria-label="Close code guide">${icon('close')}</button></div><div class="context-chip">${esc(file?.path||'Choose a file')}</div><div class="guide-modes"><button class="secondary-button" data-guide-mode="walkthrough" aria-pressed="${state.guideMode==='walkthrough'}">Walkthrough</button><button class="secondary-button" data-guide-mode="chat" aria-pressed="${state.guideMode==='chat'}">Conversation</button></div>${state.guideMode==='walkthrough'?`<div class="walkthrough-scroll">${walkthrough.html()}${modelControls()}</div>`:`<div class="chat-scroll" role="log" aria-live="polite">${conversationHistory(file)}${session?.chat.length?session.chat.map((m)=>`<div class="chat-message ${m.role==='user'?'user':'assistant'} ${m.pending?'pending':''}"><div class="message-bubble">${esc(m.text)}</div></div>`).join(''):`<p class="guide-intro">${state.demo?'This is sample code. Connect your laptop to ask an AI guide about real changes.':esc(state.aiMessage||'Ask about the selected file’s exact snapshot. Your provider must be configured on the laptop. Questions are sent only when you press Send.')}</p>`}</div>${file?`<form class="chat-composer" id="chat-form"><label class="sr-only" for="chat-draft">Question about ${esc(file.label)}</label><textarea id="chat-draft" name="message" rows="2" placeholder="Ask about this snapshot…">${esc(session.draft)}</textarea><div class="composer-bottom"><button type="button" class="new-conversation" data-action="new-chat" aria-label="New conversation" title="New conversation" ${chatController?'disabled':''}>${icon('plus')}</button>${modelControls()}<button class="send-control" type="${chatController?'button':'submit'}" ${chatController?'data-action="stop-chat"':''} aria-label="${chatController?'Stop response':'Send question'}" ${!chatController&&(!state.aiEnabled||!state.online||state.demo)?'disabled':''}>${icon(chatController?'stop':'send')}</button></div></form>`:''}`}</aside>
+    ${state.utilityMenu?`<section id="utility-menu" class="utility-menu" popover="auto" aria-label="${state.utilityMenu==='preferences'?'Preferences':'Backup & handoff'}"><header><h2>${state.utilityMenu==='preferences'?'Preferences':'Backup & handoff'}</h2><button class="icon-button" data-action="close-utility" aria-label="Close menu">${icon('close')}</button></header>${state.utilityMenu==='preferences'?`<label>Appearance <select id="theme-preference">${['system','light','dark'].map(t=>`<option value="${t}" ${theme===t?'selected':''}>${t[0].toUpperCase()+t.slice(1)}</option>`).join('')}</select></label><label>Code size <select id="code-size" aria-label="Code font size">${[13,14,16,18].map(n=>`<option value="${n}" ${data.preferences.codeSize===n?'selected':''}>${n}px</option>`).join('')}</select></label><label>Wrap long lines <input id="wrap-code" type="checkbox" ${data.preferences.wrap?'checked':''}></label><label>Fold unchanged context <input id="compact-context" type="checkbox" ${data.preferences.compactContext?'checked':''}></label><p>Keyboard: ↑ ↓ to scroll · ← → to switch files · Return to review & next</p>`:`<p>Backups contain private code, notes, and chats. Carry one when changing pairing links.</p>${controls}`}</section>`:''}
     <input id="backup-file" type="file" accept="application/json,.json" hidden><div class="sr-only" role="status" aria-live="polite">${esc(state.toast)}</div>${state.toast?`<div class="toast">${esc(state.toast)}</div>`:''}</div>`;
   document.documentElement.classList.toggle('modal-open',Boolean(modal));
   document.body.classList.toggle('modal-open',Boolean(modal));
+  const utility=root.querySelector('#utility-menu');
+  if(utility) {
+    utility.showPopover();
+    utility.addEventListener('toggle',event=>{if(event.newState==='closed'&&root.contains(utility)){state.utilityMenu='';root.querySelectorAll('[data-action="preferences"],[data-action="backups"]').forEach(el=>el.setAttribute('aria-expanded','false'));}});
+  }
   wireEvents();
   walkthrough.bind(root);
   highlightCitation();
@@ -233,6 +253,7 @@ async function saveNote(form) {
   session.noteDraft='';session.noteStart='';session.noteEnd='';await saveState(true);toast(state.storageError?'Question is in this tab. Export a backup: device storage failed.':'Question saved privately on this device.');
 }
 function wireEvents() {
+  root.querySelector('#theme-preference')?.addEventListener('change',e=>{data.preferences.theme=e.target.value;saveState();render();});
   root.querySelector('#guide-model')?.addEventListener('change',(e)=>{data.preferences.model=e.target.value;data.preferences.effort='';saveState();render();});
   root.querySelector('#guide-effort')?.addEventListener('change',(e)=>{data.preferences.effort=e.target.value;saveState();render();});
   root.querySelectorAll('[data-guide-mode]').forEach((el)=>el.addEventListener('click',()=>{state.guideMode=el.dataset.guideMode;render();}));
@@ -247,7 +268,8 @@ function wireEvents() {
     switch(el.dataset.action) {
       case 'refresh-models':hydrateModels(true);break;
       case 'new-chat': {const s=currentSession();if(!s||chatController)break;s.archives||=[];if(s.chat.length)s.archives.push(s.chat);s.chat=[];s.conversationId=randomId();saveState();render();break;}
-      case 'theme':data.preferences.theme=({system:'light',light:'dark',dark:'system'})[data.preferences.theme||'system'];saveState();render();break;
+      case 'preferences':case 'backups':state.utilityMenu=state.utilityMenu===el.dataset.action?'':el.dataset.action;render();root.querySelector('#utility-menu button')?.focus();break;
+      case 'close-utility':{const action=state.utilityMenu;state.utilityMenu='';render();[...root.querySelectorAll(`[data-action="${action}"]`)].find(el=>el.getClientRects().length)?.focus();break;}
       case 'stop-chat':chatController?.abort();break;
       case 'toggle-files': if(!small()){state.queueCollapsed=!state.queueCollapsed;render();}else{state.filesOpen?closePanels():openPanel('files');}break;
       case 'close-queue':if(small())closePanels();else{state.queueCollapsed=true;render();}break;
@@ -255,6 +277,7 @@ function wireEvents() {
       case 'close-guide': state.guideCollapsed=true;closePanels();break;
       case 'close-panels':closePanels();break;
       case 'refresh-snapshot':await hydrateFromCompanion();await hydrateAiConfig();break;
+      case 'browse-reviewed':if(files().length)selectFile(files()[0].id);break;
       case 'review-next':nextFile(true);break;
       case 'skip-file':nextFile();break;
       case 'reopen-file':delete data.reviews[reviewKey(state.snapshot,selectedFile())];saveState();render();break;
@@ -278,7 +301,7 @@ function wireEvents() {
   noteForm?.addEventListener('submit',(e)=>{e.preventDefault();saveNote(noteForm);});
   root.querySelector('#backup-file')?.addEventListener('change',async(e)=>{
     const file=e.target.files[0];if(!file)return;
-    try { if(file.size>50*1024*1024)throw new Error('Backup exceeds the 50 MB import limit.');const imported=parseBackup(await file.text());capturePosition();data=mergeState(data,imported.data);if(imported.snapshot){state.snapshot=imported.snapshot;state.demo=false;state.connection='cached';state.connectionError='Imported snapshot — reconnect to check the laptop.';state.selectedFile=files().find((f)=>f.path===data.selections[comparisonKey(state.snapshot)])?.id||files()[0]?.id||'';await saveSnapshot(state.snapshot);}await saveState(true);toast('Backup imported privately into this browser.'); }
+    try { if(file.size>50*1024*1024)throw new Error('Backup exceeds the 50 MB import limit.');const imported=parseBackup(await file.text());capturePosition();data=mergeState(data,imported.data);if(imported.snapshot){state.snapshot=imported.snapshot;state.demo=false;state.connection='cached';state.connectionError='Imported snapshot — reconnect to check the laptop.';state.selectedFile=restoredSelection(state.snapshot);await saveSnapshot(state.snapshot);}await saveState(true);toast('Backup imported privately into this browser.'); }
     catch(error){toast(`Import failed: ${error.message}`);}
   });
   root.querySelectorAll('.code-viewer,.markdown-preview,.review-panel,.chat-scroll,.walkthrough-scroll').forEach((el)=>el.addEventListener('scroll',()=>{clearTimeout(scrollTimer);scrollTimer=setTimeout(()=>{capturePosition();saveState();},100);},{passive:true}));
@@ -326,7 +349,7 @@ export async function hydrateFromCompanion() {
     // Sources are reusable only when both immutable snapshot identity and revision match.
     if(old?.repoId===snapshot.repoId&&old.snapshotId===snapshot.snapshotId) for(const file of snapshot.files){const prior=old.files.find((f)=>f.path===file.path&&f.version===file.version);if(typeof prior?.source==='string')file.source=prior.source;}
     state.snapshotSaved=false;state.snapshot=snapshot;state.demo=false;state.connection='connected';state.connectionError='';
-    state.selectedFile=snapshot.files.find((f)=>f.path===data.selections[comparisonKey(snapshot)])?.id||snapshot.files[0]?.id||'';
+    state.selectedFile=restoredSelection(snapshot);
     if(selectedFile()&&state.activeTab==='preview'&&!isPreviewable(selectedFile()))state.activeTab='diff';
     await saveSnapshot(snapshot);saveState();render(false);
     if(['source','preview'].includes(state.activeTab))hydrateFileSource(selectedFile());
@@ -344,7 +367,7 @@ async function initialize() {
   try {legacy=JSON.parse(localStorage.getItem('patchwork-state-v1')||'{}');legacySnapshot=JSON.parse(localStorage.getItem('patchwork-snapshot-v1')||'null');state.apiToken=new URLSearchParams(location.search).get('token')||localStorage.getItem('patchwork-api-token')||legacy.apiToken||'';if(state.apiToken)localStorage.setItem('patchwork-api-token',state.apiToken);}
   catch(error){storageFailure(error);state.apiToken=new URLSearchParams(location.search).get('token')||'';}
   if(new URLSearchParams(location.search).has('token')){const url=new URL(location.href);url.searchParams.delete('token');history.replaceState(null,'',url.pathname+url.search+url.hash);}
-  try {storage=await openStorage();const saved=await storage.get('state');data=saved?sanitizeState(saved):migrateLegacy(legacy,legacySnapshot);const snapshot=await storage.get('snapshot');if(snapshot){state.snapshot=validateSnapshot(snapshot);state.snapshotSaved=true;state.connection='cached';state.selectedFile=files().find((f)=>f.path===data.selections[comparisonKey(state.snapshot)])?.id||files()[0]?.id||'';}await storage.put('state',data);try{localStorage.removeItem('patchwork-state-v1');localStorage.removeItem('patchwork-snapshot-v1');}catch{}}
+  try {storage=await openStorage();const saved=await storage.get('state');data=saved?sanitizeState(saved):migrateLegacy(legacy,legacySnapshot);const snapshot=await storage.get('snapshot');if(snapshot){state.snapshot=validateSnapshot(snapshot);state.snapshotSaved=true;state.connection='cached';state.selectedFile=restoredSelection(state.snapshot);}await storage.put('state',data);try{localStorage.removeItem('patchwork-state-v1');localStorage.removeItem('patchwork-snapshot-v1');}catch{}}
   catch(error){storageFailure(error);data=migrateLegacy(legacy,legacySnapshot);}
   render(false);await Promise.allSettled([hydrateFromCompanion(),hydrateAiConfig()]);
 }
@@ -355,6 +378,52 @@ window.addEventListener('resize',()=>render());
 window.addEventListener('scroll',()=>{clearTimeout(scrollTimer);scrollTimer=setTimeout(()=>{capturePosition();saveState();},100);},{passive:true});
 window.addEventListener('pagehide',()=>{capturePosition();saveState(true);});
 document.addEventListener('visibilitychange',()=>{if(document.hidden){capturePosition();saveState(true);}});
+// One animation owns the scroll position; key repeat never restarts the easing.
+let keyboardScroll=null, keyboardScrollFrame=0;
+function stopKeyboardScroll() {cancelAnimationFrame(keyboardScrollFrame);keyboardScroll=null;}
+function scrollReader(scroller,direction,key) {
+  if(matchMedia('(prefers-reduced-motion:reduce)').matches) {
+    stopKeyboardScroll();scroller.scrollBy({top:direction*80,behavior:'instant'});return;
+  }
+  if(keyboardScroll?.scroller===scroller&&keyboardScroll.key===key&&keyboardScroll.held)return;
+  stopKeyboardScroll();
+  const motion={scroller,key,direction,held:true,position:scroller.scrollTop,target:scroller.scrollTop+direction*64,last:performance.now()};
+  keyboardScroll=motion;
+  function frame(now) {
+    if(keyboardScroll!==motion||!scroller.isConnected)return;
+    const dt=Math.min(40,now-motion.last);motion.last=now;
+    if(motion.held)motion.target+=direction*420*dt/1000;
+    motion.target=Math.max(0,Math.min(scroller.scrollHeight-scroller.clientHeight,motion.target));
+    const remaining=motion.target-motion.position;
+    motion.position=Math.abs(remaining)<1?motion.target:motion.position+remaining*(1-Math.exp(-dt/140));
+    scroller.scrollTo({top:motion.position,behavior:'instant'});
+    if(!motion.held&&Math.abs(motion.target-scroller.scrollTop)<1){stopKeyboardScroll();return;}
+    keyboardScrollFrame=requestAnimationFrame(frame);
+  }
+  keyboardScrollFrame=requestAnimationFrame(frame);
+}
+document.addEventListener('keyup',e=>{if(keyboardScroll?.key===e.key)keyboardScroll.held=false;});
+for(const name of ['wheel','touchstart','pointerdown'])document.addEventListener(name,stopKeyboardScroll,{passive:true});
+window.addEventListener('blur',stopKeyboardScroll);
+document.addEventListener('visibilitychange',()=>{if(document.hidden)stopKeyboardScroll();});
+// Reader shortcuts leave text fields, native controls, tab navigation and guide dialogs alone.
+document.addEventListener('keydown',e=>{
+  if(e.defaultPrevented||e.isComposing||e.altKey||e.ctrlKey||e.metaKey||e.shiftKey||state.utilityMenu||state.filesOpen||state.chatOpen&&overlayGuide())return;
+  if(e.target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="tablist"],.chat-panel,.utility-menu'))return;
+  if(!selectedFile())return;
+  if(e.key==='Enter') {
+    if(e.target.closest('button,a,summary,[role="button"]'))return;
+    e.preventDefault();if(!e.repeat)nextFile(true);
+  }else if(e.key==='ArrowLeft'||e.key==='ArrowRight') {
+    e.preventDefault();const list=files(),index=list.findIndex(f=>f.id===state.selectedFile),next=list[index+(e.key==='ArrowRight'?1:-1)];
+    if(next)selectFile(next.id);
+  }else if(e.key==='ArrowDown'||e.key==='ArrowUp') {
+    const direction=e.key==='ArrowDown'?1:-1;
+    const candidates=[root.querySelector('.code-viewer,.markdown-preview'),root.querySelector('#review-content'),root.querySelector('.review-panel'),document.scrollingElement];
+    const scroller=candidates.find(el=>el&&el.scrollHeight>el.clientHeight+1&&(direction>0?el.scrollTop+el.clientHeight<el.scrollHeight-1:el.scrollTop>0));
+    if(scroller){e.preventDefault();scrollReader(scroller,direction,e.key);}
+  }
+});
 document.addEventListener('keydown',(e)=>{
   const panel=small()&&state.filesOpen?root.querySelector('#file-panel'):overlayGuide()&&state.chatOpen?root.querySelector('#chat-panel'):null;if(!panel)return;
   if(e.key==='Escape'){e.preventDefault();closePanels();return;}

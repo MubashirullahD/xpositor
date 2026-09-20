@@ -26,7 +26,7 @@ Advanced trusted-LAN preview: `PATCHWORK_HOST=0.0.0.0 node companion.mjs /path/t
 - Drafts, selection, scroll position and conversations are stored in IndexedDB. Storage failures are visible. Export a full private backup or a Markdown review summary for desktop follow-up.
 - Every capture downloads diffs and all available text sources together, then saves them to the device. The status shows how many sources are saved. Offline mode keeps that snapshot and notes; a failed connection never substitutes demo data.
 
-The interface follows the system light/dark theme. LAN HTTP allows reading already loaded code while disconnected, but browsers require HTTPS for PWA installation and offline relaunch. Use the tunnel for those features.
+The desktop uses a narrow navigation rail for the review queue, Code Guide, backups, and Preferences. Preferences groups the system/light/dark appearance, code size, wrapping, and diff-context folding; on phones it opens from the top bar. The file path appears once above compact view tabs, with review actions at the bottom. LAN HTTP allows reading already loaded code while disconnected, but browsers require HTTPS for PWA installation and offline relaunch. Use the tunnel for those features.
 
 Snapshots bind diffs and source to the same captured revision. Refresh explicitly to see new laptop changes. Very large or rapidly changing worktrees fail visibly instead of silently omitting files. Current limits: 2,000 changed files, 2 MiB per file, 16 MiB per capture, and eight cached snapshots within 64 MiB. Old snapshots may expire on the companion; local review history remains on the device.
 
@@ -69,3 +69,5 @@ For the browser regression, start the companion with AI disabled and run `playwr
 The automated checks use temporary repositories and stub providers; they do not spend an AI subscription or require real API credentials. HTTP tests need permission to bind loopback ports. The extension packages the companion and all required modules; source-checkout fallback is only available in extension development mode.
 
 Patchwork does not stage, edit, commit, publish comments or approve pull requests. Review decisions are local personal state, not remote repository approvals.
+
+Reading defaults enable wrapping and folded unchanged context; saved choices remain respected. Outside text fields, menus, tabs and the guide, ↑/↓ smoothly scroll the reader, ←/→ select adjacent files without wrapping, and Return marks the current file reviewed and advances. Holding Return does not review additional files. Reduced-motion preferences disable smooth scrolling. Reviewing the final outstanding file opens a completion page, retained across reloads; refreshing changed code returns to the pending review.
