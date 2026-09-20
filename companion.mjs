@@ -7,6 +7,8 @@ import { relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { closeProviders } from './providers.mjs';
 import { createAiService } from './ai-service.mjs';
+import { createAgentGuideService } from './agent-guide-service.mjs';
+import { GuideError } from './review-guide.mjs';
 import { createWalkthroughService } from './walkthrough-service.mjs';
 import { createSnapshotStore, SnapshotError } from './snapshot.mjs';
 
@@ -23,6 +25,7 @@ const accessToken = process.env.PATCHWORK_TOKEN || (host === '127.0.0.1' || host
 const snapshots = createSnapshotStore(repoRoot);
 const ai = createAiService(snapshots);
 const walkthrough = createWalkthroughService(snapshots, ai);
+const agentGuide = createAgentGuideService(snapshots, ai);
 
 function readBody(request, limit = 256 * 1024) {
   return new Promise((resolveBody, rejectBody) => {
@@ -96,7 +99,7 @@ const handleRequest = async (request, response) => {
     if (url.pathname.startsWith('/api/') && request.method === 'POST' && !/^application\/json(?:;|$)/i.test(request.headers['content-type'] || '')) return sendJson(response, 415, { error: 'Send application/json.' });
     if (url.pathname.startsWith('/api/') && !isAuthorized(request)) return sendJson(response, 401, { error: 'Pairing required.' });
     if (url.pathname === '/api/snapshot' && request.method === 'GET') {
-      const snapshot=snapshots.capture(url.searchParams.get('scope')||'all');
+      const snapshot=snapshots.capture(url.searchParams.get('scope')||'all', { reuse: true });
       return sendJson(response, 200, {...snapshot,files:snapshot.files.map((file)=>({...file,source:snapshots.getFile(snapshot.snapshotId,{id:file.id}).source}))});
     }
     if (url.pathname === '/api/file' && request.method === 'GET') {
@@ -105,6 +108,22 @@ const handleRequest = async (request, response) => {
       const snapshotId = url.searchParams.get('snapshotId');
       const { file, source } = snapshots.getFile(snapshotId, { path: requestedPath });
       return sendJson(response, 200, { snapshotId, id: file.id, path: file.path, version: file.version, source, sourceAvailable: file.sourceAvailable, sourceReason: file.sourceReason });
+    }
+    if (url.pathname === '/api/guide/run' && request.method === 'GET') return sendJson(response, 200, { run: agentGuide.runs.get(url.searchParams.get('id'), url.searchParams.has('after') ? Number(url.searchParams.get('after')) : undefined) });
+    if (url.pathname === '/api/guide/conversation' && request.method === 'GET') return sendJson(response, 200, { conversation: agentGuide.conversation(url.searchParams.get('id')) });
+    if (url.pathname === '/api/guide/conversations' && request.method === 'GET') return sendJson(response, 200, { conversations: agentGuide.list(url.searchParams.get('snapshotId')) });
+    if (url.pathname === '/api/guide/source' && request.method === 'GET') {
+      const repository = snapshots.getRepository(url.searchParams.get('snapshotId'));
+      return sendJson(response, 200, { path: url.searchParams.get('path'), ...repository.read(url.searchParams.get('path')) });
+    }
+    if (['/api/guide/start', '/api/guide/question', '/api/guide/stop', '/api/guide/step'].includes(url.pathname) && request.method === 'POST') {
+      let input;
+      try { input = JSON.parse(await readBody(request, 64 * 1024)); } catch (error) { if (error instanceof SnapshotError) throw error; throw new SnapshotError('Invalid guide JSON.', 400, 'GUIDE_INPUT'); }
+      if (!input || typeof input !== 'object' || Array.isArray(input)) throw new SnapshotError('Invalid guide request.', 400, 'GUIDE_INPUT');
+      if (url.pathname === '/api/guide/stop') return sendJson(response, 200, { run: agentGuide.runs.cancel(input.requestId) });
+      if (url.pathname === '/api/guide/step') return sendJson(response, 200, { conversation: agentGuide.selectStep(input.conversationId, input.step) });
+      const run = url.pathname === '/api/guide/start' ? agentGuide.start(input) : agentGuide.question(input);
+      return sendJson(response, 202, { run });
     }
     if (url.pathname === '/api/models' && request.method === 'GET') return sendJson(response,200,await ai.models(url.searchParams.get('refresh')==='true'));
     if (url.pathname === '/api/config' && request.method === 'GET') return sendJson(response, 200, await ai.status(url.searchParams.get('refresh') === 'true'));
@@ -135,7 +154,7 @@ const handleRequest = async (request, response) => {
     response.writeHead(200, { 'content-type': contentType(path), 'cache-control': 'no-cache' });
     response.end(request.method === 'HEAD' ? undefined : readFileSync(path));
   } catch (error) {
-    sendJson(response, error instanceof SnapshotError ? error.status : 500, { error: error instanceof Error ? error.message : 'Request failed.', code: error.code || 'REQUEST_FAILED' });
+    sendJson(response, error instanceof SnapshotError || error instanceof GuideError ? error.status : 500, { error: error instanceof Error ? error.message : 'Request failed.', code: error.code || 'REQUEST_FAILED' });
   }
 };
 
@@ -166,6 +185,7 @@ async function shutdown() {
   if (closing) return;
   closing = true;
   server.close();
+  agentGuide.close();
   await closeProviders();
   process.exit(0);
 }

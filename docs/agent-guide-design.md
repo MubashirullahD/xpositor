@@ -1,6 +1,6 @@
 # Repository-wide conversational guide
 
-Status: implementation in progress. Repository snapshots now capture unchanged tracked context alongside changes, and paginated read/search tools have coverage and protocol tests. Guide generation still uses bounded context. Live retrieval has been verified with the explicitly approved tool host in a dedicated repository-guide process; global CLI configuration is unchanged. Sessions, branching and the conversational UI are not implemented yet.
+Status: implementation in progress. Repository snapshots now capture unchanged tracked context alongside changes, and paginated read/search tools have coverage and protocol tests. Guide generation still uses bounded context. Live retrieval has been verified with the explicitly approved tool host in a dedicated repository-guide process; global CLI configuration is unchanged. The agent service now has HTTP endpoints, model-thread continuation and forks, automatic plan repair, and in-memory run reconnection. The conversational UI and companion-restart persistence remain unfinished.
 
 ## Experience
 
@@ -33,6 +33,10 @@ Offer **Unstaged / Staged / All changes**, with Unstaged as a useful preference 
 
 `agent-plan.mjs` validates complete changed-file assignment, a suggested order, captured old/new citations and actual retrieval coverage. The 101-file fixture rejects omissions, duplicates, out-of-scope paths and fabricated citations.
 
-`guide-runs.mjs` owns generation independently of HTTP observers. Stable request IDs prevent duplicate generation after a tab reconnects; disconnecting an observer does not cancel the run, while an explicit stop does. Run history and replies are bounded. This registry is currently in memory and is not yet connected to the HTTP routes; companion-restart persistence still needs implementation.
+`guide-runs.mjs` owns generation independently of HTTP observers. `agent-guide-service.mjs` connects it to generation, follow-ups, forks, and `/api/guide/*` endpoints. Stable request IDs prevent duplicate generation after a tab reconnects; disconnecting an observer does not cancel the run, while an explicit stop does. Run history and replies are bounded. This registry is currently in memory; companion-restart persistence still needs implementation.
 
 Live retrieval is now verified after explicit user authorization for `code_mode_host=true` only in dedicated repository-guide processes. Text-only processes retain the disabled host; native shell, network, plugins and writes remain restricted. The live Luna smoke check invoked the captured repository tools and answered from their returned source. Patchwork supplies the setting at process launch; users do not need to change global CLI settings.
+
+Walkthrough steps may revisit an important file. The suggested review queue follows the first occurrence of each file and includes each changed file once; validation still rejects missing files, duplicate assignments within a single step and invalid citations. Refresh reuses an unchanged captured snapshot so phone reconnection can retain the same guide session; changes to supporting context also invalidate that identity.
+
+Live acceptance evidence: `node tests/live-agent-guide.mjs` passed with Luna: 100 changed files in a four-step plan, all 100 recorded as examined, an unchanged `entry.js` caller found in a fork after the original file changed, and the main conversation's step preserved. This check does not yet cover the new browser UI or companion-restart persistence.

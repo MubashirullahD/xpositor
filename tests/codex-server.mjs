@@ -21,6 +21,9 @@ readline.createInterface({input:process.stdin}).on('line', line => {
  else if(m.method==='thread/start') {
   if(p.config['mcp_servers.inherited.enabled']!==false || p.sandbox!=='read-only' || p.approvalPolicy!=='never') output({id:m.id,error:{message:'Unsafe config'}});
   else reply({thread:{id:'thread-'+(++thread)}});
+ } else if(m.method==='thread/fork') {
+  if(!p.threadId) process.exit(2);
+  reply({thread:{id:'thread-'+(++thread)}});
  } else if(m.method==='turn/start') {
   if(p.model==='future-model'&&p.effort!=='xhigh'){output({id:m.id,error:{message:'Effort was not forwarded'}});return;}
   reply({turn:{id:'turn-1'}});
@@ -42,6 +45,8 @@ try {
  assert.deepEqual(deltas,['Hello ','thread-1']);
  assert.equal(await client.answer('why',{sessionKey:'device:snapshot'}),'Hello thread-1');
  assert.equal(await client.answer('new revision',{sessionKey:'device:snapshot2'}),'Hello thread-2');
+ assert.equal(await client.answer('branch',{sessionKey:'child',forkSessionKey:'device:snapshot'}),'Hello thread-3');
+ assert.equal(await client.answer('main continues',{sessionKey:'device:snapshot'}),'Hello thread-1');
  assert.match(await client.answer('dynamic model',{model:'future-model',effort:'xhigh'}),/Hello/);
  const controller=new AbortController();
  const pending=client.answer('wait',{sessionKey:'cancel',signal:controller.signal});

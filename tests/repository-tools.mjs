@@ -19,7 +19,8 @@ try {
   for (let i = 0; i < 100; i++) write(`file${i}.js`, 'after\n');
   symlinkSync('/etc/passwd', join(repo, 'outside'));
   const store = createSnapshotStore(repo);
-  const snapshot = store.capture();
+  const snapshot = store.capture('all', { reuse: true });
+  assert.equal(store.capture('all', { reuse: true }).snapshotId, snapshot.snapshotId);
   const tools = createRepositoryTools(store, snapshot.snapshotId);
   let inventory = [], offset = 0;
   do { const result = tools.call('review_inventory', { offset }); inventory.push(...result.items); offset = result.nextOffset; } while (offset !== null);
@@ -27,6 +28,7 @@ try {
   assert(!inventory.some(file => file.path === 'token.secret'));
   assert.equal(tools.call('review_search', { query: 'changed()' }).items[0].path, 'caller.js');
   write('caller.js', 'mutated after snapshot');
+  assert.notEqual(store.capture('all', { reuse: true }).snapshotId, snapshot.snapshotId, 'Unchanged context edits must start a new agent snapshot');
   assert.match(tools.call('review_read', { path: 'caller.js' }).text, /changed\(\)/);
   assert.match(tools.call('review_read', { path: 'outside' }).unavailable, /Symbolic link/);
   for (const path of ['../etc/passwd', '/etc/passwd', '.git/config', 'token.secret']) assert.throws(() => tools.call('review_read', { path }));
@@ -56,7 +58,8 @@ try {
   assert.equal(validated.steps[0].citations[0].fileId, null);
   const changedPlan = mutate => { const copy = structuredClone(plan); mutate(copy); return copy; };
   assert.throws(() => validateRepositoryGuide(changedPlan(p => p.steps[0].files.pop()), tools), /omitted 1/);
-  assert.throws(() => validateRepositoryGuide(changedPlan(p => p.steps[1].files.push('file0.js')), tools), /more than once/);
+  assert.equal(validateRepositoryGuide(changedPlan(p => p.steps[1].files.push('file0.js')), tools).fileOrder.length, 101);
+  assert.throws(() => validateRepositoryGuide(changedPlan(p => { p.steps[0].files[1] = 'file0.js'; }), tools), /more than once within a step/);
   assert.throws(() => validateRepositoryGuide(changedPlan(p => p.steps[0].files.push('caller.js')), tools), /outside the review scope/);
   assert.throws(() => validateRepositoryGuide(changedPlan(p => p.steps[0].citations[0].endLine = 999), tools), /valid captured line range/);
   assert.throws(() => validateRepositoryGuide(changedPlan(p => p.steps[0].citations[0].path = '../private'), tools), /valid captured line range/);

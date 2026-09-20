@@ -21,7 +21,7 @@ export function createAiService(snapshots, env = process.env) {
           if (checked.available) { info = alternative; result = checked; }
         }
       }
-      cachedStatus = { aiEnabled: Boolean(result.available), provider: info.provider, model: info.provider === 'api' && env.OPENAI_API_KEY ? (env.OPENAI_MODEL || 'gpt-5') : null, auth: result.auth, billing: result.billing, message: result.message, limits: result.limits || null, capabilities: { streaming: info.provider === 'codex', conversation: true, voice: false } };
+      cachedStatus = { aiEnabled: Boolean(result.available), provider: info.provider, model: info.provider === 'api' && env.OPENAI_API_KEY ? (env.OPENAI_MODEL || 'gpt-5') : null, auth: result.auth, billing: result.billing, message: result.message, limits: result.limits || null, capabilities: { streaming: info.provider === 'codex', conversation: true, repositoryGuide: info.provider === 'codex', voice: false } };
       statusAt = Date.now(); return cachedStatus;
     })();
     try { return await statusPromise; } finally { statusPromise = null; }
@@ -33,7 +33,7 @@ export function createAiService(snapshots, env = process.env) {
     return {...await listProviderModels(info,{env,refresh}),provider:info.provider};
   }
 
-  async function generate(prompt, { history = [], sessionKey, signal, onDelta, jsonSchema, model, effort, repositoryTools, onActivity } = {}) {
+  async function generate(prompt, { history = [], sessionKey, signal, onDelta, jsonSchema, model, effort, repositoryTools, onActivity, forkSessionKey, resumeThreadId, onThread } = {}) {
     prompt = `${GUIDE_INSTRUCTIONS}\n\n${prompt}`;
     if (busy) return { status: 429, body: { error: 'Another explanation is running. Stop it or wait before asking again.' } };
     if (Buffer.byteLength(prompt) > MAX_CONTEXT) throw new SnapshotError('The selected code exceeds the guide context limit. Choose fewer files.', 413, 'AI_CONTEXT_LIMIT');
@@ -51,7 +51,7 @@ export function createAiService(snapshots, env = process.env) {
         effort ||= choice.defaultEffort;
       }
       if (repositoryTools && info.provider !== 'codex') return { status: 400, body: { error: 'Repository exploration currently requires Codex with a ChatGPT subscription. Select Codex on the laptop.' } };
-      if (info.provider !== 'api') return await answerWithCli(info, { prompt, history }, { env, sessionKey:sessionKey?`${sessionKey}:${model||'default'}:${effort||'default'}`:undefined, signal, onDelta, jsonSchema, model, effort, repositoryTools, onActivity });
+      if (info.provider !== 'api') return await answerWithCli(info, { prompt, history }, { env, sessionKey:sessionKey?(repositoryTools?sessionKey:`${sessionKey}:${model||'default'}:${effort||'default'}`):undefined, signal, onDelta, jsonSchema, model, effort, repositoryTools, onActivity, forkSessionKey, resumeThreadId, onThread });
       // API mode is deliberately opt-in. Auto detection never selects an API key.
       const historyMessages = history.map((item) => ({ role: item.role, content: item.text }));
       const timeout = AbortSignal.timeout(90_000);

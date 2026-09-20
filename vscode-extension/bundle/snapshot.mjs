@@ -135,7 +135,7 @@ export function createSnapshotStore(repository, options = {}) {
     const fingerprint = hash(JSON.stringify([meta, [...context], working.map((item) => [item.mode, hash(item.bytes), item.sourceReason])]));
     return { meta, working, context, fingerprint };
   }
-  function capture(scope='all') {
+  function capture(scope='all', { reuse = false } = {}) {
     if(!['all','staged','unstaged'].includes(scope))throw new SnapshotError('Unknown review scope.',400,'INVALID_SCOPE');
     let state;
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -144,6 +144,9 @@ export function createSnapshotStore(repository, options = {}) {
       if (before.fingerprint === after.fingerprint) { state = after; break; }
     }
     if (!state) throw new SnapshotError('Repository changed while capturing the snapshot. Retry refresh.', 409, 'SNAPSHOT_CHANGED');
+    if (reuse) {
+      for (const record of cache.values()) if (record.snapshot.scope === scope && record.fingerprint === state.fingerprint) return record.snapshot;
+    }
     const { meta, working, context } = state;
     const baseFiles = scope==='unstaged'?indexFiles(meta.index):new Map();
     if (meta.head&&scope!=='unstaged') for (const item of decode(git(['ls-tree', '-r', '-z', meta.head])).split('\0').filter(Boolean)) {
@@ -196,7 +199,7 @@ export function createSnapshotStore(repository, options = {}) {
     const bytes = Buffer.byteLength(JSON.stringify([...context])) + Buffer.byteLength(JSON.stringify(snapshot)) + [...sources.values()].reduce((sum, value) => sum + (value === null ? 0 : Buffer.byteLength(value)), 0);
     if (bytes > limits.maxCacheBytes) throw new SnapshotError('Snapshot exceeds the cache byte limit.', 413, 'SNAPSHOT_LIMIT');
     while (cache.size && (cache.size >= limits.maxSnapshots || cacheBytes + bytes > limits.maxCacheBytes)) { const key = cache.keys().next().value; cacheBytes -= cache.get(key).bytes; cache.delete(key); }
-    cache.set(snapshot.snapshotId, { snapshot, sources, context, bytes }); cacheBytes += bytes;
+    cache.set(snapshot.snapshotId, { snapshot, sources, context, bytes, fingerprint: state.fingerprint }); cacheBytes += bytes;
     return snapshot;
   }
   function get(snapshotId) {

@@ -151,6 +151,28 @@ try {
   const next = await (await get('/api/snapshot')).json();
   assert.notEqual(next.files.find((item) => item.id === file.id).version, file.version);
   assert.equal((await (await get(fileUrl)).json()).source, 'CAPTURED_SOURCE\n');
+  const contextUrl = `/api/guide/source?snapshotId=${snapshot.snapshotId}&path=unchanged.txt`;
+  assert.equal((await (await get(contextUrl)).json()).source, 'not part of review');
+  assert.equal((await get(`/api/guide/source?snapshotId=${snapshot.snapshotId}&path=../secret`)).status, 404);
+  assert.equal((await (await get(`/api/guide/source?snapshotId=${snapshot.snapshotId}&path=link`)).json()).source, null);
+  assert.equal((await get('/api/guide/run?id=unknown')).status, 404);
+  const beforeRepositoryCalls = providerCalls;
+  const repositoryRequest = {requestId:'http-guide-request-001',snapshotId:snapshot.snapshotId,selectedPath:file.path};
+  const started = await post('/api/guide/start', repositoryRequest);
+  assert.equal(started.status, 202);
+  let guideRun;
+  for(let attempt=0;attempt<30;attempt++) {
+    guideRun = (await (await get('/api/guide/run?id=http-guide-request-001')).json()).run;
+    if(guideRun.status !== 'running')break;
+    await new Promise(resolve=>setTimeout(resolve,10));
+  }
+  assert.equal(guideRun.status,'failed');
+  assert.match(guideRun.error,/requires Codex/);
+  assert.equal(providerCalls,beforeRepositoryCalls,'Repository mode must not fall back to API billing');
+  assert.equal((await post('/api/guide/start',repositoryRequest)).status,202);
+  assert.equal((await post('/api/guide/start',{...repositoryRequest,selectedPath:helper.path})).status,409);
+  const conversation=(await (await get('/api/guide/conversation?id=http-guide-request-001')).json()).conversation;
+  assert(!('threadId' in conversation));
   console.log('Companion smoke passed: portable fixtures, immutable source, authoritative AI, walkthrough HTTP/streaming, pairing, static allowlist, CSP, symlinks.');
 } finally {
   if (companion && companion.exitCode === null) { const exited = once(companion, 'exit'); companion.kill('SIGTERM'); await exited; }
