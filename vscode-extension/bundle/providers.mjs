@@ -211,7 +211,7 @@ export async function answerWithCli(providerInfo, input, options = {}) {
   try {
     if (provider === 'codex') {
       const history = (input.history || []).map((item) => `${item.role}: ${item.text}`).join('\n');
-      const text = await codexClient(command, options).answer(prompt, { sessionKey: options.sessionKey, history, onDelta: options.onDelta, signal: options.signal, jsonSchema: options.jsonSchema, model: options.model || (options.env || process.env).PATCHWORK_CODEX_MODEL, effort:options.effort, repositoryTools: options.repositoryTools, onActivity: options.onActivity, forkSessionKey: options.forkSessionKey, resumeThreadId: options.resumeThreadId, onThread: options.onThread });
+      const text = await codexClient(command, options).answer(prompt, { sessionKey: options.sessionKey, history, onDelta: options.onDelta, signal: options.signal, jsonSchema: options.jsonSchema, model: options.model || (options.env || process.env).PATCHWORK_CODEX_MODEL, effort:options.effort, repositoryTools: options.repositoryTools, onActivity: options.onActivity, forkSessionKey: options.forkSessionKey, forkThreadId: options.forkThreadId, resumeThreadId: options.resumeThreadId, onThread: options.onThread });
       return { status: 200, body: { text, model: 'codex', billing: 'subscription' } };
     }
     const status = await inspectAiProvider({ ...providerInfo, available: true }, options);

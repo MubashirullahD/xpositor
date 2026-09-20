@@ -1,0 +1,47 @@
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync, rmSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { createSnapshotStore } from '../snapshot.mjs';
+import { createGuideStorage } from '../guide-storage.mjs';
+import { createAgentGuideService } from '../agent-guide-service.mjs';
+const root=mkdtempSync(join(tmpdir(),'patchwork-guide-persist-'));
+const git=(...args)=>execFileSync('git',args,{cwd:root,stdio:'pipe'});
+try{
+ git('init','-q');git('config','user.name','Test');git('config','user.email','test@example.invalid');
+ writeFileSync(join(root,'a.js'),'old\n');writeFileSync(join(root,'caller.js'),'original caller\n');git('add','.');git('commit','-qm','Initial');writeFileSync(join(root,'a.js'),'new\n');
+ let storage;const makeSnapshots=()=>createSnapshotStore(root,{loadSnapshot:id=>storage.loadSnapshot(id)});
+ const snapshots=makeSnapshots();storage=createGuideStorage(join(root,'.state'),snapshots.repoId);
+ // Keep companion-owned state out of the synthetic repository inventory.
+ writeFileSync(join(root,'.git/info/exclude'),'.state/\n');
+ const snapshot=snapshots.capture('all',{reuse:true});
+ const plan={title:'A change',summary:'Review a.js',assumptions:[],steps:[{title:'Read it',explanation:'a.js changed.',files:['a.js'],citations:[{path:'a.js',side:'new',startLine:1,endLine:1}]}]};
+ const calls=[];let stall=false;
+ const ai={async generate(prompt,options){calls.push(options);options.onThread(options.resumeThreadId||'provider-thread-original');if(stall)return new Promise((_,reject)=>options.signal.addEventListener('abort',()=>reject(new Error('Stopped'))));return {status:200,body:{text:options.jsonSchema?JSON.stringify(plan):'Continued.'}};}};
+ const first=createAgentGuideService(snapshots,ai,{storage});const main='persistent-main-0001';
+ first.start({requestId:main,snapshotId:snapshot.snapshotId});await first.runs.wait(main);
+ assert.equal(statSync(join(root,'.state',snapshots.repoId,'conversations.json')).mode&0o777,0o600);
+ const restoredSnapshots=makeSnapshots();const second=createAgentGuideService(restoredSnapshots,ai,{storage});
+ assert.equal(restoredSnapshots.capture('all',{reuse:true}).snapshotId,snapshot.snapshotId);
+ assert.equal(second.conversation(main).guide.title,'A change');
+ second.start({requestId:main,snapshotId:snapshot.snapshotId});assert.equal(calls.length,1,'Completed request must not replay after restart');
+ second.question({requestId:'persistent-followup-1',conversationId:main,question:'Continue'});await second.runs.wait('persistent-followup-1');
+ assert.equal(calls.at(-1).resumeThreadId,'provider-thread-original');
+ second.question({requestId:'persistent-branch-01',conversationId:main,question:'Explore',branch:true});await second.runs.wait('persistent-branch-01');
+ assert.equal(calls.at(-1).forkThreadId,'provider-thread-original');
+ writeFileSync(join(root,'caller.js'),'changed after capture\n');
+ const thirdSnapshots=makeSnapshots();const third=createAgentGuideService(thirdSnapshots,ai,{storage});
+ assert.equal(thirdSnapshots.getRepository(snapshot.snapshotId).read('caller.js').source,'original caller\n');
+ stall=true;third.question({requestId:'interrupted-request-1',conversationId:main,question:'A long question'});await Promise.resolve();await Promise.resolve();
+ const atCrash=storage.load();third.close();await third.runs.wait('interrupted-request-1');storage.save(atCrash);
+ const count=calls.length;const fourth=createAgentGuideService(makeSnapshots(),ai,{storage});
+ assert.equal(fourth.runs.get('interrupted-request-1').status,'failed');
+ assert.match(fourth.runs.get('interrupted-request-1').error,/restarted/);
+ fourth.question({requestId:'interrupted-request-1',conversationId:main,question:'A long question'});assert.equal(calls.length,count,'Interrupted work must never replay automatically');
+ assert.throws(()=>storage.loadSnapshot('../escape'),/Invalid snapshot/);
+ const broken=createAgentGuideService(makeSnapshots(),ai,{storage:{load(){throw new Error('Corrupt history');}}});
+ assert.throws(()=>broken.start({requestId:'broken-storage-0001',snapshotId:snapshot.snapshotId}),/Saved guide history could not be loaded/);
+ assert.equal(broken.runs.dump().length,0);
+ console.log('Guide persistence passed: private files, stable snapshot identity, immutable context, thread resume/fork metadata and no replay after completed or interrupted restart.');
+}finally{rmSync(root,{recursive:true,force:true});}

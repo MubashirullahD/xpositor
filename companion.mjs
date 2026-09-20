@@ -2,11 +2,12 @@ import { createServer as createHttpServer } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
 import { randomBytes } from 'node:crypto';
 import { lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
-import { networkInterfaces } from 'node:os';
-import { relative, resolve, sep } from 'node:path';
+import { homedir, networkInterfaces } from 'node:os';
+import { join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { closeProviders } from './providers.mjs';
 import { createAiService } from './ai-service.mjs';
+import { createGuideStorage } from './guide-storage.mjs';
 import { createAgentGuideService } from './agent-guide-service.mjs';
 import { GuideError } from './review-guide.mjs';
 import { createWalkthroughService } from './walkthrough-service.mjs';
@@ -22,10 +23,12 @@ if (Boolean(tlsKeyPath) !== Boolean(tlsCertPath)) throw new Error('PATCHWORK_TLS
 const secureTransport = Boolean(tlsKeyPath && tlsCertPath);
 const accessToken = process.env.PATCHWORK_TOKEN || (host === '127.0.0.1' || host === 'localhost' ? '' : randomBytes(18).toString('hex'));
 
-const snapshots = createSnapshotStore(repoRoot);
+let guideStorage;
+const snapshots = createSnapshotStore(repoRoot,{loadSnapshot:id=>guideStorage?.loadSnapshot(id)});
+guideStorage=createGuideStorage(process.env.PATCHWORK_STATE_DIR||join(homedir(),'.patchwork','reviews'),snapshots.repoId);
 const ai = createAiService(snapshots);
 const walkthrough = createWalkthroughService(snapshots, ai);
-const agentGuide = createAgentGuideService(snapshots, ai);
+const agentGuide = createAgentGuideService(snapshots, ai, {storage:guideStorage});
 
 function readBody(request, limit = 256 * 1024) {
   return new Promise((resolveBody, rejectBody) => {

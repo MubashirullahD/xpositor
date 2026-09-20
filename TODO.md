@@ -60,12 +60,12 @@ Development-machine compatibility: upgraded the Homebrew Codex CLI from 0.146.0 
 
 ## Next implementation priorities
 
-Implementation is in progress. Follow the sequence below for review scope and the agent guide; see the [agent-guide design and acceptance criteria](docs/agent-guide-design.md).
+The following implementation priorities are complete for Codex; see the [agent-guide design and acceptance criteria](docs/agent-guide-design.md).
 
 1. [x] **Review scope:** Add Unstaged / Staged / All changes and remember the user's selection. Handle partially staged files correctly, keep review decisions tied to the chosen comparison and revision, and retain staged code as agent context without automatically marking entire files reviewed.
-2. [ ] **Repository-wide agent guide:** Replace bounded prompts with read-only repository exploration using the existing subscription connection. Let the agent search and read relevant changed and unchanged files, including callers; account for every changed file in large reviews and disclose any omissions.
-3. [ ] **Guided review:** Generate an overview and suggested file order, then walk through changes conversationally with navigable code references and saved progress.
-4. [ ] **Branched conversations:** Allow a follow-up question to open its own conversation without losing the main walkthrough's place or context.
+2. [x] **Repository-wide agent guide:** Replace bounded prompts with read-only repository exploration using the existing subscription connection. Let the agent search and read relevant changed and unchanged files, including callers; account for every changed file in large reviews and disclose any omissions.
+3. [x] **Guided review:** Generate an overview and suggested file order, then walk through changes conversationally with navigable code references and saved progress.
+4. [x] **Branched conversations:** Allow a follow-up question to open its own conversation without losing the main walkthrough's place or context.
 
 ## Focus and workspace improvements
 
@@ -73,8 +73,6 @@ Implementation is in progress. Follow the sequence below for review scope and th
 - [x] **Screen-free break suggestions:** Encourage doing nothing, walking, stretching, having a conversation, or optionally enjoying a small sweet snack. Suggest avoiding scrolling and feeds during the break. Present these as optional activities, not medical or nutritional claims.
 - [x] **Resizable Code Guide column:** Add a draggable divider between the reader and Code Guide on desktop. Support keyboard resizing, sensible minimum/maximum widths, and a remembered width preference. Preserve the existing mobile drawer behavior.
 
-Implementation check, 20 September 2026: scope, Pomodoro and divider behavior passed unit and desktop/mobile browser checks. The repository retrieval foundation captures unchanged context and provides paginated inventory/read/search/diff tools with coverage tracking; its 100-file and protocol tests pass. It is not connected to guide generation yet. Live Codex retrieval is now verified after explicit approval to enable the tool host only in dedicated repository-guide processes. Existing text-only guide behavior remains in use. Persistent agent sessions, complete review plans and conversation branches remain unfinished.
+Implementation check, 20 September 2026: scopes, Pomodoro and the resizable guide passed unit and desktop/mobile browser checks. Codex now uses captured repository tools, generates complete plans, and supports ordinary follow-ups and separate branches. The browser reconnects to saved run IDs without repeating generation. Companion history and snapshots persist with private file permissions; interrupted requests are reported without automatic replay.
 
-Additional groundwork: complete-plan/citation validation passes a 101-file fixture, and the in-memory run registry passes request deduplication, reconnect, explicit cancellation and bounded-history tests. These components are not yet wired into the UI or persistent agent sessions. Explicit authorization for `code_mode_host=true` in dedicated repository-guide processes has been received and implemented. A live Luna check invoked inventory/read tools and answered from synthetic captured code; global CLI configuration remains unchanged.
-
-Agent-service progress: `/api/guide/*` now supports plan generation, follow-ups, branching, step state, run polling and explicit cancellation. A live Luna check produced a four-step plan covering all 100 changed files, then forked a follow-up that found the unchanged caller from immutable captured code while preserving the main step. The browser still uses the older walkthrough UI; connecting the new UI and persisting companion state across restarts remain required.
+Live Luna checks passed: a four-step plan covered all 100 changed files with all 100 recorded as examined; a branch found an unchanged caller after the original worktree changed. A separate test resumed a real Codex thread and forked it after companion restarts while preserving the main conversation. Repository-tool tests deny writes and out-of-capture reads. Browser checks cover one-action start, citations, branches, saved position, phone layout and explicit stop. Claude repository-tool parity and voice remain deferred as described above.

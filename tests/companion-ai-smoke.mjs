@@ -59,7 +59,7 @@ try {
   await new Promise((resolveListen) => provider.listen(0, '127.0.0.1', resolveListen));
   companion = spawn(process.execPath, [join(app, 'companion.mjs'), repo], {
     cwd: app,
-    env: { ...process.env, PATCHWORK_HOST: '127.0.0.1', PATCHWORK_PORT: '0', PATCHWORK_TOKEN: 'test-pairing', PATCHWORK_TLS_KEY: '', PATCHWORK_TLS_CERT: '', PATCHWORK_AI_PROVIDER: 'api', OPENAI_API_KEY: 'stub-key', OPENAI_MODEL: 'stub-model', OPENAI_API_URL: `http://127.0.0.1:${provider.address().port}/responses` },
+    env: { ...process.env, PATCHWORK_STATE_DIR:join(fixture,'state'), PATCHWORK_HOST: '127.0.0.1', PATCHWORK_PORT: '0', PATCHWORK_TOKEN: 'test-pairing', PATCHWORK_TLS_KEY: '', PATCHWORK_TLS_CERT: '', PATCHWORK_AI_PROVIDER: 'api', OPENAI_API_KEY: 'stub-key', OPENAI_MODEL: 'stub-model', OPENAI_API_URL: `http://127.0.0.1:${provider.address().port}/responses` },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let output = '';

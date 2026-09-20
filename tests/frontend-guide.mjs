@@ -37,3 +37,14 @@ const terminalThenFailure=new ReadableStream({start(c){c.enqueue(new TextEncoder
 assert.equal((await readReply(new Response(terminalThenFailure))).text,'Complete','a terminal reply survives a later transport disconnect');
 
 const upgradeMessage=errorMessage('Model requires a newer version of Codex');assert.equal(errorMessage(upgradeMessage),upgradeMessage);
+
+const {sanitizeAgentWorkspace}=await import('../src/agent-guide.js');
+const agentId='agent-persistence-001';
+const malformed=sanitizeAgentWorkspace({records:{[agentId]:{id:agentId,snapshotId:'s',guide:{steps:[null],coverage:[null]}}}});
+assert.equal(malformed.records[agentId].guide,null);
+data.agentGuides[walkthroughKey(snapshot)]={activeId:agentId,records:{[agentId]:{id:agentId,snapshotId:'s',guide:{...guide,coverage:[null]},step:1,draft:'Keep this',scroll:88,messages:[]}},pending:{action:'start',input:{requestId:agentId},recordId:agentId}};
+const agentRestored=parseBackup(JSON.stringify(createBackup(data,null))).data.agentGuides[walkthroughKey(snapshot)];
+assert.equal(agentRestored.pending,null,'Imported backups must never replay provider requests');
+assert.equal(agentRestored.records[agentId].draft,'Keep this');
+assert.equal(agentRestored.records[agentId].scroll,88);
+assert.equal(agentRestored.records[agentId].step,1);

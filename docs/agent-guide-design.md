@@ -1,6 +1,6 @@
 # Repository-wide conversational guide
 
-Status: implementation in progress. Repository snapshots now capture unchanged tracked context alongside changes, and paginated read/search tools have coverage and protocol tests. Guide generation still uses bounded context. Live retrieval has been verified with the explicitly approved tool host in a dedicated repository-guide process; global CLI configuration is unchanged. The agent service now has HTTP endpoints, model-thread continuation and forks, automatic plan repair, and in-memory run reconnection. The conversational UI and companion-restart persistence remain unfinished.
+Status: implemented for Codex. The conversational UI, immutable repository tools, complete plans, explicit cancellation, saved progress, branched conversations and companion-restart persistence are connected. Claude retains text-only behavior.
 
 ## Experience
 
@@ -13,7 +13,7 @@ Every changed file belongs to the review plan, including a 100-file change. “A
 Keep the existing ChatGPT-authenticated Codex app-server process and dynamic model discovery. Replace the text-only adapter with a repository-aware read-only thread. App-server supports tools, streamed item events, turn interruption, persistent thread resume, and thread forks. No separate API key is required for the existing subscription-authenticated path; account allowances still apply.
 
 1. Capture an isolated review workspace containing unchanged tracked context as well as all changed content, with the same immutable revision used by the phone. Exclude ignored files and reject escaping symlinks. Expose the complete manifest before any retrieval. Report file/byte capture limits explicitly.
-2. Start Codex in that workspace with read-only sandboxing, restricted readable roots, no network and no approval escalation. Enable repository read/search tools. Keep hooks, unrelated plugins, connectors and writes disabled for review mode. Verify platform sandbox enforcement before advertising this restriction.
+2. Run Codex from an empty temporary directory with read-only sandboxing, no network and no approval escalation. Dedicated dynamic tools return only captured repository content. Native shell, hooks, unrelated plugins, connectors and writes are disabled. Unknown tools, stale turn calls and out-of-capture paths are rejected at the companion boundary.
 3. Send the task and change manifest. Let the harness search and read relevant code in multiple turns rather than stuffing all sources into one prompt. Context windows still exist; retrieval and compaction handle larger repositories.
 4. Stream tool activity unobtrusively alongside the response. Persist thread IDs and the review-workspace identity on the companion. Resume only against the same snapshot; a changed snapshot starts a new review thread.
 5. Use `thread/fork` for an explicit “Explore this” action. Ordinary follow-ups continue their conversation. Track parent thread, selected step, and snapshot; reconnect to an active turn instead of duplicating it.
@@ -29,14 +29,14 @@ Source checked 19 September 2026: [official Codex App Server documentation](http
 
 Offer **Unstaged / Staged / All changes**, with Unstaged as a useful preference for this user's workflow. Staged is a workflow signal, not an automatic whole-file approval: partially staged files can contain both reviewed and new hunks. Implement distinct Git comparisons (`index → worktree`, `HEAD → index`, `HEAD → worktree`) and bind notes/review decisions to the chosen comparison and content revision. Keep staged code available as context to the agent even when it is outside the review queue.
 
-## Integration groundwork (not yet wired into the guide)
+## Implementation and validation
 
 `agent-plan.mjs` validates complete changed-file assignment, a suggested order, captured old/new citations and actual retrieval coverage. The 101-file fixture rejects omissions, duplicates, out-of-scope paths and fabricated citations.
 
-`guide-runs.mjs` owns generation independently of HTTP observers. `agent-guide-service.mjs` connects it to generation, follow-ups, forks, and `/api/guide/*` endpoints. Stable request IDs prevent duplicate generation after a tab reconnects; disconnecting an observer does not cancel the run, while an explicit stop does. Run history and replies are bounded. This registry is currently in memory; companion-restart persistence still needs implementation.
+`guide-runs.mjs` owns generation independently of HTTP observers. `agent-guide-service.mjs` connects it to generation, follow-ups, forks, and `/api/guide/*` endpoints. Stable request IDs prevent duplicate generation after a tab reconnects; disconnecting an observer does not cancel the run, while an explicit stop does. Run history and replies are bounded. Run IDs, conversation metadata and captured snapshots persist in private companion storage. Completed requests reconnect; interrupted requests restore as failed and never automatically replay.
 
 Live retrieval is now verified after explicit user authorization for `code_mode_host=true` only in dedicated repository-guide processes. Text-only processes retain the disabled host; native shell, network, plugins and writes remain restricted. The live Luna smoke check invoked the captured repository tools and answered from their returned source. Patchwork supplies the setting at process launch; users do not need to change global CLI settings.
 
 Walkthrough steps may revisit an important file. The suggested review queue follows the first occurrence of each file and includes each changed file once; validation still rejects missing files, duplicate assignments within a single step and invalid citations. Refresh reuses an unchanged captured snapshot so phone reconnection can retain the same guide session; changes to supporting context also invalidate that identity.
 
-Live acceptance evidence: `node tests/live-agent-guide.mjs` passed with Luna: 100 changed files in a four-step plan, all 100 recorded as examined, an unchanged `entry.js` caller found in a fork after the original file changed, and the main conversation's step preserved. This check does not yet cover the new browser UI or companion-restart persistence.
+Live acceptance evidence: `node tests/live-agent-guide.mjs` passed with Luna: 100 changed files in a four-step plan, all 100 recorded as examined, an unchanged `entry.js` caller found in a fork after the original file changed, and the main conversation's step preserved. `tests/browser-agent-guide.cjs` covers the browser flow, reload deduplication, supporting citations, branches, main-step retention, mobile layout and explicit stop. `tests/live-guide-resume.mjs` additionally passed real Codex resume and fork across companion restarts, including immutable unchanged caller retrieval.

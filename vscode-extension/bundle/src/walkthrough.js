@@ -1,3 +1,4 @@
+import { createAgentGuideUI } from './agent-guide.js';
 import { escapeHtml as esc } from './render.js';
 import { readReply, errorMessage } from './transport.js';
 
@@ -13,10 +14,13 @@ export function sanitizeWalkthrough(value) {
 }
 
 export function createWalkthroughUI({getState,getData,save,render,apiFetch,jump}) {
+  const agent = createAgentGuideUI({getState,getData,save,render,apiFetch,jump});
+  const useAgent = () => getState().repositoryGuide || Boolean(getState().snapshot && getData().agentGuides?.[walkthroughKey(getState().snapshot)]);
   let controller, pending=false, error='', setup={depth:'standard',timeMinutes:15,scope:'auto'};
   const current=()=>{const s=getState();return s.snapshot?getData().walkthroughs[walkthroughKey(s.snapshot)]:null;};
   const enabled=()=>{const s=getState();return s.aiEnabled&&s.online&&!s.demo;};
   function html() {
+    if(useAgent())return agent.html();
     const state=getState(), walk=current(), disabled=!enabled()||pending;
     if(!state.snapshot?.files.length)return '<p class="guide-intro">Choose a changed file to start a walkthrough.</p>';
     const status=`${error?`<p class="guide-error" role="alert">${esc(error)}</p>`:''}${pending?'<p role="status">The guide is thinking…</p><button class="secondary-button" data-walk="stop">Stop</button>':''}`;
@@ -53,6 +57,7 @@ export function createWalkthroughUI({getState,getData,save,render,apiFetch,jump}
     finally{reply.pending=false;pending=false;controller=null;save();render();}
   }
   function bind(root) {
+    if(useAgent()){agent.bind(root);return;}
     root.querySelector('#guide-depth')?.addEventListener('change',(e)=>{setup.depth=e.target.value;});
     root.querySelector('#guide-time')?.addEventListener('change',(e)=>{setup.timeMinutes=Number(e.target.value);});
     root.querySelector('#guide-scope')?.addEventListener('change',(e)=>{setup.scope=e.target.value;});

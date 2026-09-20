@@ -91,6 +91,16 @@ export function createGuideRuns({ maxRuns = 24, maxReplyBytes = 256 * 1024 } = {
   return { start, subscribe, cancel,
     get(id, afterRevision) { const run = find(id); return run.revision === afterRevision ? null : view(run); },
     wait(id) { return find(id).completion; },
+    dump() { return [...runs.values()].map(run=>({ ...view(run), input:run.input, fingerprint:run.fingerprint })); },
+    restore(values) {
+      for (const value of (Array.isArray(values)?values:[]).slice(-maxRuns)) {
+        if(!value||typeof value.id!=='string'||!value.input||typeof value.fingerprint!=='string')continue;
+        if(Buffer.byteLength(JSON.stringify(value))>maxReplyBytes*3)continue;
+        const interrupted=['running','stopping'].includes(value.status);
+        const run={...value,status:interrupted?'failed':value.status,error:interrupted?'The companion restarted during this response. Your conversation is saved; ask to continue.':value.error,activity:null,revision:(value.revision||0)+1,controller:new AbortController(),listeners:new Set()};
+        run.completion=Promise.resolve(view(run));runs.set(run.id,run);
+      }
+    },
     close() { for (const run of runs.values()) if (run.status === 'running') cancel(run.id); },
   };
 }

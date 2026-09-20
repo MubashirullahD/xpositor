@@ -181,14 +181,14 @@ export class CodexReviewClient {
     return { available: true, auth: 'chatgpt', billing: 'subscription', message: 'Codex · existing ChatGPT plan', limits };
   }
 
-  async answer(prompt, { sessionKey, history = '', onDelta, signal, jsonSchema, model, effort, repositoryTools, onActivity, forkSessionKey, resumeThreadId, onThread } = {}) {
+  async answer(prompt, { sessionKey, history = '', onDelta, signal, jsonSchema, model, effort, repositoryTools, onActivity, forkSessionKey, forkThreadId, resumeThreadId, onThread } = {}) {
     if (this.busy) throw new Error('Another explanation is running. Wait or stop it first.');
     this.busy = true;
-    try { return await this.runAnswer(prompt, { sessionKey, history, onDelta, signal, jsonSchema, model, effort, repositoryTools, onActivity, forkSessionKey, resumeThreadId, onThread }); }
+    try { return await this.runAnswer(prompt, { sessionKey, history, onDelta, signal, jsonSchema, model, effort, repositoryTools, onActivity, forkSessionKey, forkThreadId, resumeThreadId, onThread }); }
     finally { this.busy = false; }
   }
 
-  async runAnswer(prompt, { sessionKey, history = '', onDelta, signal, jsonSchema, model, effort, repositoryTools, onActivity, forkSessionKey, resumeThreadId, onThread } = {}) {
+  async runAnswer(prompt, { sessionKey, history = '', onDelta, signal, jsonSchema, model, effort, repositoryTools, onActivity, forkSessionKey, forkThreadId, resumeThreadId, onThread } = {}) {
     if (repositoryTools && !this.repositoryMode) throw new Error('Repository tools require a dedicated guide process.');
     const status = await this.status();
     if (!status.available) throw new Error(status.message);
@@ -196,7 +196,7 @@ export class CodexReviewClient {
     if (this.active) throw new Error('Another explanation is running. Wait or stop it first.');
     let threadId = sessionKey && this.threads.get(sessionKey);
     if (!threadId) {
-      const parentThreadId = forkSessionKey && this.threads.get(forkSessionKey);
+      const parentThreadId = (forkSessionKey && this.threads.get(forkSessionKey)) || forkThreadId;
       if (forkSessionKey && !parentThreadId) throw new Error('The parent guide session is unavailable. Reopen the main conversation before branching.');
       const method = parentThreadId ? 'thread/fork' : resumeThreadId ? 'thread/resume' : 'thread/start';
       const result = await this.rpc(method, {

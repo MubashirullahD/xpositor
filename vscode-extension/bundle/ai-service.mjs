@@ -33,7 +33,7 @@ export function createAiService(snapshots, env = process.env) {
     return {...await listProviderModels(info,{env,refresh}),provider:info.provider};
   }
 
-  async function generate(prompt, { history = [], sessionKey, signal, onDelta, jsonSchema, model, effort, repositoryTools, onActivity, forkSessionKey, resumeThreadId, onThread } = {}) {
+  async function generate(prompt, { history = [], sessionKey, signal, onDelta, jsonSchema, model, effort, repositoryTools, onActivity, forkSessionKey, forkThreadId, resumeThreadId, onThread } = {}) {
     prompt = `${GUIDE_INSTRUCTIONS}\n\n${prompt}`;
     if (busy) return { status: 429, body: { error: 'Another explanation is running. Stop it or wait before asking again.' } };
     if (Buffer.byteLength(prompt) > MAX_CONTEXT) throw new SnapshotError('The selected code exceeds the guide context limit. Choose fewer files.', 413, 'AI_CONTEXT_LIMIT');
@@ -51,7 +51,7 @@ export function createAiService(snapshots, env = process.env) {
         effort ||= choice.defaultEffort;
       }
       if (repositoryTools && info.provider !== 'codex') return { status: 400, body: { error: 'Repository exploration currently requires Codex with a ChatGPT subscription. Select Codex on the laptop.' } };
-      if (info.provider !== 'api') return await answerWithCli(info, { prompt, history }, { env, sessionKey:sessionKey?(repositoryTools?sessionKey:`${sessionKey}:${model||'default'}:${effort||'default'}`):undefined, signal, onDelta, jsonSchema, model, effort, repositoryTools, onActivity, forkSessionKey, resumeThreadId, onThread });
+      if (info.provider !== 'api') return await answerWithCli(info, { prompt, history }, { env, sessionKey:sessionKey?(repositoryTools?sessionKey:`${sessionKey}:${model||'default'}:${effort||'default'}`):undefined, signal, onDelta, jsonSchema, model, effort, repositoryTools, onActivity, forkSessionKey, forkThreadId, resumeThreadId, onThread });
       // API mode is deliberately opt-in. Auto detection never selects an API key.
       const historyMessages = history.map((item) => ({ role: item.role, content: item.text }));
       const timeout = AbortSignal.timeout(90_000);

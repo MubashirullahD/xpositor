@@ -8,7 +8,7 @@ import { emptyState, openStorage, sanitizeState, migrateLegacy, validateSnapshot
 
 const root = document.querySelector('#root');
 export let data = emptyState();
-export const state = { snapshot:null, selectedFile:'', activeTab:'diff', online:navigator.onLine, connection:'connecting', connectionError:'', aiEnabled:false, aiProvider:'', guideMode:'walkthrough', aiMessage:'', models:[], modelSettingsOpen:false, modelsLoading:false, modelsError:'', queueCollapsed:false, utilityMenu:'', snapshotSaved:false, filesOpen:false, chatOpen:false, guideCollapsed:true, sourceLoading:new Set(), sourceErrors:new Map(), toast:'', storageError:'', demo:false, apiToken:'' };
+export const state = { snapshot:null, selectedFile:'', activeTab:'diff', online:navigator.onLine, connection:'connecting', connectionError:'', aiEnabled:false, aiProvider:'', repositoryGuide:false, guideMode:'walkthrough', aiMessage:'', models:[], modelSettingsOpen:false, modelsLoading:false, modelsError:'', queueCollapsed:false, utilityMenu:'', snapshotSaved:false, filesOpen:false, chatOpen:false, guideCollapsed:true, sourceLoading:new Set(), sourceErrors:new Map(), toast:'', storageError:'', demo:false, apiToken:'' };
 let storage, saveTimer, scrollTimer, toastTimer, refreshSequence = 0, dialogReturnFocus;
 const sourceRequests = new Map();
 let chatController, citation;
@@ -33,12 +33,17 @@ export function saveState(immediate = true) {
   saveTimer=setTimeout(save,150);
 }
 async function saveSnapshot(snapshot) { if (!storage || state.demo) return; try { await storage.put('snapshot',snapshot); if(state.snapshot===snapshot)state.snapshotSaved=true; } catch(error) { storageFailure(error); } }
+function currentWalkRecord() {
+  if(!state.snapshot)return null;
+  const key=JSON.stringify([state.snapshot.repoId,state.snapshot.snapshotId]), workspace=data.agentGuides?.[key];
+  return workspace?.records?.[workspace.activeId] || data.walkthroughs[key];
+}
 function capturePosition() {
   const session=currentSession(); if (!session) return;
   const panel=document.querySelector('.review-panel');
   const viewer=document.querySelector('.code-viewer,.markdown-preview');
   const chat=document.querySelector('.chat-scroll');
-  const walk=document.querySelector('.walkthrough-scroll'), record=state.snapshot&&data.walkthroughs[JSON.stringify([state.snapshot.repoId,state.snapshot.snapshotId])];
+  const walk=document.querySelector('.walkthrough-scroll'), record=currentWalkRecord();
   if(walk&&record)record.scroll=walk.scrollTop;
   if(panel) session.scroll.panel=panel.scrollTop;
   if(viewer) session.scroll[state.activeTab]=viewer.scrollTop;
@@ -245,13 +250,13 @@ export function render(preservePosition=true) {
   bindGuideResize();
   walkthrough.bind(root);
   highlightCitation();
-  const walkPanel=root.querySelector('.walkthrough-scroll'), walkRecord=state.snapshot&&data.walkthroughs[JSON.stringify([state.snapshot.repoId,state.snapshot.snapshotId])];
+  const walkPanel=root.querySelector('.walkthrough-scroll'), walkRecord=currentWalkRecord();
   if(walkPanel&&walkRecord)walkPanel.scrollTop=walkRecord.scroll||0;
   if(session) {
     const viewer=document.querySelector('.code-viewer,.markdown-preview'); if(viewer) viewer.scrollTop=session.scroll[state.activeTab]||0;
     document.querySelector('.review-panel').scrollTop=session.scroll.panel||0;
     const chat=document.querySelector('.chat-scroll');
-  const walk=document.querySelector('.walkthrough-scroll'), record=state.snapshot&&data.walkthroughs[JSON.stringify([state.snapshot.repoId,state.snapshot.snapshotId])];
+  const walk=document.querySelector('.walkthrough-scroll'), record=currentWalkRecord();
   if(walk&&record)record.scroll=walk.scrollTop; if(chat) chat.scrollTop=session.scroll.chat||0;
     if(small()&&!modal) window.scrollTo(0,session.scroll.window||0);
   }
@@ -395,7 +400,7 @@ export async function hydrateFromCompanion() {
   finally{if(sequence===refreshSequence)render(false);}
 }
 async function hydrateAiConfig() {
-  try {const response=await apiFetch('/api/config');if(!response.ok)throw new Error('Provider unavailable');const config=await response.json();state.aiEnabled=Boolean(config.aiEnabled);state.aiProvider=typeof config.provider==='string'?config.provider:'';state.aiMessage=typeof config.message==='string'?config.message:'';if(state.aiProvider==='codex')hydrateModels();}
+  try {const response=await apiFetch('/api/config');if(!response.ok)throw new Error('Provider unavailable');const config=await response.json();state.aiEnabled=Boolean(config.aiEnabled);state.repositoryGuide=Boolean(config.capabilities?.repositoryGuide);state.aiProvider=typeof config.provider==='string'?config.provider:'';state.aiMessage=typeof config.message==='string'?config.message:'';if(state.aiProvider==='codex')hydrateModels();}
   catch {state.aiEnabled=false;state.aiProvider='';state.aiMessage='AI status is unavailable while the laptop cannot be reached.';}
   render();
 }

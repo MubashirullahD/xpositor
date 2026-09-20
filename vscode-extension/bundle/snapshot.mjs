@@ -204,6 +204,10 @@ export function createSnapshotStore(repository, options = {}) {
   }
   function get(snapshotId) {
     if (typeof snapshotId !== 'string' || !snapshotId) throw new SnapshotError('snapshotId is required.', 400, 'SNAPSHOT_REQUIRED');
+    if (!cache.has(snapshotId) && options.loadSnapshot) {
+      const saved = options.loadSnapshot(snapshotId);
+      if (saved) restoreRecord(saved);
+    }
     const record = cache.get(snapshotId);
     if (!record) throw new SnapshotError('Snapshot expired or unavailable. Refresh the review.', 409, 'SNAPSHOT_EXPIRED');
     return record.snapshot;
@@ -214,6 +218,21 @@ export function createSnapshotStore(repository, options = {}) {
     const file = snapshot.files.find((item) => (!identity.id || item.id === identity.id) && (!identity.path || item.path === identity.path));
     if (!file) throw new SnapshotError('File is not part of this snapshot.', 404, 'FILE_NOT_FOUND');
     return { file, source: cache.get(snapshotId).sources.get(file.id) };
+  }
+  function exportRecord(snapshotId) {
+    get(snapshotId);const record=cache.get(snapshotId);
+    return {snapshot:record.snapshot,sources:[...record.sources],context:[...record.context],fingerprint:record.fingerprint};
+  }
+  function restoreRecord(value) {
+    if (!value || value.snapshot?.repoId !== repoId || typeof value.snapshot.snapshotId !== 'string' || !Array.isArray(value.snapshot.files) || value.snapshot.files.length > limits.maxFiles || !Array.isArray(value.context) || value.context.length > limits.maxContextFiles || !Array.isArray(value.sources)) throw new SnapshotError('Saved review snapshot is invalid.',500,'SNAPSHOT_STORAGE');
+    const bytes=Buffer.byteLength(JSON.stringify(value));
+    if(bytes>limits.maxCacheBytes)throw new SnapshotError('Saved review snapshot exceeds the cache limit.',413,'SNAPSHOT_STORAGE');
+    for(const entry of value.context) if(!Array.isArray(entry)||typeof entry[0]!=='string'||!entry[1]||(entry[1].source!==null&&typeof entry[1].source!=='string'))throw new SnapshotError('Saved repository context is invalid.',500,'SNAPSHOT_STORAGE');
+    const id=value.snapshot.snapshotId;
+    if(cache.has(id)){cacheBytes-=cache.get(id).bytes;cache.delete(id);}
+    while(cache.size&&(cache.size>=limits.maxSnapshots||cacheBytes+bytes>limits.maxCacheBytes)){const oldest=cache.keys().next().value;cacheBytes-=cache.get(oldest).bytes;cache.delete(oldest);}
+    cache.set(id,{snapshot:freeze(value.snapshot),sources:new Map(value.sources),context:new Map(value.context),fingerprint:value.fingerprint,bytes});cacheBytes+=bytes;
+    return value.snapshot;
   }
   function getRepository(snapshotId) {
     const snapshot = get(snapshotId);
@@ -231,5 +250,5 @@ export function createSnapshotStore(repository, options = {}) {
       return { ...context.get(path) };
     } };
   }
-  return { capture, get, getFile, getRepository, repoId, limits: freeze({ ...limits }) };
+  return { capture, get, getFile, getRepository, exportRecord, restoreRecord, repoId, limits: freeze({ ...limits }) };
 }
