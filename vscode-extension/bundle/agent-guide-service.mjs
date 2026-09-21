@@ -3,6 +3,15 @@ import { buildRepositoryGuidePrompt, validateRepositoryGuide, REPOSITORY_GUIDE_S
 import { createGuideRuns } from './guide-runs.mjs';
 import { GuideError } from './review-guide.mjs';
 
+const MIN_WALKTHROUGH_TIMEOUT_MS = 5 * 60_000;
+const PER_CHANGED_FILE_TIMEOUT_MS = 30_000;
+const MAX_WALKTHROUGH_TIMEOUT_MS = 60 * 60_000;
+
+export function repositoryGuideTimeoutMs(changedFileCount) {
+  if (!Number.isSafeInteger(changedFileCount) || changedFileCount < 1) throw new TypeError('Changed file count must be a positive integer.');
+  return Math.min(MAX_WALKTHROUGH_TIMEOUT_MS, Math.max(MIN_WALKTHROUGH_TIMEOUT_MS, changedFileCount * PER_CHANGED_FILE_TIMEOUT_MS));
+}
+
 export function createAgentGuideService(snapshots, ai, { storage } = {}) {
   const runs = createGuideRuns();
   const conversations = new Map();
@@ -73,7 +82,7 @@ export function createAgentGuideService(snapshots, ai, { storage } = {}) {
     if (fresh && conversations.size >= 128) throw new GuideError('The companion conversation limit has been reached. Back up and clear the repository guide cache on the laptop before starting more conversations.', 413, 'GUIDE_CONVERSATION_LIMIT');
     conversations.set(id, record);
     try {
-      const run=runs.start(id, { ...input, conversationId: id }, (_, options) => generate(record, prompt, { ...options, model: input.model, effort: input.effort }, REPOSITORY_GUIDE_SCHEMA));
+      const run=runs.start(id, { ...input, conversationId: id }, (_, options) => generate(record, prompt, { ...options, model: input.model, effort: input.effort, turnTimeoutMs: repositoryGuideTimeoutMs(repository.snapshot.files.length) }, REPOSITORY_GUIDE_SCHEMA));
       return track(record,run);
     } catch (error) { if (fresh) conversations.delete(id); throw error; }
   }

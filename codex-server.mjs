@@ -181,15 +181,16 @@ export class CodexReviewClient {
     return { available: true, auth: 'chatgpt', billing: 'subscription', message: 'Codex · existing ChatGPT plan', limits };
   }
 
-  async answer(prompt, { sessionKey, history = '', onDelta, signal, jsonSchema, model, effort, repositoryTools, onActivity, forkSessionKey, forkThreadId, resumeThreadId, onThread } = {}) {
+  async answer(prompt, { sessionKey, history = '', onDelta, signal, jsonSchema, model, effort, repositoryTools, onActivity, forkSessionKey, forkThreadId, resumeThreadId, onThread, turnTimeoutMs } = {}) {
     if (this.busy) throw new Error('Another explanation is running. Wait or stop it first.');
     this.busy = true;
-    try { return await this.runAnswer(prompt, { sessionKey, history, onDelta, signal, jsonSchema, model, effort, repositoryTools, onActivity, forkSessionKey, forkThreadId, resumeThreadId, onThread }); }
+    try { return await this.runAnswer(prompt, { sessionKey, history, onDelta, signal, jsonSchema, model, effort, repositoryTools, onActivity, forkSessionKey, forkThreadId, resumeThreadId, onThread, turnTimeoutMs }); }
     finally { this.busy = false; }
   }
 
-  async runAnswer(prompt, { sessionKey, history = '', onDelta, signal, jsonSchema, model, effort, repositoryTools, onActivity, forkSessionKey, forkThreadId, resumeThreadId, onThread } = {}) {
+  async runAnswer(prompt, { sessionKey, history = '', onDelta, signal, jsonSchema, model, effort, repositoryTools, onActivity, forkSessionKey, forkThreadId, resumeThreadId, onThread, turnTimeoutMs } = {}) {
     if (repositoryTools && !this.repositoryMode) throw new Error('Repository tools require a dedicated guide process.');
+    if (turnTimeoutMs !== undefined && (!Number.isSafeInteger(turnTimeoutMs) || turnTimeoutMs < 1)) throw new TypeError('Explanation timeout must be a positive integer.');
     const status = await this.status();
     if (!status.available) throw new Error(status.message);
     if (signal?.aborted) throw new Error('Stopped.');
@@ -237,7 +238,7 @@ export class CodexReviewClient {
         else resolve(String(text).trim());
       };
       const abort = () => finish(new Error('Stopped.'));
-      const timer = setTimeout(() => finish(new Error('The explanation timed out. Try a smaller question.')), this.timeoutMs);
+      const timer = setTimeout(() => finish(new Error('The explanation timed out before it finished.')), turnTimeoutMs ?? this.timeoutMs);
       const active = { threadId, turnId: null, events: [], text: '', finalText: '', onDelta, repositoryTools, onActivity, finish };
       this.active = active;
       signal?.addEventListener('abort', abort, { once: true });

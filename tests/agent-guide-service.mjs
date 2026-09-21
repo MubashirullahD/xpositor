@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createAgentGuideService } from '../agent-guide-service.mjs';
+import { createAgentGuideService, repositoryGuideTimeoutMs } from '../agent-guide-service.mjs';
 const files = ['a.js','b.js'].map((path,i)=>({path,id:String(i),lines:[['added','1','new code']]}));
 const snapshot = { snapshotId:'s',repoId:'r',scope:'all',files };
 const sources = new Map([['a.js','new code'],['b.js','new code'],['caller.js','callA();']]);
@@ -9,14 +9,19 @@ const plan = {title:'Overview',summary:'Two related changes',assumptions:[],step
 const calls=[];
 const ai={async generate(prompt,options){calls.push({prompt,options});options.onThread('thread-'+options.sessionKey);options.repositoryTools.call('review_read',{path:'caller.js'});options.onActivity({tool:'review_read',path:'caller.js'});options.onDelta('Thinking');return {status:200,body:{text:options.jsonSchema?JSON.stringify(plan):'Follow-up answer'}};}};
 const service=createAgentGuideService(snapshots,ai);
+assert.equal(repositoryGuideTimeoutMs(1),5*60_000);
+assert.equal(repositoryGuideTimeoutMs(90),45*60_000);
+assert.equal(repositoryGuideTimeoutMs(1000),60*60_000);
 const main='main-conversation-01';
 service.start({requestId:main,snapshotId:'s',selectedPath:'a.js'});
 const completed=await service.runs.wait(main);assert.equal(completed.status,'completed');assert.equal(completed.result.guide.totalChangedFiles,2);
+assert.equal(calls[0].options.turnTimeoutMs,5*60_000);
 service.start({requestId:main,snapshotId:'s',selectedPath:'a.js'});assert.equal(calls.length,1);
 service.selectStep(main,1);
 const child='child-conversation-01';
 service.question({requestId:child,conversationId:main,question:'Explain this more',step:0,branch:true});
 await service.runs.wait(child);
+assert.equal(calls[1].options.turnTimeoutMs,undefined);
 assert.equal(service.conversation(main).step,1);
 assert.equal(service.conversation(main).messages.length,0);
 assert.equal(service.conversation(child).step,0);

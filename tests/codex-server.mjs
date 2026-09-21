@@ -27,7 +27,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
  } else if(m.method==='turn/start') {
   if(p.model==='future-model'&&p.effort!=='xhigh'){output({id:m.id,error:{message:'Effort was not forwarded'}});return;}
   reply({turn:{id:'turn-1'}});
-  if(p.input[0].text==='wait') return;
+  if(p.input[0].text.startsWith('wait')) return;
   output({method:'item/agentMessage/delta',params:{threadId:p.threadId,turnId:'turn-1',delta:'Hello '}});
   output({method:'item/agentMessage/delta',params:{threadId:p.threadId,turnId:'turn-1',delta:p.threadId}});
   output({method:'item/completed',params:{threadId:p.threadId,turnId:'turn-1',item:{type:'agentMessage',phase:'final_answer',text:'Hello '+p.threadId}}});
@@ -53,6 +53,10 @@ try {
  setTimeout(()=>controller.abort(),40);
  await assert.rejects(pending,/Stopped/);
  await assert.rejects(client.answer('wait',{sessionKey:'timeout'}),/timed out/);
+ const started=Date.now();
+ await assert.rejects(client.answer('wait override',{sessionKey:'timeout-override',turnTimeoutMs:30}),/timed out/);
+ assert(Date.now()-started<250,'Per-answer timeout override was not used');
+ await assert.rejects(client.answer('invalid timeout',{turnTimeoutMs:0}),/positive integer/);
  const denied=new CodexReviewClient(binary,{env:{...process.env,TEST_AUTH:'apiKey'}});
  try { assert.equal((await denied.status()).available,false); await assert.rejects(denied.answer('no generation'),/will not switch to API billing/); }
  finally { await denied.close(); }
