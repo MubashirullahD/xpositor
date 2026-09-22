@@ -1,3 +1,4 @@
+import { createSpeechService } from './speech-service.mjs';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
 import { randomBytes } from 'node:crypto';
@@ -28,6 +29,7 @@ const snapshots = createSnapshotStore(repoRoot,{loadSnapshot:id=>guideStorage?.l
 guideStorage=createGuideStorage(process.env.PATCHWORK_STATE_DIR||join(homedir(),'.patchwork','reviews'),snapshots.repoId);
 const ai = createAiService(snapshots);
 const walkthrough = createWalkthroughService(snapshots, ai);
+const speech=createSpeechService();
 const agentGuide = createAgentGuideService(snapshots, ai, {storage:guideStorage});
 
 function readBody(request, limit = 256 * 1024) {
@@ -88,7 +90,7 @@ function staticPath(urlPath) {
 }
 
 const handleRequest = async (request, response) => {
-  response.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
+  response.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
   response.setHeader('X-Content-Type-Options', 'nosniff');
   response.setHeader('Referrer-Policy', 'no-referrer');
   try {
@@ -112,20 +114,31 @@ const handleRequest = async (request, response) => {
       const { file, source } = snapshots.getFile(snapshotId, { path: requestedPath });
       return sendJson(response, 200, { snapshotId, id: file.id, path: file.path, version: file.version, source, sourceAvailable: file.sourceAvailable, sourceReason: file.sourceReason });
     }
-    if (url.pathname === '/api/guide/run' && request.method === 'GET') return sendJson(response, 200, { run: agentGuide.runs.get(url.searchParams.get('id'), url.searchParams.has('after') ? Number(url.searchParams.get('after')) : undefined) });
+    if(url.pathname==='/api/guide/voice'&&request.method==='GET')return sendJson(response,200,speech.status());
+    if(url.pathname==='/api/guide/speech'&&request.method==='POST'){
+      const input=JSON.parse(await readBody(request,4096));
+      if(!input||typeof input!=='object'||Array.isArray(input))throw new GuideError('Invalid audio request.',400,'VOICE_INPUT');
+      const record=agentGuide.conversation(input.conversationId);
+      if(!Number.isSafeInteger(input.step)||!Number.isSafeInteger(input.segment))throw new GuideError('Choose a lesson segment.',400,'VOICE_SEGMENT');
+      const segment=record.lessons?.[input.step]?.segments[input.segment];
+      if(!segment)throw new GuideError('This lesson segment is unavailable.',404,'VOICE_SEGMENT');
+      const audio=await speech.synthesize(segment.narration,input.voice);
+      response.writeHead(200,{'content-type':'audio/wav','cache-control':'no-store'});response.end(audio);return;
+    }
+    if (url.pathname === '/api/guide/run'  && request.method === 'GET') return sendJson(response, 200, { run: agentGuide.runs.get(url.searchParams.get('id'), url.searchParams.has('after') ? Number(url.searchParams.get('after')) : undefined) });
     if (url.pathname === '/api/guide/conversation' && request.method === 'GET') return sendJson(response, 200, { conversation: agentGuide.conversation(url.searchParams.get('id')) });
     if (url.pathname === '/api/guide/conversations' && request.method === 'GET') return sendJson(response, 200, { conversations: agentGuide.list(url.searchParams.get('snapshotId')) });
     if (url.pathname === '/api/guide/source' && request.method === 'GET') {
       const repository = snapshots.getRepository(url.searchParams.get('snapshotId'));
       return sendJson(response, 200, { path: url.searchParams.get('path'), ...repository.read(url.searchParams.get('path')) });
     }
-    if (['/api/guide/start', '/api/guide/question', '/api/guide/stop', '/api/guide/step'].includes(url.pathname) && request.method === 'POST') {
+    if (['/api/guide/lesson', '/api/guide/start', '/api/guide/question', '/api/guide/stop', '/api/guide/step'].includes(url.pathname) && request.method === 'POST') {
       let input;
       try { input = JSON.parse(await readBody(request, 64 * 1024)); } catch (error) { if (error instanceof SnapshotError) throw error; throw new SnapshotError('Invalid guide JSON.', 400, 'GUIDE_INPUT'); }
       if (!input || typeof input !== 'object' || Array.isArray(input)) throw new SnapshotError('Invalid guide request.', 400, 'GUIDE_INPUT');
       if (url.pathname === '/api/guide/stop') return sendJson(response, 200, { run: agentGuide.runs.cancel(input.requestId) });
       if (url.pathname === '/api/guide/step') return sendJson(response, 200, { conversation: agentGuide.selectStep(input.conversationId, input.step) });
-      const run = url.pathname === '/api/guide/start' ? agentGuide.start(input) : agentGuide.question(input);
+      const run = url.pathname === '/api/guide/start' ? agentGuide.start(input) : url.pathname==='/api/guide/lesson'?agentGuide.lesson(input):agentGuide.question(input);
       return sendJson(response, 202, { run });
     }
     if (url.pathname === '/api/models' && request.method === 'GET') return sendJson(response,200,await ai.models(url.searchParams.get('refresh')==='true'));
@@ -188,6 +201,7 @@ async function shutdown() {
   if (closing) return;
   closing = true;
   server.close();
+  speech.close();
   agentGuide.close();
   await closeProviders();
   process.exit(0);

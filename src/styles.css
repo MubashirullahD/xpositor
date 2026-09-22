@@ -722,3 +722,21 @@ html.modal-open,body.modal-open { overflow:hidden!important; overscroll-behavior
 .agent-source {border:1px solid var(--line);border-radius:8px;margin:12px 0;overflow:hidden;}
 .agent-source header {display:flex;align-items:center;justify-content:space-between;padding:8px;font-size:12px;overflow-wrap:anywhere;}
 .agent-source pre {margin:0;max-height:300px;overflow:auto;padding:12px;font-size:12px;line-height:1.6;background:var(--bg);}
+
+.audio-lesson { margin-block: 20px; padding: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; min-width: 0; }
+.audio-lesson h4 { margin: 8px 0 16px; font-size: 18px; line-height: 1.35; }
+.lesson-transcript { line-height: 1.7; font-size: 16px; }
+.lesson-code { margin-inline: -8px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.lesson-code-heading { display: flex; gap: 8px; align-items: baseline; justify-content: space-between; padding: 8px; font-size: 12px; }
+.lesson-code-heading span { overflow-wrap: anywhere; }
+.lesson-code pre { margin: 0; padding: 8px 0; overflow: auto; font-size: 13px; line-height: 1.6; }
+.lesson-line { display: flex; padding: 3px 8px; border-left: 3px solid transparent; }
+.lesson-line code { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
+.lesson-line-number { flex: 0 0 3ch; opacity: .65; user-select: none; }
+.lesson-focus { border-left-color: var(--ink); background: color-mix(in srgb, var(--ink) 10%, transparent); font-weight: 600; }
+.lesson-controls { display: flex; gap: 8px; justify-content: space-between; margin-block: 16px; }
+.lesson-controls button { min-height: 44px; }
+.lesson-options { font-size: 13px; margin-block: 12px; }
+.lesson-options label { display: flex; justify-content: space-between; align-items: center; margin-block: 8px; gap: 12px; }
+.lesson-help { display: flex; flex-wrap: wrap; gap: 12px; }
+.lesson-check { border-top: 1px solid var(--line); padding-top: 16px; line-height: 1.6; }

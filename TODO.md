@@ -76,3 +76,14 @@ The following implementation priorities are complete for Codex; see the [agent-g
 Implementation check, 20 September 2026: scopes, Pomodoro and the resizable guide passed unit and desktop/mobile browser checks. Codex now uses captured repository tools, generates complete plans, and supports ordinary follow-ups and separate branches. The browser reconnects to saved run IDs without repeating generation. Companion history and snapshots persist with private file permissions; interrupted requests are reported without automatic replay.
 
 Live Luna checks passed: a four-step plan covered all 100 changed files with all 100 recorded as examined; a branch found an unchanged caller after the original worktree changed. A separate test resumed a real Codex thread and forked it after companion restarts while preserving the main conversation. Repository-tool tests deny writes and out-of-capture reads. Browser checks cover one-action start, citations, branches, saved position, phone layout and explicit stop. Claude repository-tool parity and voice remain deferred as described above.
+
+## Audio teaching pilot
+
+- [x] Expand one walkthrough chapter into short speech-oriented teaching segments with small, validated old/new source excerpts and a focused line.
+- [x] Local Kokoro speech adapter, three voices, speed control, next-segment buffering, pause/resume and automatic segment highlighting.
+- [x] Saved transcript/excerpts and segment position; typed questions pause audio and retain the lesson's place.
+- [ ] Evaluate comprehension and voice quality on a real confusing change before extending to whole-review lessons.
+- [ ] Validate audio start, interruption, backgrounding and reconnection on Safari and Samsung Internet.
+- [ ] Consider downloadable audio lessons and microphone questions after the pilot evaluation. No paid speech service is enabled.
+
+Pilot validation, 22 September 2026: full regression suite passed; live Luna generated a grounded seven-segment lesson from Patchwork request-deduplication code. All three Kokoro voices generated real WAV audio locally (about 15–17 seconds to synthesize a 26-second segment on the development laptop). Chromium native-audio checks cover pause/resume, segment advance and question interruption; layout and transcript checks cover phone widths down to 320 px. Human comprehension/voice preference and real phone browser behavior remain evaluation items.

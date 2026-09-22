@@ -156,6 +156,12 @@ try {
   assert.equal((await get(`/api/guide/source?snapshotId=${snapshot.snapshotId}&path=../secret`)).status, 404);
   assert.equal((await (await get(`/api/guide/source?snapshotId=${snapshot.snapshotId}&path=link`)).json()).source, null);
   assert.equal((await get('/api/guide/run?id=unknown')).status, 404);
+  assert.equal((await fetch(`${base}/api/guide/voice`)).status,401);
+  assert.equal((await get('/api/guide/voice')).status,200);
+  assert.equal((await post('/api/guide/speech',null)).status,400);
+  assert.equal((await post('/api/guide/speech',{conversationId:'missing',step:0,segment:0})).status,404);
+  assert.equal((await post('/api/guide/lesson',{requestId:'missing-lesson-0001',conversationId:'missing',step:0})).status,404);
+  assert.equal((await post('/api/guide/speech',{}, {origin:'https://evil.example'})).status,403);
   const beforeRepositoryCalls = providerCalls;
   const repositoryRequest = {requestId:'http-guide-request-001',snapshotId:snapshot.snapshotId,selectedPath:file.path};
   const started = await post('/api/guide/start', repositoryRequest);

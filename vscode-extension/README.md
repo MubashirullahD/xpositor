@@ -59,3 +59,9 @@ code --install-extension ./patchwork-vscode-0.1.0.vsix --force
 ```
 
 The package contains the launcher, QR renderer, bundled read-only companion, PWA shell, and production QR runtime dependencies. It is installed locally and is not published to the VS Code Marketplace.
+
+### Audio teaching pilot
+
+With Codex selected, open a walkthrough and choose **Teach this chapter · audio pilot**. It creates a short spoken lesson with focused code excerpts, Play/Pause, segment navigation, three local voices and speed control. Questions pause playback; listening never marks code reviewed.
+
+Voice generation runs locally through Kokoro. From a source checkout, run `npm run setup:voice` once. Installed extensions include the same script: run `node setup-voice.mjs` from the extension's `bundle` directory using Node.js 20+. Setup downloads dependencies and the model into `~/.patchwork/voice`; it does not use a paid TTS API. Restart the companion after setup. Transcript and excerpts remain usable if audio is unavailable. The pilot currently requires the laptop for new audio and uses typed follow-up questions.

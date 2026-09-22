@@ -83,3 +83,21 @@ Patchwork does not stage, edit, commit, publish comments or approve pull request
 Reading defaults enable wrapping and folded unchanged context; saved choices remain respected. Outside text fields, menus, tabs and the guide, ↑/↓ smoothly scroll the reader, ←/→ select adjacent files without wrapping, and Return marks the current file reviewed and advances. Holding Return does not review additional files. Reduced-motion preferences disable smooth scrolling. Reviewing the final outstanding file opens a completion page, retained across reloads; refreshing changed code returns to the pending review.
 
 Opt-in live subscription checks: `node tests/live-agent-guide.mjs` exercises a 100-file plan and unchanged caller in a fork; `node tests/live-guide-resume.mjs` checks real thread resume and branching after companion restarts. These consume the signed-in Codex allowance. `tests/browser-agent-guide.cjs` covers guide reconnection, branches, citations, cancellation and phone layout with mocked responses.
+
+## Listen & follow — audio pilot
+
+In a Codex walkthrough, choose **Teach this chapter · audio pilot**. The existing subscription generates 4–8 short teaching segments for that chapter: context, a concrete example, small captured code excerpts, an edge case and a check-your-understanding question. The important line is highlighted while its segment plays. This pilot expands one chapter at a time; it does not replace the full review plan or mark code reviewed.
+
+Speech uses local Kokoro on the laptop, with no TTS API bill. One-time setup from the project folder:
+
+```sh
+npm run setup:voice
+```
+
+The packaged extension includes the same setup script under `bundle/setup-voice.mjs`; run it with Node if using only the VSIX. Setup downloads the pinned speech runtime and model to `~/.patchwork/voice` (`PATCHWORK_VOICE_HOME` overrides this). It needs internet and disk space for the initial dependencies/model. A separate speech process keeps model loading and synthesis out of the companion's HTTP event loop. Text and code are never sent to a cloud TTS provider.
+
+Choose Heart, Bella or Michael under **Voice & speed**. Playback prepares the next segment ahead, supports pause/resume and manual Back/Next, and pauses when you ask a question. Reload retains the segment, transcript and captured excerpts; it never autoplays. “Explain more simply” and “Another example” use the existing text conversation and preserve the lesson's position. Listening does not imply approval.
+
+Pilot limits: English narration, Codex repository exploration, laptop required for new audio, and no microphone or spoken interruption yet. Audio clips are bounded in-memory caches rather than offline downloads. Text/excerpts remain available from saved device state. Phone browser policies may require another tap to start audio; real Safari/Samsung playback still needs device validation. Voice setup failures leave the transcript usable.
+
+Opt-in validation: `node tests/live-audio-lesson.mjs` generates a real lesson about Patchwork request deduplication through the signed-in Codex subscription. `tests/browser-audio-lesson.cjs` checks synchronization, playback controls and phone layout with stubbed audio. The default test suite covers citation grounding, persistence sanitization and speech-worker failure/caching behavior.

@@ -1,3 +1,4 @@
+import { LESSON_SCHEMA, lessonPrompt, validateLesson } from './lesson-plan.mjs';
 import { createRepositoryTools } from './repository-tools.mjs';
 import { buildRepositoryGuidePrompt, validateRepositoryGuide, REPOSITORY_GUIDE_SCHEMA } from './agent-plan.mjs';
 import { createGuideRuns } from './guide-runs.mjs';
@@ -40,7 +41,7 @@ export function createAgentGuideService(snapshots, ai, { storage } = {}) {
   }
   function view(record) {
     return structuredClone({ id: record.id, snapshotId: record.snapshotId, parentId: record.parentId,
-      title: record.title, persistenceError:record.persistenceError||null, step: record.step, guide: record.guide, messages: record.messages, runId: record.runId });
+      title: record.title, persistenceError:record.persistenceError||null, step: record.step, guide: record.guide, lessons:record.lessons||{}, messages: record.messages, runId: record.runId });
   }
   async function generate(record, prompt, options, schema, parent) {
     const tools = createRepositoryTools(snapshots, record.snapshotId);
@@ -98,7 +99,7 @@ export function createAgentGuideService(snapshots, ai, { storage } = {}) {
     const id = input.branch ? input.requestId : original.id;
     let record = conversations.get(id);
     const fresh = !record;
-    if (!record) record = { ...original, id, parentId: original.id, title: input.question.trim().slice(0, 80), step, threadId: null, messages: structuredClone(original.messages) };
+    if (!record) record = { ...original, id, parentId: original.id, title: input.question.trim().slice(0, 80), step, threadId: null, messages: structuredClone(original.messages), lessons:structuredClone(original.lessons||{}) };
     if (fresh && conversations.size >= 128) throw new GuideError('The companion conversation limit has been reached.', 413, 'GUIDE_CONVERSATION_LIMIT');
     const request = { ...input, snapshotId: original.snapshotId, conversationId: id };
     try {
@@ -110,12 +111,30 @@ export function createAgentGuideService(snapshots, ai, { storage } = {}) {
       record.runId = run.id; conversations.set(id, record); return track(record,run);
     } catch (error) { if (fresh) conversations.delete(id); throw error; }
   }
+  function lesson(input) {
+    requireStorage();requireInput(input,['requestId','conversationId','step','model','effort']);
+    const record=find(input.conversationId),step=input.step;
+    if(!Number.isSafeInteger(step)||!record.guide?.steps[step])throw new GuideError('Choose an existing chapter.',400,'LESSON_STEP');
+    const run=runs.start(input.requestId,{...input,snapshotId:record.snapshotId},async(_,options)=>{
+      const tools=createRepositoryTools(snapshots,record.snapshotId);
+      let prompt=lessonPrompt(record,step);
+      for(let attempt=0;attempt<2;attempt++){
+        const result=await ai.generate(prompt,{...options,repositoryTools:tools,jsonSchema:LESSON_SCHEMA,model:input.model,effort:input.effort,turnTimeoutMs:repositoryGuideTimeoutMs(tools.repository.snapshot.files.length)});
+        if(result.status!==200)throw new GuideError(result.body?.error||'Lesson generation failed.',result.status,'LESSON_FAILED');
+        if(options.signal.aborted)throw new Error('Stopped.');
+        let value;
+        try{value=validateLesson(JSON.parse(result.body.text),tools.repository,step);}
+        catch(error){if(attempt)throw error;prompt=lessonPrompt(record,step)+'\nYour previous attempt was invalid: '+error.message+' Return a complete corrected lesson.';continue;}
+        record.lessons||={};record.lessons[step]=value;persist();return {lesson:value,conversationId:record.id};
+      }
+    });record.runId=run.id;return track(record,run);
+  }
   function selectStep(id, step) {
     const record = find(id);
     if (!Number.isSafeInteger(step) || step < 0 || step >= (record.guide?.steps.length || 0)) throw new GuideError('Choose an existing walkthrough step.', 400, 'GUIDE_STEP');
     record.step = step; persist();return view(record);
   }
-  return { start, question, selectStep, runs,
+  return { start, question, lesson, selectStep, runs,
     conversation: id => view(find(id)),
     list: snapshotId => [...conversations.values()].filter(record => record.snapshotId === snapshotId).map(record => ({ id: record.id, snapshotId: record.snapshotId, parentId: record.parentId, title: record.title, persistenceError:record.persistenceError||null, step: record.step, runId: record.runId })),
     close: () => runs.close(),

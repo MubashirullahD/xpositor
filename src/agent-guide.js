@@ -1,3 +1,4 @@
+import { createAudioLesson, sanitizeLessons } from './audio-lesson.js';
 import { escapeHtml as esc, icon } from './render.js';
 import { randomId } from './platform.js';
 import { errorMessage } from './transport.js';
@@ -16,10 +17,10 @@ export function sanitizeAgentWorkspace(value) {
         totalChangedFiles:Math.max(0,Number(record.guide.totalChangedFiles)||0) };
     }
     if(guide&&!guide.steps.length)guide=null;
-    records[record.id] = {id:record.id,snapshotId:record.snapshotId,parentId:idValid(record.parentId)?record.parentId:null,title:text(record.title,140),guide,step:Math.max(0,Math.min((guide?.steps.length||1)-1,Number.isInteger(record.step)?record.step:0)),finished:Boolean(record.finished),scroll:Number.isFinite(record.scroll)?Math.max(0,record.scroll):0,overviewOpen:Boolean(record.overviewOpen),draft:text(record.draft),runId:idValid(record.runId)?record.runId:null,messages:(Array.isArray(record.messages)?record.messages:[]).filter(m=>m&&['user','assistant'].includes(m.role)&&typeof m.text==='string').slice(-2000).map(m=>({role:m.role,text:text(m.text,256*1024)}))};
+    records[record.id] = {id:record.id,snapshotId:record.snapshotId,parentId:idValid(record.parentId)?record.parentId:null,title:text(record.title,140),guide,lessons:sanitizeLessons(record.lessons),lessonPosition:Object.fromEntries(Object.entries(record.lessonPosition||{}).filter(([key,n])=>/^\d{1,4}$/.test(key)&&Number.isInteger(n)&&n>=0&&n<8)),step:Math.max(0,Math.min((guide?.steps.length||1)-1,Number.isInteger(record.step)?record.step:0)),finished:Boolean(record.finished),scroll:Number.isFinite(record.scroll)?Math.max(0,record.scroll):0,overviewOpen:Boolean(record.overviewOpen),draft:text(record.draft),runId:idValid(record.runId)?record.runId:null,messages:(Array.isArray(record.messages)?record.messages:[]).filter(m=>m&&['user','assistant'].includes(m.role)&&typeof m.text==='string').slice(-2000).map(m=>({role:m.role,text:text(m.text,256*1024)}))};
   }
   const pending = value?.pending;
-  return {records,activeId:idValid(value?.activeId)?value.activeId:'',pending:pending&&idValid(pending.input?.requestId)&&['start','question'].includes(pending.action)?{action:pending.action,input:JSON.parse(JSON.stringify(pending.input)),recordId:text(pending.recordId,80),acknowledged:Boolean(pending.acknowledged)}:null};
+  return {records,activeId:idValid(value?.activeId)?value.activeId:'',pending:pending&&idValid(pending.input?.requestId)&&['start','question','lesson'].includes(pending.action)?{action:pending.action,input:JSON.parse(JSON.stringify(pending.input)),recordId:text(pending.recordId,80),acknowledged:Boolean(pending.acknowledged)}:null};
 }
 
 export function createAgentGuideUI({getState,getData,save,render,apiFetch,jump}) {
@@ -30,6 +31,7 @@ export function createAgentGuideUI({getState,getData,save,render,apiFetch,jump})
   function selectConversation(id){captureScroll();workspace().activeId=id;source=null;error='';save();render(false);}
   const enabled=()=>getState().online&&getState().aiEnabled&&!getState().demo;
   const choices=()=>({model:getData().preferences.model||undefined,effort:getData().preferences.effort||undefined});
+  const player=createAudioLesson({current,apiFetch,save,render,jump,ask:question=>{current().draft=question;ask();}});
   async function request(path, input) {
     const response=await apiFetch(`/api/guide/${path}`,input===undefined?{}:{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(input)});
     const body=await response.json();if(!response.ok){const failure=new Error(errorMessage(body));failure.status=response.status;throw failure;}return body;
@@ -46,11 +48,12 @@ export function createAgentGuideUI({getState,getData,save,render,apiFetch,jump})
       ${branches.length>1?`<label class="agent-conversations">Conversation <select id="agent-conversation">${branches.map(r=>`<option value="${esc(r.id)}" ${r.id===record.id?'selected':''}>${esc(r.parentId?'↳ '+r.title:r.title||'Main walkthrough')}</option>`).join('')}</select></label>`:''}
       ${record.parentId?'<button class="secondary-button" data-agent="parent">← Back to walkthrough</button>':''}
       ${guide?`<details class="agent-overview" ${record.overviewOpen?'open':''}><summary>${esc(guide.title)}</summary><p>${esc(guide.summary)}</p><p>${guide.totalChangedFiles} changed files in the plan.</p>${guide.assumptions.map(a=>`<p>${esc(a)}</p>`).join('')}${unexamined.length?`<details><summary>${unexamined.length} files not examined</summary><ul>${unexamined.map(f=>`<li>${esc(f.path)}${f.reason?': '+esc(f.reason):''}</li>`).join('')}</ul></details>`:''}<ol>${guide.steps.map((s,i)=>`<li><button class="agent-step-link" data-agent-step="${i}">${esc(s.title)}</button></li>`).join('')}</ol></details>
-      <p class="eyebrow">${record.parentId?'EXPLORING':'STEP '+(record.step+1)+' OF '+guide.steps.length}</p><h3 id="agent-step-title" tabindex="-1">${esc(step.title)}</h3><p class="step-explanation">${esc(step.explanation)}</p>
-      <div class="guide-citations">${step.citations.map((c,i)=>`<button class="secondary-button" data-agent-citation="${i}">${esc(c.path)} · ${c.side} ${c.startLine}–${c.endLine}</button>`).join('')}</div>
-      ${!record.parentId?`<div class="walk-controls"><button class="secondary-button" data-agent="previous" ${record.step===0?'disabled':''}>Back</button><button class="primary-button" data-agent="next" ${record.finished?'disabled':''}>${record.finished?'Walkthrough complete ✓':record.step===guide.steps.length-1?'Finish':'Next'}</button></div>`:''}`:'<h3>Putting the walkthrough together</h3>'}
+      ${record.lessons?.[record.step]?'':`<p class="eyebrow">${record.parentId?'EXPLORING':'STEP '+(record.step+1)+' OF '+guide.steps.length}</p><h3 id="agent-step-title" tabindex="-1">${esc(step.title)}</h3><p class="step-explanation">${esc(step.explanation)}</p>
+      <div class="guide-citations">${step.citations.map((c,i)=>`<button class="secondary-button" data-agent-citation="${i}">${esc(c.path)} · ${c.side} ${c.startLine}–${c.endLine}</button>`).join('')}</div>`}
+      ${!record.lessons?.[record.step]&&!record.parentId?`<div class="walk-controls"><button class="secondary-button" data-agent="previous" ${record.step===0?'disabled':''}>Back</button><button class="primary-button" data-agent="next" ${record.finished?'disabled':''}>${record.finished?'Walkthrough complete ✓':record.step===guide.steps.length-1?'Finish':'Next'}</button></div>`:''}`:'<h3>Putting the walkthrough together</h3>'}
+      ${guide?`${record.lessons?.[record.step]?player.html()+`<button class="agent-step-link" data-agent="next" ${record.finished?'disabled':''}>${record.finished?'Chapter complete ✓':record.step===guide.steps.length-1?'Finish walkthrough':'Next chapter'}</button>`:`<button class="secondary-button" data-agent="lesson" ${pending||!enabled()?'disabled':''}>Teach this chapter · audio pilot</button>`}`:''}
       ${source?`<section class="agent-source"><header><strong>${esc(source.path)}</strong><button class="icon-button" data-agent="close-source" aria-label="Close supporting code">${icon('close')}</button></header>${sourceError?`<p role="alert">${esc(sourceError)}</p>`:`<pre tabindex="0">${esc(source.text)}</pre>`}</section>`:''}
-      <div class="walk-chat" role="log" aria-live="polite">${record.messages.map(m=>`<div class="chat-message ${m.role}"><div class="message-bubble">${esc(m.text)}</div></div>`).join('')}${pending&&w.pending.recordId===record.id&&guide&&partial?`<div class="chat-message assistant"><div class="message-bubble">${esc(partial)}</div></div>`:''}</div>
+      <div class="walk-chat" role="log" aria-live="polite">${record.messages.map(m=>`<div class="chat-message ${m.role}"><div class="message-bubble">${esc(m.text)}</div></div>`).join('')}${pending&&w.pending.recordId===record.id&&guide&&pending&&w.pending.action!=='lesson'&&partial?`<div class="chat-message assistant"><div class="message-bubble">${esc(partial)}</div></div>`:''}</div>
       ${status}
       ${guide?`<form id="agent-question"><label class="sr-only" for="agent-draft">Ask your guide</label><textarea id="agent-draft" rows="2" maxlength="8000" placeholder="Ask your guide…">${esc(record.draft||'')}</textarea><div class="composer-bottom"><button class="icon-button" type="button" data-agent="branch" aria-label="Explore in a separate conversation" title="Explore in a separate conversation" ${pending||!enabled()?'disabled':''}>${icon('branch')}</button><button class="send-control" type="${pending?'button':'submit'}" ${pending?'data-agent="stop"':''} aria-label="${pending?'Stop response':'Send question'}" ${!pending&&!enabled()?'disabled':''}>${icon(pending?'stop':'send')}</button></div></form>`:pending?'<button class="secondary-button" data-agent="stop">Stop</button>':''}
       ${!pending?`<button class="agent-step-link" data-agent="start" ${!enabled()?'disabled':''}>New walkthrough</button>`:''}
@@ -58,7 +61,7 @@ export function createAgentGuideUI({getState,getData,save,render,apiFetch,jump})
   }
   async function submit(action, input, record) {
     const w=workspace();if(w.pending)return;
-    captureScroll();error='';activity='';partial='';source=null;w.records[record.id]=record;w.activeId=record.id;
+    player.pause();captureScroll();error='';activity='';partial='';source=null;w.records[record.id]=record;w.activeId=record.id;
     w.pending={action,input,recordId:record.id,acknowledged:false};await save();render(false);poll();
   }
   async function start() {
@@ -86,7 +89,7 @@ export function createAgentGuideUI({getState,getData,save,render,apiFetch,jump})
       if(!['running','stopping'].includes(run.status)) {
         const {conversation}=await request(`conversation?id=${encodeURIComponent(pending.recordId)}`);
         const old=w.records[pending.recordId];
-        w.records[pending.recordId]={...conversation,draft:old?.draft||'',finished:old?.finished||false,scroll:old?.scroll||0,overviewOpen:old?.overviewOpen||false};
+        w.records[pending.recordId]={...conversation,draft:old?.draft||'',finished:old?.finished||false,scroll:old?.scroll||0,overviewOpen:old?.overviewOpen||false,lessonPosition:old?.lessonPosition||{}};
         w.pending=null;partial='';activity='';
         if(run.status!=='completed')error=run.error||'The guide stopped before finishing.';else if(conversation.persistenceError)error=conversation.persistenceError;
         await save();
@@ -105,6 +108,7 @@ export function createAgentGuideUI({getState,getData,save,render,apiFetch,jump})
     try{const value=await request(`source?snapshotId=${encodeURIComponent(record.snapshotId)}&path=${encodeURIComponent(c.path)}`);if(source!==loading||current()!==record)return;if(value.source===null)throw new Error(value.reason||'Source unavailable.');const lines=value.source.split('\n');source={path:c.path,text:lines.slice(Math.max(0,c.startLine-4),c.endLine+3).map((line,i)=>`${Math.max(1,c.startLine-3)+i} | ${line}`).join('\n')};}catch(e){if(source!==loading||current()!==record)return;sourceError=errorMessage(e.message);}render();
   }
   function bind(root) {
+    player.bind(root);
     root.querySelector('.agent-overview')?.addEventListener('toggle',e=>{if(current()){current().overviewOpen=e.target.open;save();}});
     root.querySelector('#agent-draft')?.addEventListener('input',e=>{current().draft=e.target.value;save();});
     root.querySelector('#agent-question')?.addEventListener('submit',e=>{e.preventDefault();ask();});
@@ -114,6 +118,7 @@ export function createAgentGuideUI({getState,getData,save,render,apiFetch,jump})
     root.querySelectorAll('[data-agent]').forEach(el=>el.addEventListener('click',async()=>{
       const record=current();
       switch(el.dataset.agent){
+        case 'lesson':await submit('lesson',{requestId:randomId(),conversationId:record.id,step:record.step,...choices()},record);break;
         case 'start':await start();break;
         case 'branch':await ask(true);break;
         case 'stop':try{await request('stop',{requestId:workspace().pending.input.requestId});poll();}catch(e){error=errorMessage(e.message);render();}break;
