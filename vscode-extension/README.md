@@ -11,7 +11,7 @@ This is the laptop-side launcher for Patchwork. It contributes a Patchwork icon 
 5. Click the Patchwork icon in the Activity Bar.
 6. Scan the QR code shown in the `Pair phone` sidebar view.
 
-For the optional HTTPS tunnel, install Cloudflare's `cloudflared` helper once:
+For the optional HTTPS tunnel, install Cloudflare's `cloudflared` helper once. The pairing sidebar shows this requirement and links to Cloudflare's installation instructions when HTTPS tunnel is selected:
 
 ```sh
 brew install cloudflared
@@ -64,4 +64,4 @@ The package contains the launcher, QR renderer, bundled read-only companion, PWA
 
 With Codex selected, starting a walkthrough automatically prepares its first spoken chapter and audio. Each chapter uses the main code reader for references. Playback stops after each section; Left/Right navigate sections and Space plays or pauses while the walkthrough has focus. Transcript highlighting estimates word positions within measured speech phrases. Three local voices and playback speed controls are included. Questions pause playback; listening never marks code reviewed.
 
-Voice generation runs locally through Kokoro. From a source checkout, run `npm run setup:voice` once. Installed extensions include the same script: run `node setup-voice.mjs` from the extension's `bundle` directory using Node.js 20+. Setup downloads dependencies and the model into `~/.patchwork/voice`; it does not use a paid TTS API. Restart the companion after setup. Transcript and references remain usable if audio is unavailable. Audio currently requires the laptop for new audio and uses typed follow-up questions.
+Voice generation runs locally through Kokoro. Click **Install local voice** in the Patchwork pairing sidebar for one-time setup. This requires Node.js 20+ and npm on the laptop; the button downloads the runtime and model into `~/.patchwork/voice` and reports success or failure in the sidebar. It does not use a paid TTS API. Refresh an open phone page after setup. From a source checkout, `npm run setup:voice` is also available. Transcript and references remain usable if audio is unavailable. Audio currently requires the laptop for new audio and uses typed follow-up questions.

@@ -8,7 +8,7 @@ Module._load = function patchedLoad(request, parent, isMain) {
   if (request === 'vscode') return {};
   return originalLoad.call(this, request, parent, isMain);
 };
-const { Launcher } = require('../extension.js');
+const { Launcher, pairingHtml } = require('../extension.js');
 Module._load = originalLoad;
 
 class FakeProcess extends EventEmitter {
@@ -52,7 +52,7 @@ function makeHarness({ configuration = {transport:'tunnel'}, folders = ['/repo']
     Uri: { parse: (value) => value },
     StatusBarAlignment: { Left: 1 },
   };
-  const fakeFs = { existsSync: (candidate) => candidate.endsWith('.git') || candidate.endsWith('companion.mjs') };
+  const fakeFs = { existsSync: (candidate) => candidate.endsWith('.git') || candidate.endsWith('companion.mjs') || candidate.endsWith('setup-voice.mjs') };
   const extension = new Launcher({
     vscode: api,
     context: { subscriptions: [], secrets: { get: async (key) => secrets.get(key), store: async (key, value) => secrets.set(key, value) } },
@@ -173,4 +173,27 @@ test('LAN and tunnel switches preserve the companion, token, and tunnel URL', as
   assert.ok(h.spawns.every(({child})=>!child.killed));
   await h.extension.stop(false);
   assert.ok(h.spawns.every(({child})=>child.killed));
+});
+
+test('pairing panel explains the tunnel dependency and offers voice setup', () => {
+  const html = pairingHtml({ status:'ready', url:'https://example.test/?token=private', root:'/repo', mode:'tunnel', voiceStatus:'idle' });
+  assert.match(html, /needs <strong>cloudflared<\/strong> installed on this laptop/);
+  assert.match(html, /Installation instructions/);
+  assert.match(html, /Install local voice/);
+});
+
+test('voice setup runs once and reports completion or failure', async () => {
+  const h = makeHarness({ configuration:{transport:'lan'} });
+  h.extension.installVoice();
+  h.extension.installVoice();
+  assert.equal(h.spawns.length, 1);
+  assert.equal(h.spawns[0].args[0], '/extension/bundle/setup-voice.mjs');
+  assert.equal(h.extension.voiceStatus, 'installing');
+  h.spawns[0].child.emit('exit', 0, null);
+  assert.equal(h.extension.voiceStatus, 'ready');
+  h.extension.installVoice();
+  h.spawns[1].child.stderr.emit('data', Buffer.from('npm unavailable\n'));
+  h.spawns[1].child.emit('exit', 1, null);
+  assert.equal(h.extension.voiceStatus, 'error');
+  assert.match(h.extension.voiceError, /npm unavailable/);
 });

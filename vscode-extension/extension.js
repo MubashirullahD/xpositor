@@ -1,7 +1,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
-const { networkInterfaces } = require('node:os');
+const { homedir, networkInterfaces } = require('node:os');
 const { spawn } = require('node:child_process');
 const vscode = require('vscode');
 const { qrSvg } = require('./qr');
@@ -33,6 +33,8 @@ class Launcher {
     this.startPromise = undefined;
     this.status = 'stopped';
     this.lastError = '';
+    this.voiceStatus = 'idle';
+    this.voiceError = '';
     this.statusBar = undefined;
   }
 
@@ -213,8 +215,52 @@ class Launcher {
   async revealPairingView() { try { await this.vscode.commands.executeCommand('workbench.view.extension.patchwork'); } catch (error) { this.vscode.window.showErrorMessage(`Patchwork could not open its sidebar: ${error.message}`); } }
   renderPairingView() {
     if (!pairingView) return;
-    try { pairingView.webview.html = pairingHtml({ status: this.status, url: this.session?.pairingUrl || '', root: this.session?.root || '', error: this.lastError, mode:this.session?.mode||(this.transport||this.vscode.workspace.getConfiguration('patchwork').get('transport','lan')), multipleAddresses:(this.session?.addresses?.length||0)>1 }); }
+    try { pairingView.webview.html = pairingHtml({ status: this.status, url: this.session?.pairingUrl || '', root: this.session?.root || '', error: this.lastError, mode:this.session?.mode||(this.transport||this.vscode.workspace.getConfiguration('patchwork').get('transport','lan')), multipleAddresses:(this.session?.addresses?.length||0)>1, voiceStatus:this.voiceStatus === 'idle' && this.voiceInstalled() ? 'ready' : this.voiceStatus, voiceError:this.voiceError }); }
     catch (error) { this.vscode.window.showErrorMessage(`Patchwork could not render its sidebar: ${error.message}`); }
+  }
+  voiceInstalled() {
+    const home = process.env.PATCHWORK_VOICE_HOME || path.join(homedir(), '.patchwork', 'voice');
+    return this.fs.existsSync(path.join(home, 'node_modules', 'kokoro-js', 'package.json'));
+  }
+  installVoice() {
+    if (this.voiceStatus === 'installing') return;
+    const script = path.join(path.dirname(this.companionPath()), 'setup-voice.mjs');
+    if (!this.fs.existsSync(script)) {
+      this.voiceStatus = 'error';
+      this.voiceError = 'The voice setup script is missing from this extension.';
+      this.renderPairingView();
+      return;
+    }
+    this.voiceStatus = 'installing';
+    this.voiceError = '';
+    this.renderPairingView();
+    let child;
+    try {
+      child = this.spawn(process.execPath, [script], {
+        cwd: path.dirname(script),
+        env: { ...process.env, ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {}) },
+        stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
+      });
+    } catch (error) {
+      this.voiceStatus = 'error';
+      this.voiceError = `Voice setup could not start: ${error.message}`;
+      this.renderPairingView();
+      return;
+    }
+    let output = '';
+    const append = (chunk) => { output = appendLog(output, chunk); };
+    child.stdout?.on('data', append);
+    child.stderr?.on('data', append);
+    let finished = false;
+    const finish = (error) => {
+      if (finished) return;
+      finished = true;
+      this.voiceStatus = error ? 'error' : 'ready';
+      this.voiceError = error ? `${error}${output.trim() ? ` Last output: ${output.trim().split(/\r?\n/).at(-1)}` : ''}` : '';
+      this.renderPairingView();
+    };
+    child.once('error', (error) => finish(`Voice setup could not start: ${error.message}`));
+    child.once('exit', (code, signal) => finish(code === 0 ? '' : `Voice setup stopped (${exitDescription(code, signal)}). Check that Node.js 20+ and npm are installed, then try again.`));
   }
   setStatus(status) {
     this.status = status;
@@ -222,6 +268,8 @@ class Launcher {
     this.renderPairingView();
   }
   async handlePairingMessage(message) {
+    if (message.type === 'install-voice') { this.installVoice(); return; }
+    if (message.type === 'cloudflared-help') { await this.vscode.env.openExternal(this.vscode.Uri.parse('https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/')); return; }
     if(['lan','tunnel'].includes(message.type)) {
       if(this.startPromise)await this.startPromise;
       this.transport=message.type;
@@ -310,12 +358,19 @@ function pairingHtml(state) {
   const safeError = escapeHtml(state.error || '');
   const lan=state.mode==='lan';
   const transportButtons=`<div class="actions transport"><button class="${lan?'':'secondary'}" id="lan">Local LAN · HTTP</button><button class="${lan?'secondary':''}" id="tunnel">HTTPS tunnel</button></div>`;
+  const tunnelNote = lan ? '' : '<p class="note">HTTPS tunnel needs <strong>cloudflared</strong> installed on this laptop. <button class="link inline" id="cloudflared-help">Installation instructions</button></p>';
+  const voiceState = state.voiceStatus === 'installing'
+    ? '<p>Downloading and preparing local voice on this laptop… This may take a few minutes.</p>'
+    : state.voiceStatus === 'ready'
+      ? '<p>Local voice is installed. Refresh the phone page if it is already open.</p>'
+      : `<p>Download Kokoro and its voice model to this laptop. Requires Node.js 20+ and npm.</p><button id="install-voice">Install local voice</button>${state.voiceStatus === 'error' ? `<p class="error">${escapeHtml(state.voiceError || 'Voice setup failed. Try again.')}</p>` : ''}`;
+  const voicePanel = `<section class="setup"><h2>Spoken walkthrough</h2>${voiceState}</section>`;
   const content = state.status === 'ready' && state.url
     ? `<h1>Scan to review</h1><p>${lan?'Connect your phone to the same Wi-Fi and scan this link.':'Scan this HTTPS link from any network.'}</p><div class="card">${qrSvg(state.url)}</div><code>${safeUrl}</code><div class="actions"><button id="copy">Copy pairing link</button><button class="secondary" id="open">Open on this laptop</button></div><button class="link" id="stop">Stop companion</button><p class="note"><strong>${lan?'Local-network, read-only companion.':'HTTPS, read-only companion.'}</strong> ${lan?'HTTP is unencrypted. Use a trusted Wi-Fi network. Offline installation requires HTTPS; downloaded code remains readable in the open tab.':''} Keep this pairing link private. Patchwork cannot stage, edit, reset, or commit files.</p>`
     : state.status === 'starting' ? `<h1>${lan?'Starting local review':'Creating secure link'}</h1><div class="state"><span class="spinner"></span><strong>${lan?'Starting the companion…':'Starting the companion and tunnel…'}</strong></div><button class="link" id="stop">Cancel startup</button>`
       : state.status === 'error' ? `<h1>Patchwork needs attention</h1><p class="error">${safeError || 'The companion could not start.'}</p><div class="actions"><button id="retry">Try again</button></div>`
         : '<h1>Pair your phone</h1><p>Choose local LAN for a quick connection or HTTPS tunnel for access from another network.</p>';
-  return `<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'"><style>:root{color-scheme:light dark}body{margin:0;padding:18px 16px 24px;color:var(--vscode-foreground);font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.eyebrow{color:var(--vscode-textLink-foreground);font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}h1{margin:9px 0 8px;font-size:21px;line-height:1.15}p{color:var(--vscode-descriptionForeground);line-height:1.5}.card{display:grid;place-items:center;margin:18px 0 16px;padding:14px;border:1px solid var(--vscode-panel-border);border-radius:10px;background:#fff}svg{display:block;width:min(220px,100%);height:auto}code{display:block;margin:10px 0 8px;padding:10px;overflow-wrap:anywhere;border-radius:5px;background:var(--vscode-textBlockQuote-background);font-size:11px}.transport{padding-top:14px}.actions{display:flex;flex-wrap:wrap;gap:7px}button{padding:7px 10px;border:0;border-radius:4px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);cursor:pointer}button.secondary{background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground)}button.link{margin-top:15px;padding:0;background:transparent;color:var(--vscode-textLink-foreground);text-decoration:underline}.note{margin-top:18px;padding:10px 11px;border-left:3px solid var(--vscode-textLink-foreground);background:var(--vscode-textBlockQuote-background)}.state{display:flex;align-items:center;gap:9px;margin:22px 0;padding:14px;border:1px solid var(--vscode-panel-border);border-radius:8px}.spinner{width:13px;height:13px;border:2px solid var(--vscode-panel-border);border-top-color:var(--vscode-textLink-foreground);border-radius:50%;animation:spin 800ms linear infinite}.error{padding:11px;border-left:3px solid var(--vscode-errorForeground);background:var(--vscode-textBlockQuote-background);overflow-wrap:anywhere}@keyframes spin{to{transform:rotate(360deg)}}</style></head><body><span class="eyebrow">Patchwork · ${safeRoot}</span>${transportButtons}${content}${state.multipleAddresses?'<button class="link" id="address">Choose LAN address</button>':''}<script nonce="${nonce}">const vscode=acquireVsCodeApi();for(const type of ['copy','open','retry','stop','lan','tunnel','address'])document.getElementById(type)?.addEventListener('click',()=>vscode.postMessage({type}));</script></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'"><style>:root{color-scheme:light dark}body{margin:0;padding:18px 16px 24px;color:var(--vscode-foreground);font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.eyebrow{color:var(--vscode-textLink-foreground);font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}h1{margin:9px 0 8px;font-size:21px;line-height:1.15}h2{font-size:14px;margin:0}p{color:var(--vscode-descriptionForeground);line-height:1.5}.card{display:grid;place-items:center;margin:18px 0 16px;padding:14px;border:1px solid var(--vscode-panel-border);border-radius:10px;background:#fff}svg{display:block;width:min(220px,100%);height:auto}code{display:block;margin:10px 0 8px;padding:10px;overflow-wrap:anywhere;border-radius:5px;background:var(--vscode-textBlockQuote-background);font-size:11px}.transport{padding-top:14px}.actions{display:flex;flex-wrap:wrap;gap:7px}button{padding:7px 10px;border:0;border-radius:4px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);cursor:pointer}button.secondary{background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground)}button.link{margin-top:15px;padding:0;background:transparent;color:var(--vscode-textLink-foreground);text-decoration:underline}button.inline{margin:0}.note{margin-top:18px;padding:10px 11px;border-left:3px solid var(--vscode-textLink-foreground);background:var(--vscode-textBlockQuote-background)}.setup{margin-top:22px;padding-top:16px;border-top:1px solid var(--vscode-panel-border)}.state{display:flex;align-items:center;gap:9px;margin:22px 0;padding:14px;border:1px solid var(--vscode-panel-border);border-radius:8px}.spinner{width:13px;height:13px;border:2px solid var(--vscode-panel-border);border-top-color:var(--vscode-textLink-foreground);border-radius:50%;animation:spin 800ms linear infinite}.error{padding:11px;border-left:3px solid var(--vscode-errorForeground);background:var(--vscode-textBlockQuote-background);overflow-wrap:anywhere}@keyframes spin{to{transform:rotate(360deg)}}</style></head><body><span class="eyebrow">Patchwork · ${safeRoot}</span>${transportButtons}${tunnelNote}${content}${state.multipleAddresses?'<button class="link" id="address">Choose LAN address</button>':''}${voicePanel}<script nonce="${nonce}">const vscode=acquireVsCodeApi();for(const type of ['copy','open','retry','stop','lan','tunnel','address','install-voice','cloudflared-help'])document.getElementById(type)?.addEventListener('click',()=>vscode.postMessage({type}));</script></body></html>`;
 }
 function escapeHtml(value) { return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;'); }
 

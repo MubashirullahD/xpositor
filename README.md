@@ -92,13 +92,13 @@ Starting a Codex walkthrough automatically prepares its first teaching chapter a
 
 Transcript words highlight using estimated positions inside measured speech phrases. This follows the audio clock, including pause and playback speed, but is not exact word alignment. Speech remains local and requires no additional paid API.
 
-Speech uses local Kokoro on the laptop, with no TTS API bill. One-time setup from the project folder:
+Speech uses local Kokoro on the laptop, with no TTS API bill. In the VS Code extension, choose **Install local voice** in the Patchwork sidebar. For standalone use, run one-time setup from the project folder:
 
 ```sh
 npm run setup:voice
 ```
 
-The packaged extension includes the same setup script under `bundle/setup-voice.mjs`; run it with Node if using only the VSIX. Setup downloads the pinned speech runtime and model to `~/.patchwork/voice` (`PATCHWORK_VOICE_HOME` overrides this). It needs internet and disk space for the initial dependencies/model. A separate speech process keeps model loading and synthesis out of the companion's HTTP event loop. Text and code are never sent to a cloud TTS provider.
+The packaged extension includes the same setup script and runs it when you click the sidebar button. Setup needs Node.js 20+, npm, internet and disk space; it downloads the pinned speech runtime and model to `~/.patchwork/voice` (`PATCHWORK_VOICE_HOME` overrides this). A separate speech process keeps model loading and synthesis out of the companion's HTTP event loop. Text and code are never sent to a cloud TTS provider.
 
 Choose Heart, Bella or Michael under **Voice & speed**. Playback prepares the next segment ahead, supports pause/resume and manual Back/Next, and pauses when you ask a question. Reload retains the segment, transcript and captured excerpts; it never autoplays. “Explain more simply” and “Another example” use the existing text conversation and preserve the lesson's position. Listening does not imply approval.
 
