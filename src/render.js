@@ -20,6 +20,7 @@ export function icon(name, size = 20) {
     branch: '<path d="M6 4v12a3 3 0 0 0 3 3h9"/><circle cx="6" cy="4" r="2.3"/><circle cx="18" cy="19" r="2.3"/><path d="M18 7V5a3 3 0 0 0-3-3H9"/><circle cx="18" cy="7" r="2.3"/>',
     spark: '<path d="m12 2 1.7 6.3L20 10l-6.3 1.7L12 18l-1.7-6.3L4 10l6.3-1.7L12 2Z"/><path d="m19 16 .7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7L19 16Z"/>',
     clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.3 2"/>',
+    breathe: '<circle cx="12" cy="12" r="3.2"/><circle cx="12" cy="12" r="7.5"/><path d="M12 1.5v2M12 20.5v2M1.5 12h2M20.5 12h2"/>',
     settings: '<path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/><circle cx="12" cy="12" r="3.2"/>',
     chevron: '<path d="m9 18 6-6-6-6"/>',
     down: '<path d="m6 9 6 6 6-6"/>',

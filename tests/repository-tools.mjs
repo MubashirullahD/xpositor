@@ -43,9 +43,11 @@ try {
   assert.throws(() => tools.call('review_inventory', { offset: -1 }));
   const prompt = buildRepositoryGuidePrompt(tools.repository, 'file0.js');
   assert.match(prompt, /Changed files: 101/);
-  assert(!prompt.includes('import { changed }'), 'Source must be retrieved, not packed into the initial prompt');
+  assert.match(prompt, /file0\.js/);
+  assert.match(prompt, /after/, 'Small captured diff excerpts are supplied with the inventory');
+  assert(!prompt.includes('import { changed }'), 'Unchanged source must still be retrieved on demand');
   const plan = {
-    title: 'Understand the change', summary: 'Review the related code together.', assumptions: ['The symbolic link target is unavailable.'],
+    title: 'Understand the change', summary: 'Review the related code together.', assumptions: ['The symbolic link target is unavailable.'],fileOverviews:tools.repository.snapshot.files.map(file=>({path:file.path,summary:`Change in ${file.path}.`})),
     steps: [
       { title: 'Code', explanation: 'Follow the unchanged caller into the modified files.', files: Array.from({ length: 100 }, (_, i) => `file${i}.js`), citations: [{ path: 'caller.js', side: 'new', startLine: 1, endLine: 2 }, { path: 'file0.js', side: 'old', startLine: 1, endLine: 1 }] },
       { title: 'Link', explanation: 'Only the link metadata is captured.', files: ['outside'], citations: [] },
@@ -54,10 +56,12 @@ try {
   const validated = validateRepositoryGuide(plan, tools);
   assert.equal(validated.fileOrder.length, 101);
   assert.equal(validated.totalChangedFiles, 101);
+  assert.equal(Object.keys(validated.fileOverviews).length,101);
   assert.equal(validated.examinedCount, 100);
   assert.equal(validated.steps[0].citations[0].fileId, null);
   const changedPlan = mutate => { const copy = structuredClone(plan); mutate(copy); return copy; };
   assert.throws(() => validateRepositoryGuide(changedPlan(p => p.steps[0].files.pop()), tools), /omitted 1/);
+  assert.throws(() => validateRepositoryGuide(changedPlan(p => p.fileOverviews.pop()), tools), /one overview/);
   assert.equal(validateRepositoryGuide(changedPlan(p => p.steps[1].files.push('file0.js')), tools).fileOrder.length, 101);
   assert.throws(() => validateRepositoryGuide(changedPlan(p => { p.steps[0].files[1] = 'file0.js'; }), tools), /more than once within a step/);
   assert.throws(() => validateRepositoryGuide(changedPlan(p => p.steps[0].files.push('caller.js')), tools), /outside the review scope/);

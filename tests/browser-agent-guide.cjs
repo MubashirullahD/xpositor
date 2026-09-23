@@ -2,7 +2,7 @@ async page => {
  const base=page.url(),conversations={},runs={};let starts=0,rootId,rootReady=false,branchReady=false,branchId,rejectQuestion=false;
  const file={id:'a',path:'a.js',label:'a.js',version:'v1',source:'export const a=1;',sourceAvailable:true,lines:[['added','1','export const a=1;']],added:1,removed:0};
  const snapshot={repoId:'agent-browser',scope:'unstaged',base:'unstaged:head',head:'head',branch:'main',snapshotId:'agent-snapshot',generatedAt:new Date().toISOString(),workspaceName:'Agent guide',files:[file]};
- const guide={title:'Understand the change',summary:'Start with intent, then trace the caller.',assumptions:[],totalChangedFiles:1,coverage:[{path:'a.js',sourceRead:true,diffExamined:true}],steps:[{title:'Intent',explanation:'The changed constant is one.',files:[{path:'a.js',fileId:'a'}],citations:[{path:'a.js',fileId:'a',side:'new',startLine:1,endLine:1}]},{title:'Caller',explanation:'The unchanged caller uses the constant.',files:[{path:'a.js',fileId:'a'}],citations:[{path:'caller.js',fileId:null,side:'new',startLine:1,endLine:1}]}]};
+ const guide={title:'Understand the change',summary:'Start with intent, then trace the caller.',assumptions:[],fileOverviews:{'a.js':'This file exports the changed constant used by its caller.'},totalChangedFiles:1,coverage:[{path:'a.js',sourceRead:true,diffExamined:true}],steps:[{title:'Intent',explanation:'The changed constant is one.',files:[{path:'a.js',fileId:'a'}],citations:[{path:'a.js',fileId:'a',side:'new',startLine:1,endLine:1}]},{title:'Caller',explanation:'The unchanged caller uses the constant.',files:[{path:'a.js',fileId:'a'}],citations:[{path:'caller.js',fileId:null,side:'new',startLine:1,endLine:1}]}]};
  await page.route('**/api/**',async route=>{
   const raw=route.request().url(),path='/api/'+raw.split('/api/')[1].split('?')[0],param=name=>decodeURIComponent(raw.match(new RegExp('[?&]'+name+'=([^&]+)'))?.[1]||'');let body;
   if(path==='/api/guide/question'&&rejectQuestion){await route.fulfill({status:400,contentType:'application/json',body:JSON.stringify({error:'Update the Codex CLI'})});return;}
@@ -12,6 +12,8 @@ async page => {
   else if(path==='/api/models')body={models:[]};
   else if(path==='/api/guide/start'){
    starts++;rootId=input.requestId;conversations[rootId]={id:rootId,snapshotId:snapshot.snapshotId,parentId:null,title:guide.title,step:0,guide:null,messages:[],runId:rootId};runs[rootId]={id:rootId,conversationId:rootId,status:'running',text:'',revision:1};body={run:runs[rootId]};
+  }else if(path==='/api/guide/lesson'){
+   runs[input.requestId]={id:input.requestId,conversationId:input.conversationId,status:'failed',error:'Audio chapter unavailable in this mock.',revision:1};body={run:runs[input.requestId]};
   }else if(path==='/api/guide/run'){
    const id=param('id');if(id===rootId&&rootReady){runs[id].status='completed';conversations[rootId].guide=guide;}
    if(id===branchId&&branchReady){runs[id].status='completed';conversations[id].messages=[{role:'user',text:'Explain the caller'},{role:'assistant',text:'The caller imports a.js.'}];}
@@ -30,8 +32,9 @@ async page => {
  await page.getByRole('button',{name:'Stop',exact:true}).waitFor();await page.reload();await page.getByRole('heading',{name:'a.js',exact:true}).waitFor();await page.getByRole('button',{name:'Code guide',exact:true}).click();
  if(starts!==1)throw Error('Reload duplicated guide generation');rootReady=true;
  await page.getByRole('heading',{name:'Intent',exact:true}).waitFor();await page.getByRole('button',{name:'Next',exact:true}).click();
+ await page.getByRole('tab',{name:'Overview'}).click();await page.getByText('This file exports the changed constant used by its caller.',{exact:true}).waitFor();
  await page.getByRole('heading',{name:'Caller',exact:true}).waitFor();
- await page.getByRole('button',{name:'caller.js · new 1–1',exact:true}).click();await page.locator('.agent-source pre').filter({hasText:'import {a}'}).waitFor();
+ await page.getByRole('button',{name:'caller.js · new 1–1',exact:true}).click();await page.getByRole('heading',{name:'caller.js',exact:true}).waitFor();await page.getByText('import {a} from "./a.js";',{exact:true}).waitFor();
  await page.setViewportSize({width:1440,height:600});await page.locator('.walkthrough-scroll').evaluate(el=>{el.scrollTop=60;});
  await page.locator('#agent-draft').fill('Explain the caller');await page.getByRole('button',{name:'Explore in a separate conversation',exact:true}).scrollIntoViewIfNeeded();
  const parentScroll=await page.locator('.walkthrough-scroll').evaluate(el=>el.scrollTop);

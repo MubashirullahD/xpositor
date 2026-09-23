@@ -1,3 +1,4 @@
+import { prepare, finishPreparation, restInvitation } from './preparation.js';
 import { createAudioLesson, sanitizeLessons } from './audio-lesson.js';
 import { escapeHtml as esc, icon } from './render.js';
 import { randomId } from './platform.js';
@@ -11,7 +12,7 @@ export function sanitizeAgentWorkspace(value) {
     if (!idValid(record?.id) || typeof record.snapshotId !== 'string') continue;
     let guide = null;
     if (record.guide && Array.isArray(record.guide.steps) && record.guide.steps.length && record.guide.steps.length <= 2000) {
-      guide = { title:text(record.guide.title,140),summary:text(record.guide.summary,4000),assumptions:(Array.isArray(record.guide.assumptions)?record.guide.assumptions:[]).filter(v=>typeof v==='string').slice(0,30),
+      guide = { title:text(record.guide.title,140),summary:text(record.guide.summary,4000),assumptions:(Array.isArray(record.guide.assumptions)?record.guide.assumptions:[]).filter(v=>typeof v==='string').slice(0,30),fileOverviews:Object.fromEntries(Object.entries(record.guide.fileOverviews||{}).filter(([path,summary])=>typeof path==='string'&&typeof summary==='string').slice(0,2000).map(([path,summary])=>[text(path,4096),text(summary,800)])),
         steps:record.guide.steps.filter(step=>step&&typeof step==='object').map(step=>({title:text(step.title,180),explanation:text(step.explanation,6000),files:(Array.isArray(step.files)?step.files:[]).slice(0,2000).filter(f=>f&&typeof f.path==='string'&&typeof f.fileId==='string').map(f=>({path:f.path,fileId:f.fileId})),citations:(Array.isArray(step.citations)?step.citations:[]).slice(0,30).filter(c=>c&&typeof c.path==='string'&&['new','old'].includes(c.side)&&Number.isInteger(c.startLine)&&Number.isInteger(c.endLine)&&c.startLine>0&&c.endLine>=c.startLine&&c.endLine-c.startLine<80).map(c=>({path:c.path,fileId:typeof c.fileId==='string'?c.fileId:null,side:c.side,startLine:c.startLine,endLine:c.endLine}))})),
         coverage:(Array.isArray(record.guide.coverage)?record.guide.coverage:[]).slice(0,2000).filter(c=>c&&typeof c==='object').map(c=>({path:text(c.path,4096),sourceRead:Boolean(c.sourceRead),diffExamined:Boolean(c.diffExamined),reason:text(c.reason,500)})),
         totalChangedFiles:Math.max(0,Number(record.guide.totalChangedFiles)||0) };
@@ -24,11 +25,12 @@ export function sanitizeAgentWorkspace(value) {
 }
 
 export function createAgentGuideUI({getState,getData,save,render,apiFetch,jump}) {
-  let polling=false,error='',activity='',partial='',source=null,sourceError='',retryTimer;
+  let polling=false,error='',activity='',partial='',retryTimer;
+  const attemptedLessons=new Set();
   const workspace=()=>{const state=getState();if(!state.snapshot)return null;getData().agentGuides||={};return getData().agentGuides[keyFor(state.snapshot)]||=( {records:{},activeId:'',pending:null} );};
   const current=()=>{const w=workspace();return w?.records[w.activeId];};
   const captureScroll=()=>{const record=current(),panel=document.querySelector('.walkthrough-scroll');if(record&&panel)record.scroll=panel.scrollTop;};
-  function selectConversation(id){captureScroll();workspace().activeId=id;source=null;error='';save();render(false);}
+  function selectConversation(id){captureScroll();workspace().activeId=id;error='';save();render(false);ensureLesson();}
   const enabled=()=>getState().online&&getState().aiEnabled&&!getState().demo;
   const choices=()=>({model:getData().preferences.model||undefined,effort:getData().preferences.effort||undefined});
   const player=createAudioLesson({current,apiFetch,save,render,jump,ask:question=>{current().draft=question;ask();}});
@@ -39,7 +41,8 @@ export function createAgentGuideUI({getState,getData,save,render,apiFetch,jump})
   function html() {
     const state=getState(),w=workspace(),record=current(),pending=Boolean(w?.pending);
     if(!state.snapshot?.files.length)return '<p class="guide-intro">No changes to walk through in this scope.</p>';
-    const status=`${error?`<p role="alert" class="guide-error">${esc(error)}</p>`:''}${pending?`<p class="agent-activity" role="status">${esc(activity||'Reading the captured repository…')}</p>`:''}`;
+    const restingOffer=w?.pending&&['start','lesson'].includes(w.pending.action)?restInvitation():'';
+    const status=`${restingOffer}${error?`<p role="alert" class="guide-error">${esc(error)}</p>`:''}${pending?`<p class="agent-activity" role="status">${esc(activity||'Reading the captured repository…')}</p>`:''}`;
     if(!record)return `<section class="walkthrough"><h3>Walk me through these changes</h3><p>Start with the big picture, then follow the code together.</p><button class="primary-button" data-agent="start" ${!enabled()||pending?'disabled':''}>Start walkthrough</button>${status}</section>`;
     const guide=record.guide,step=guide?.steps[record.step];
     const branches=Object.values(w.records);
@@ -51,8 +54,7 @@ export function createAgentGuideUI({getState,getData,save,render,apiFetch,jump})
       ${record.lessons?.[record.step]?'':`<p class="eyebrow">${record.parentId?'EXPLORING':'STEP '+(record.step+1)+' OF '+guide.steps.length}</p><h3 id="agent-step-title" tabindex="-1">${esc(step.title)}</h3><p class="step-explanation">${esc(step.explanation)}</p>
       <div class="guide-citations">${step.citations.map((c,i)=>`<button class="secondary-button" data-agent-citation="${i}">${esc(c.path)} · ${c.side} ${c.startLine}–${c.endLine}</button>`).join('')}</div>`}
       ${!record.lessons?.[record.step]&&!record.parentId?`<div class="walk-controls"><button class="secondary-button" data-agent="previous" ${record.step===0?'disabled':''}>Back</button><button class="primary-button" data-agent="next" ${record.finished?'disabled':''}>${record.finished?'Walkthrough complete ✓':record.step===guide.steps.length-1?'Finish':'Next'}</button></div>`:''}`:'<h3>Putting the walkthrough together</h3>'}
-      ${guide?`${record.lessons?.[record.step]?player.html()+`<button class="agent-step-link" data-agent="next" ${record.finished?'disabled':''}>${record.finished?'Chapter complete ✓':record.step===guide.steps.length-1?'Finish walkthrough':'Next chapter'}</button>`:`<button class="secondary-button" data-agent="lesson" ${pending||!enabled()?'disabled':''}>Teach this chapter · audio pilot</button>`}`:''}
-      ${source?`<section class="agent-source"><header><strong>${esc(source.path)}</strong><button class="icon-button" data-agent="close-source" aria-label="Close supporting code">${icon('close')}</button></header>${sourceError?`<p role="alert">${esc(sourceError)}</p>`:`<pre tabindex="0">${esc(source.text)}</pre>`}</section>`:''}
+      ${guide?`${record.lessons?.[record.step]?player.html()+`<button class="agent-step-link" data-agent="next" ${record.finished?'disabled':''}>${record.finished?'Chapter complete ✓':record.step===guide.steps.length-1?'Finish walkthrough':'Next chapter'}</button>`:`<p class="agent-activity">${error?'This chapter is not ready yet.':!enabled()?'Reconnect to prepare this chapter and its audio.':'Preparing this chapter and its audio…'}</p>${error?`<button class="secondary-button" data-agent="lesson" ${pending||!enabled()?'disabled':''}>Retry chapter</button>`:''}`}`:''}
       <div class="walk-chat" role="log" aria-live="polite">${record.messages.map(m=>`<div class="chat-message ${m.role}"><div class="message-bubble">${esc(m.text)}</div></div>`).join('')}${pending&&w.pending.recordId===record.id&&guide&&pending&&w.pending.action!=='lesson'&&partial?`<div class="chat-message assistant"><div class="message-bubble">${esc(partial)}</div></div>`:''}</div>
       ${status}
       ${guide?`<form id="agent-question"><label class="sr-only" for="agent-draft">Ask your guide</label><textarea id="agent-draft" rows="2" maxlength="8000" placeholder="Ask your guide…">${esc(record.draft||'')}</textarea><div class="composer-bottom"><button class="icon-button" type="button" data-agent="branch" aria-label="Explore in a separate conversation" title="Explore in a separate conversation" ${pending||!enabled()?'disabled':''}>${icon('branch')}</button><button class="send-control" type="${pending?'button':'submit'}" ${pending?'data-agent="stop"':''} aria-label="${pending?'Stop response':'Send question'}" ${!pending&&!enabled()?'disabled':''}>${icon(pending?'stop':'send')}</button></div></form>`:pending?'<button class="secondary-button" data-agent="stop">Stop</button>':''}
@@ -61,8 +63,8 @@ export function createAgentGuideUI({getState,getData,save,render,apiFetch,jump})
   }
   async function submit(action, input, record) {
     const w=workspace();if(w.pending)return;
-    player.pause();captureScroll();error='';activity='';partial='';source=null;w.records[record.id]=record;w.activeId=record.id;
-    w.pending={action,input,recordId:record.id,acknowledged:false};await save();render(false);poll();
+    player.pause();captureScroll();error='';activity='';partial='';w.records[record.id]=record;w.activeId=record.id;
+    w.pending={action,input,recordId:record.id,acknowledged:false};if(['start','lesson'].includes(action))prepare(input.requestId,action==='start'?'Your walkthrough':'Your chapter');await save();render(false);poll();
   }
   async function start() {
     if(!enabled()||workspace().pending)return;
@@ -91,21 +93,25 @@ export function createAgentGuideUI({getState,getData,save,render,apiFetch,jump})
         const old=w.records[pending.recordId];
         w.records[pending.recordId]={...conversation,draft:old?.draft||'',finished:old?.finished||false,scroll:old?.scroll||0,overviewOpen:old?.overviewOpen||false,lessonPosition:old?.lessonPosition||{}};
         w.pending=null;partial='';activity='';
+        finishPreparation(pending.input.requestId,run.status==='completed'?'ready':run.status==='cancelled'?'cancelled':'error');
         if(run.status!=='completed')error=run.error||'The guide stopped before finishing.';else if(conversation.persistenceError)error=conversation.persistenceError;
         await save();
       }
-      if(workspace()===w)render();
-    } catch(e) {if(e.status>=400&&e.status<500&&e.status!==429){w.pending=null;await save();error=`${errorMessage(e.message)} Your saved conversation remains here; you can try again.`;}else error=`${errorMessage(e.message)} Your request is saved; reconnecting will check the same response.`;if(workspace()===w)render();}
+      if(workspace()===w){render();if(!w.pending&&run.status==='completed'){if(pending.action==='lesson')player.prepare();else if(pending.action==='start')queueMicrotask(ensureLesson);}}
+    } catch(e) {if(e.status>=400&&e.status<500&&e.status!==429){w.pending=null;finishPreparation(pending.input.requestId,'error');await save();error=`${errorMessage(e.message)} Your saved conversation remains here; you can try again.`;}else error=`${errorMessage(e.message)} Your request is saved; reconnecting will check the same response.`;if(workspace()===w)render();}
     finally {polling=false;if(w.pending&&workspace()===w)retryTimer=setTimeout(()=>{retryTimer=null;poll();},error?5000:1000);}
   }
   async function move(step) {
-    const record=current();record.step=step;record.finished=false;source=null;await save();render();
+    const record=current();player.pause();record.step=step;record.finished=false;await save();render();ensureLesson();
     try{await request('step',{conversationId:record.id,step});}catch(e){error=errorMessage(e.message);render();}
   }
-  async function citation(index) {
-    const c=current().guide.steps[current().step].citations[index];if(c.fileId){jump(c);return;}
-    const record=current(), loading={path:c.path,text:'Loading captured code…'};source=loading;sourceError='';render();
-    try{const value=await request(`source?snapshotId=${encodeURIComponent(record.snapshotId)}&path=${encodeURIComponent(c.path)}`);if(source!==loading||current()!==record)return;if(value.source===null)throw new Error(value.reason||'Source unavailable.');const lines=value.source.split('\n');source={path:c.path,text:lines.slice(Math.max(0,c.startLine-4),c.endLine+3).map((line,i)=>`${Math.max(1,c.startLine-3)+i} | ${line}`).join('\n')};}catch(e){if(source!==loading||current()!==record)return;sourceError=errorMessage(e.message);}render();
+  async function citation(index) {jump(current().guide.steps[current().step].citations[index]);}
+  function ensureLesson() {
+    const record=current();if(!record?.guide||workspace().pending||!enabled())return;
+    if(record.lessons?.[record.step]){player.prepare();return;}
+    const key=JSON.stringify([record.snapshotId,record.id,record.step]);
+    if(attemptedLessons.has(key))return;attemptedLessons.add(key);
+    submit('lesson',{requestId:randomId(),conversationId:record.id,step:record.step,...choices()},record);
   }
   function bind(root) {
     player.bind(root);
@@ -124,11 +130,12 @@ export function createAgentGuideUI({getState,getData,save,render,apiFetch,jump})
         case 'stop':try{await request('stop',{requestId:workspace().pending.input.requestId});poll();}catch(e){error=errorMessage(e.message);render();}break;
         case 'parent':selectConversation(record.parentId);break;
         case 'previous':await move(record.step-1);break;
-        case 'next':if(record.step<record.guide.steps.length-1)await move(record.step+1);else{record.finished=true;save();render();}break;
-        case 'close-source':source=null;render();break;
+        case 'next':if(record.step<record.guide.steps.length-1)await move(record.step+1);else{player.pause();record.finished=true;save();render();}break;
       }
     }));
-    if(workspace()?.pending&&!polling&&!retryTimer)queueMicrotask(poll);
+    const pending=workspace()?.pending;if(pending&&['start','lesson'].includes(pending.action))prepare(pending.input.requestId,pending.action==='start'?'Your walkthrough':'Your chapter');
+    if(pending&&!polling&&!retryTimer)queueMicrotask(poll);
+    if(!pending&&root.querySelector('#chat-panel:not([inert]) .agent-walkthrough')&&!error)queueMicrotask(ensureLesson);
   }
   return {html,bind};
 }

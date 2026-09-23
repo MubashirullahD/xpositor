@@ -11,11 +11,12 @@ const snapshot={snapshotId:'snapshot',files:[{id:'a',path:'a.js',lines:[['remove
 const repository={snapshot,manifest:[{path:'a.js',fileId:'a',available:true,changed:true}],read(path){assert.equal(path,'a.js');return {source:'const value = 42;\nreturn value;'};}};
 const lesson={title:'Follow the value',checkQuestion:'What is returned?',segments:Array.from({length:4},(_,i)=>({title:'Part '+i,narration:'We return forty two.',citation:{path:'a.js',side:'new',startLine:1,endLine:2},focusLine:2}))};
 const valid=validateLesson(lesson,repository,0);assert.equal(valid.segments[0].code[1].text,'return value;');
-for(const patch of [{endLine:13},{endLine:3},{startLine:0}]){const bad=structuredClone(lesson);Object.assign(bad.segments[0].citation,patch);assert.throws(()=>validateLesson(bad,repository,0));}
+for(const patch of [{endLine:13},{endLine:3},{startLine:0}]){const longer=structuredClone(lesson);longer.segments[0].citation.endLine=20;assert.equal(validateLesson(longer,{...repository,read:()=>({source:Array(30).fill('real code').join('\n')})},0).segments[0].citation.endLine,20);
+const bad=structuredClone(lesson);Object.assign(bad.segments[0].citation,patch);assert.throws(()=>validateLesson(bad,repository,0));}
 const bad=structuredClone(lesson);bad.segments[0].focusLine=3;assert.throws(()=>validateLesson(bad,repository,0),/Highlighted/);
 const old=structuredClone(lesson);old.segments[0].citation={path:'a.js',side:'old',startLine:1,endLine:1};old.segments[0].focusLine=1;assert.equal(validateLesson(old,repository,0).segments[0].code[0].text,'before');
 assert.deepEqual(sanitizeLessons({0:valid})[0],valid);assert.deepEqual(sanitizeLessons({0:{segments:[null]}}),{});
-const plan={title:'Review',summary:'Change',assumptions:[],steps:[{title:'Value',explanation:'Value changes',files:['a.js'],citations:[]}]};
+const plan={title:'Review',summary:'Change',assumptions:[],fileOverviews:[{path:'a.js',summary:'The value changes.'}],steps:[{title:'Value',explanation:'Value changes',files:['a.js'],citations:[]}]};
 let calls=0;
 const inMemory=createAgentGuideService({getRepository:()=>repository},{async generate(prompt,options){calls++;options.onThread?.('thread');return {status:200,body:{text:JSON.stringify(options.jsonSchema.properties.segments?lesson:plan)}};}});
 inMemory.start({requestId:'lesson-test-main-01',snapshotId:'snapshot'});await inMemory.runs.wait('lesson-test-main-01');
@@ -33,3 +34,5 @@ try{
  const stalled=createSpeechService({home,timeoutMs:10,workerFactory:()=>{const w=factory();w.send=()=>{};return w;}});await assert.rejects(stalled.synthesize('timeout'),/stopped/);stalled.close();
 }finally{rmSync(home,{recursive:true,force:true});}
 console.log('Audio lesson: grounded short excerpts, old/new lines, schema sanitization, idempotent generation, voice isolation/cache/bounds/timeout passed.');
+
+const {speechPhrases,estimatedWordCues}=await import('../src/speech-timing.js');const script='Imagine a retry. The same identifier keeps the answer safe. '+ 'A long example '.repeat(50);const phrases=speechPhrases(script);assert.ok(phrases.every(p=>p.end-p.start<=250));assert.equal(phrases.map(p=>script.slice(p.start,p.end).trim()).join(' '),script.trim());const cues=estimatedWordCues('One two.',[{start:0,end:8,time:2,duration:3}]);assert.equal(cues[0].start,2);assert.equal(cues.at(-1).end,5);

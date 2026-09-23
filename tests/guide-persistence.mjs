@@ -16,7 +16,7 @@ try{
  // Keep companion-owned state out of the synthetic repository inventory.
  writeFileSync(join(root,'.git/info/exclude'),'.state/\n');
  const snapshot=snapshots.capture('all',{reuse:true});
- const plan={title:'A change',summary:'Review a.js',assumptions:[],steps:[{title:'Read it',explanation:'a.js changed.',files:['a.js'],citations:[{path:'a.js',side:'new',startLine:1,endLine:1}]}]};
+ const plan={title:'A change',summary:'Review a.js',assumptions:[],fileOverviews:[{path:'a.js',summary:'This file changes its exported value.'}],steps:[{title:'Read it',explanation:'a.js changed.',files:['a.js'],citations:[{path:'a.js',side:'new',startLine:1,endLine:1}]}]};
  const calls=[];let stall=false;
  const ai={async generate(prompt,options){calls.push(options);options.onThread(options.resumeThreadId||'provider-thread-original');if(stall)return new Promise((_,reject)=>options.signal.addEventListener('abort',()=>reject(new Error('Stopped'))));return {status:200,body:{text:options.jsonSchema?JSON.stringify(plan):'Continued.'}};}};
  const first=createAgentGuideService(snapshots,ai,{storage});const main='persistent-main-0001';

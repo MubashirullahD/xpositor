@@ -123,7 +123,7 @@ const handleRequest = async (request, response) => {
       const segment=record.lessons?.[input.step]?.segments[input.segment];
       if(!segment)throw new GuideError('This lesson segment is unavailable.',404,'VOICE_SEGMENT');
       const audio=await speech.synthesize(segment.narration,input.voice);
-      response.writeHead(200,{'content-type':'audio/wav','cache-control':'no-store'});response.end(audio);return;
+      response.writeHead(200,{'content-type':'audio/wav','cache-control':'no-store','x-patchwork-speech-timing':JSON.stringify(audio.timings||[])});response.end(audio);return;
     }
     if (url.pathname === '/api/guide/run'  && request.method === 'GET') return sendJson(response, 200, { run: agentGuide.runs.get(url.searchParams.get('id'), url.searchParams.has('after') ? Number(url.searchParams.get('after')) : undefined) });
     if (url.pathname === '/api/guide/conversation' && request.method === 'GET') return sendJson(response, 200, { conversation: agentGuide.conversation(url.searchParams.get('id')) });

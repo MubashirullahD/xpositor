@@ -1,3 +1,4 @@
+import { prepare, finishPreparation, restInvitation } from './preparation.js';
 import { createAgentGuideUI } from './agent-guide.js';
 import { escapeHtml as esc } from './render.js';
 import { readReply, errorMessage } from './transport.js';
@@ -16,14 +17,14 @@ export function sanitizeWalkthrough(value) {
 export function createWalkthroughUI({getState,getData,save,render,apiFetch,jump}) {
   const agent = createAgentGuideUI({getState,getData,save,render,apiFetch,jump});
   const useAgent = () => getState().repositoryGuide || Boolean(getState().snapshot && getData().agentGuides?.[walkthroughKey(getState().snapshot)]);
-  let controller, pending=false, error='', setup={depth:'standard',timeMinutes:15,scope:'auto'};
+  let controller, pending=false, preparingWalk=false, error='', setup={depth:'standard',timeMinutes:15,scope:'auto'};
   const current=()=>{const s=getState();return s.snapshot?getData().walkthroughs[walkthroughKey(s.snapshot)]:null;};
   const enabled=()=>{const s=getState();return s.aiEnabled&&s.online&&!s.demo;};
   function html() {
     if(useAgent())return agent.html();
     const state=getState(), walk=current(), disabled=!enabled()||pending;
     if(!state.snapshot?.files.length)return '<p class="guide-intro">Choose a changed file to start a walkthrough.</p>';
-    const status=`${error?`<p class="guide-error" role="alert">${esc(error)}</p>`:''}${pending?'<p role="status">The guide is thinking…</p><button class="secondary-button" data-walk="stop">Stop</button>':''}`;
+    const status=`${pending&&preparingWalk?restInvitation():''}${error?`<p class="guide-error" role="alert">${esc(error)}</p>`:''}${pending?'<p role="status">The guide is thinking…</p><button class="secondary-button" data-walk="stop">Stop</button>':''}`;
     if(!walk)return `<section class="walkthrough"><h3>Walk me through it</h3><p>Trace the change, examine an edge case, then decide what to verify. Notes stay private.</p><button class="primary-button" data-walk="start" ${disabled?'disabled':''}>Start walkthrough</button><p class="guide-intro">${esc(state.aiMessage||'Requires a connected laptop and provider.')} Context includes captured code and your questions.</p><details><summary>Customize walkthrough</summary><label>Depth <select id="guide-depth">${['brief','standard','deep'].map((d)=>`<option ${setup.depth===d?'selected':''}>${d}</option>`).join('')}</select></label><label>Time <select id="guide-time">${[5,15,30].map((n)=>`<option value="${n}" ${setup.timeMinutes===n?'selected':''}>${n} minutes</option>`).join('')}</select></label><label>Context <select id="guide-scope"><option value="auto" ${setup.scope==='auto'?'selected':''}>Related changed files (up to 8)</option><option value="selected" ${setup.scope==='selected'?'selected':''}>Only this file</option></select></label></details>${status}</section>`;
     const step=walk.guide.steps[walk.step], chats=walk.chats[walk.step]||[];
     return `<section class="walkthrough"><h3>${esc(walk.guide.title)}</h3><details><summary>Overview & scope</summary><p>${esc(walk.guide.summary)}</p><details><summary>${walk.scope.includedPaths.length} files included · ${walk.scope.excludedCount} outside this context</summary><ul>${walk.scope.includedPaths.map((p)=>`<li>${esc(p)}</li>`).join('')}</ul>${walk.guide.assumptions.map((a)=>`<p>${esc(a)}</p>`).join('')}</details></details><p class="eyebrow">STEP ${walk.step+1} OF ${walk.guide.steps.length}</p><h4 tabindex="-1" id="walk-step-title">${esc(step.title)}</h4><p class="step-explanation">${esc(step.explanation)}</p><div class="guide-citations">${step.citations.map((c,i)=>`<button class="secondary-button" data-citation="${i}">${esc(state.snapshot.files.find((f)=>f.id===c.fileId)?.path||'Unavailable file')} · ${c.side} ${c.startLine}–${c.endLine}</button>`).join('')}</div><p class="review-question">${esc(step.reviewQuestion)}</p><div class="walk-controls"><button class="secondary-button" data-walk="previous" ${walk.step===0||pending?'disabled':''}>Back</button><button class="primary-button" data-walk="understood" ${pending||(walk.step===walk.guide.steps.length-1&&walk.understood.includes(walk.step))?'disabled':''}>${walk.step<walk.guide.steps.length-1?'Next':walk.understood.includes(walk.step)?'Complete ✓':'Finish'}</button></div><div class="walk-chat" role="log" aria-live="polite">${chats.map((m)=>`<div class="chat-message ${m.role}"><div class="message-bubble">${esc(m.text)}</div></div>`).join('')}</div><form id="walk-question"><label for="walk-draft">Ask about this step</label><textarea id="walk-draft" maxlength="1600" rows="2">${esc(walk.draft)}</textarea><button class="primary-button" ${disabled?'disabled':''}>Ask guide</button></form>${status}<button class="secondary-button" data-walk="restart" ${pending?'disabled':''}>New walkthrough</button></section>`;
@@ -31,7 +32,7 @@ export function createWalkthroughUI({getState,getData,save,render,apiFetch,jump}
   async function start() {
     const state=getState(),snapshot=state.snapshot,selectedId=state.selectedFile;
     if(!enabled()||pending)return;
-    pending=true;error='';controller=new AbortController();render();
+    preparingWalk=true;prepare('legacy:'+snapshot.snapshotId,'Your walkthrough');pending=true;error='';controller=new AbortController();render();
     try {
       const fileIds=setup.scope==='selected'?[selectedId]:undefined;
       const response=await apiFetch('/api/walkthrough',{method:'POST',headers:{'content-type':'application/json'},signal:AbortSignal.any([controller.signal,AbortSignal.timeout(120000)]),body:JSON.stringify({model:getState().aiProvider==='codex'?getData().preferences.model||undefined:undefined,effort:getState().aiProvider==='codex'?getData().preferences.effort||undefined:undefined,snapshotId:snapshot.snapshotId,selectedId,fileIds,depth:setup.depth,timeMinutes:setup.timeMinutes})});
@@ -39,7 +40,7 @@ export function createWalkthroughUI({getState,getData,save,render,apiFetch,jump}
       const walk=sanitizeWalkthrough({...body,fileIds,step:0,understood:[],chats:{},draft:''});if(!walk)throw new Error('The walkthrough response is invalid.');
       getData().walkthroughs[walkthroughKey(snapshot)]=walk;save();
     }catch(e){error=controller.signal.aborted?'Stopped. Your existing review is unchanged.':errorMessage(e.message);}
-    finally{pending=false;controller=null;render();}
+    finally{finishPreparation('legacy:'+snapshot.snapshotId,error?(controller.signal.aborted?'cancelled':'error'):'ready');preparingWalk=false;pending=false;controller=null;render();}
   }
   async function followup(question) {
     const walk=current(),snapshot=getState().snapshot,stepIndex=walk?.step;

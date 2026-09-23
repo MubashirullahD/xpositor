@@ -35,6 +35,8 @@ try {
     cpSync(packagePath, join(stageRoot, packageRelativePath), { recursive: true });
   }
 
+  execFileSync(process.execPath, [join(extensionRoot, 'test', 'bundle-runtime.mjs'), stageRoot], {stdio:'inherit'});
+
   const vsce = join(extensionRoot, 'node_modules', '@vscode', 'vsce', 'vsce');
   execFileSync(process.execPath, [
     vsce,

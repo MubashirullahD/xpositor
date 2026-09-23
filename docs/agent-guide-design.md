@@ -4,7 +4,7 @@ Status: implemented for Codex. The conversational UI, immutable repository tools
 
 ## Experience
 
-One action: **Walk me through these changes**. The agent inventories every changed path, groups related changes, explains the overall intent, and proposes a review order. The reader sees one explanation with code links and a Next button. Questions can branch into named conversations while the main walkthrough keeps its place. Model selection stays in the composer.
+One action: **Walk me through these changes**. The companion supplies every changed path and bounded diff excerpts in the first request. The agent groups related changes, explains the overall intent, writes a short overview for each changed file, and proposes a review order. The reader sees one explanation with code links and a Next button; each file’s Overview tab displays its generated summary. Questions can branch into named conversations while the main walkthrough keeps its place. Model selection stays in the composer.
 
 Every changed file belongs to the review plan, including a 100-file change. “Available to the agent” and “examined by the agent” are distinct: record which files it read and explicitly flag files omitted from the explanation. Do not claim complete review based solely on listing paths.
 

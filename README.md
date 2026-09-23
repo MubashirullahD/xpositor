@@ -41,7 +41,7 @@ PATCHWORK_AI_PROVIDER=codex node companion.mjs /path/to/repo
 
 Open the model selector in the conversation composer (or below the walkthrough) to select a model and reasoning effort. Codex supplies the available choices dynamically; Patchwork does not maintain a model list. The choice applies to conversations and walkthroughs and is saved on the device. Other providers currently use their laptop configuration. Provider failures include actionable messages. If a model requires a newer CLI, update Codex on the laptop and restart the companion. Development was verified with Codex CLI 0.155.0, including a live Astra response.
 
-Choose **Start walkthrough** for a repository-wide Codex guide. It searches and reads captured changed and unchanged code, including callers, using paginated tools. Every changed file must appear in the plan; the overview discloses files it did not examine. Follow the suggested step order, open validated code references, and ask questions. The branch icon explores a question in a separate conversation while retaining the main walkthrough's place. Understanding a step never marks a file reviewed.
+Choose **Start walkthrough** for a repository-wide Codex guide. Patchwork supplies the complete changed-file inventory and short diff excerpts with the first request, then the guide can search and read captured code, including unchanged callers, using paginated tools. Every changed file must appear in the plan and receive a short generated summary in its **Overview** tab. The guide overview discloses files it did not examine. Follow the suggested step order, open validated code references, and ask questions. The branch icon explores a question in a separate conversation while retaining the main walkthrough's place. Understanding a step never marks a file reviewed.
 
 Codex guide threads persist and resume against the same captured snapshot. Refreshing unchanged code keeps that identity; changes to supporting code create a new snapshot. Reloading a phone reconnects to the existing response. Stop explicitly interrupts it. A companion restart preserves conversations but interrupts an active response without automatically replaying it. Choose the model and effort from Codex's dynamic catalog; no separate API key is needed.
 
@@ -64,6 +64,8 @@ Choose **Unstaged**, **Staged** or **All** changes; the last choice is remembere
 
 The rail's focus timer offers 25 minutes of focus and a 5-minute break, with pause and reset. Break suggestions include walking, stretching, conversation, doing nothing or a small sweet snack, without scrolling feeds. The next focus period waits for you to start it. Drag the Code Guide divider on desktop, or focus it and use arrow keys, to resize the column; its width is remembered.
 
+The separate **Mindful breathing** icon opens a quiet exercise without changing the focus timer or review position. An expanding and contracting circle guides gentle inhales and exhales; a prompt invites you to notice the breath and return to it when attention wanders. Choose 1, 3 or 5 minutes and a comfortable pace, then pause or end at any time. The exercise pauses when the app moves to the background. Reduced-motion settings keep the guidance in text without animating the circle. Duration and pace choices are saved on this device.
+
 ## Checks and packaging
 
 ```sh
@@ -84,9 +86,11 @@ Reading defaults enable wrapping and folded unchanged context; saved choices rem
 
 Opt-in live subscription checks: `node tests/live-agent-guide.mjs` exercises a 100-file plan and unchanged caller in a fork; `node tests/live-guide-resume.mjs` checks real thread resume and branching after companion restarts. These consume the signed-in Codex allowance. `tests/browser-agent-guide.cjs` covers guide reconnection, branches, citations, cancellation and phone layout with mocked responses.
 
-## Listen & follow — audio pilot
+## Listen & follow
 
-In a Codex walkthrough, choose **Teach this chapter · audio pilot**. The existing subscription generates 4–8 short teaching segments for that chapter: context, a concrete example, small captured code excerpts, an edge case and a check-your-understanding question. The important line is highlighted while its segment plays. This pilot expands one chapter at a time; it does not replace the full review plan or mark code reviewed.
+Starting a Codex walkthrough automatically prepares its first teaching chapter and audio. Opening another chapter prepares it in the same way. The existing subscription generates 4–8 short spoken sections: context, a concrete example, code references, an edge case and a check-your-understanding question. References highlight the main code reader, including captured supporting files; Code Guide contains the explanation without duplicate snippets. Playback pauses at the end of each section. In the walkthrough, use Left/Right for Back/Next and Space for Play/Pause; text fields and native controls retain their usual keys. This never marks code reviewed.
+
+Transcript words highlight using estimated positions inside measured speech phrases. This follows the audio clock, including pause and playback speed, but is not exact word alignment. Speech remains local and requires no additional paid API.
 
 Speech uses local Kokoro on the laptop, with no TTS API bill. One-time setup from the project folder:
 
@@ -98,6 +102,10 @@ The packaged extension includes the same setup script under `bundle/setup-voice.
 
 Choose Heart, Bella or Michael under **Voice & speed**. Playback prepares the next segment ahead, supports pause/resume and manual Back/Next, and pauses when you ask a question. Reload retains the segment, transcript and captured excerpts; it never autoplays. “Explain more simply” and “Another example” use the existing text conversation and preserve the lesson's position. Listening does not imply approval.
 
-Pilot limits: English narration, Codex repository exploration, laptop required for new audio, and no microphone or spoken interruption yet. Audio clips are bounded in-memory caches rather than offline downloads. Text/excerpts remain available from saved device state. Phone browser policies may require another tap to start audio; real Safari/Samsung playback still needs device validation. Voice setup failures leave the transcript usable.
+Current limits: English narration, Codex repository exploration, laptop required for new audio, and no microphone or spoken interruption yet. Audio clips are bounded in-memory caches rather than offline downloads. Text and references remain available from saved device state. Phone browser policies may require another tap to start audio; real Safari/Samsung playback still needs device validation. Voice setup failures leave the transcript usable.
 
 Opt-in validation: `node tests/live-audio-lesson.mjs` generates a real lesson about Patchwork request deduplication through the signed-in Codex subscription. `tests/browser-audio-lesson.cjs` checks synchronization, playback controls and phone layout with stubbed audio. The default test suite covers citation grounding, persistence sanitization and speech-worker failure/caching behavior.
+
+During walkthrough, teaching-chapter and audio preparation, **Try a breathing exercise** offers a quiet minute without interrupting generation. Choose gentle paced breathing or noticing your surroundings. Time and pace settings stay tucked away, and the Pomodoro remains independent. A ready message lets you return when you choose; audio never starts over the exercise. The first audio segment prepares automatically after a teaching chapter is generated. If preparation takes longer than the exercise, the interface says so rather than promising a completion time. Preparation errors and cancellation remain visible through the return control.
+
+The pause is optional: thoughts do not need to disappear, and there is no expected emotional outcome. Breathing copy emphasizes comfort rather than forcing a rhythm, consistent with the [NHS breathing guidance](https://www.nhs.uk/mental-health/self-help/guides-tools-and-activities/breathing-exercises-for-stress/). The surroundings option uses normal breathing. These controls are a brief rest aid, not an assessment or treatment feature; no mindfulness session history or health data is collected.

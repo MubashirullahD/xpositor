@@ -702,6 +702,31 @@ html.modal-open,body.modal-open { overflow:hidden!important; overscroll-behavior
 .focus-controls>div {display:flex;gap:8px;justify-content:center;}
 .focus-controls .break-suggestions {text-align:left;margin-top:22px;}
 
+.mindfulness-overlay {position:fixed;z-index:100;inset:0;display:grid;place-items:center;overflow:auto;padding:20px;background:rgba(22,33,25,.78);backdrop-filter:blur(14px);}
+.mindfulness-card {width:min(100%,540px);max-height:calc(100dvh - 40px);overflow:auto;padding:24px 32px 28px;border:1px solid var(--line-strong);border-radius:24px;background:var(--panel);color:var(--ink);box-shadow:0 24px 80px #0004;text-align:center;}
+.mindfulness-card header {display:flex;align-items:center;justify-content:space-between;gap:12px;}
+.mindfulness-kicker {color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.12em;}
+.mindfulness-card h2 {margin:8px 0 8px;font-size:28px;line-height:1.2;letter-spacing:-.035em;}
+.mindfulness-card p {line-height:1.55;}
+#mindfulness-intro {max-width:360px;margin:0 auto;color:var(--muted);font-size:14px;}
+.breath-stage {display:grid;justify-items:center;align-content:center;min-height:272px;}
+.breath-halo {display:grid;place-items:center;width:220px;height:220px;border:1px solid var(--line);border-radius:50%;background:radial-gradient(circle,var(--panel-muted),transparent 68%);}
+.breath-orb {width:176px;height:176px;border-radius:50%;background:radial-gradient(circle at 36% 28%,#f5ffd4 0%,var(--lime) 36%,var(--lime-deep) 100%);box-shadow:0 8px 40px #9dbd3160, inset 0 2px 8px #fff7;transform:scale(.55);}
+.breath-stage.is-active .breath-orb {animation:mindful-breath var(--breath-cycle) linear infinite;animation-delay:var(--breath-offset);animation-play-state:paused;}
+.breath-stage.is-running .breath-orb {animation-play-state:running;}
+@keyframes mindful-breath {0%,100% {transform:scale(.55);} 40% {transform:scale(1);}}
+#breath-phase {min-height:28px;margin:12px 0 0;font-size:18px;font-weight:600;}
+.mindfulness-prompt {max-width:370px;margin:0 auto;color:var(--muted);font-size:14px;}
+.mindfulness-remaining {margin:18px 0 0;font-variant-numeric:tabular-nums;font-size:13px;color:var(--muted);}
+.mindfulness-options {display:flex;justify-content:center;gap:12px;margin:22px 0 0;}
+.mindfulness-options label {display:grid;gap:7px;min-width:0;text-align:left;color:var(--muted);font-size:12px;font-weight:600;}
+.mindfulness-options select {min-height:44px;padding:8px 10px;border:1px solid var(--line-strong);border-radius:9px;background:var(--panel);color:var(--ink);font:inherit;font-size:14px;}
+.mindfulness-actions {display:flex;justify-content:center;gap:10px;margin-top:22px;}
+.mindfulness-actions button {min-width:118px;min-height:44px;}
+.mindfulness-footnote {margin:18px 0 0;color:var(--muted);font-size:12px;}
+@media(max-width:520px) {.mindfulness-overlay {padding:0;}.mindfulness-card {width:100%;min-height:100dvh;max-height:100dvh;border:0;border-radius:0;padding:calc(20px + env(safe-area-inset-top)) 22px calc(20px + env(safe-area-inset-bottom));display:flex;flex-direction:column;justify-content:center;}.mindfulness-card header {margin-bottom:auto;}.breath-stage {min-height:248px;}.mindfulness-footnote {margin-top:auto;padding-top:16px;}}
+@media (prefers-reduced-motion:reduce) {.breath-stage.is-active .breath-orb {animation:none!important;transform:scale(.75);}}
+
 .guide-resizer {display:none;}
 @media(min-width:1051px) {
  .chat-panel {position:relative;}
@@ -715,6 +740,10 @@ html.modal-open,body.modal-open { overflow:hidden!important; overscroll-behavior
 .agent-step-link:hover {color:var(--ink);}
 .agent-overview {margin-bottom:16px;font-size:13px;line-height:1.6;}
 .agent-overview summary {cursor:pointer;font-weight:600;}
+.file-overview {padding:24px;line-height:1.65;overflow-wrap:anywhere;}
+.file-overview h3 {margin:0 0 12px;font-size:18px;}
+.file-overview p {max-width:72ch;margin:0 0 14px;white-space:pre-wrap;}
+.file-overview .overview-context {padding-top:14px;border-top:1px solid var(--line);color:var(--muted);}
 .agent-activity {font-size:12px;color:var(--muted);overflow-wrap:anywhere;}
 #agent-question {margin-top:16px;}
 #agent-draft {width:100%;box-sizing:border-box;resize:vertical;min-height:68px;max-height:180px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);padding:10px;font:inherit;}
@@ -740,3 +769,75 @@ html.modal-open,body.modal-open { overflow:hidden!important; overscroll-behavior
 .lesson-options label { display: flex; justify-content: space-between; align-items: center; margin-block: 8px; gap: 12px; }
 .lesson-help { display: flex; flex-wrap: wrap; gap: 12px; }
 .lesson-check { border-top: 1px solid var(--line); padding-top: 16px; line-height: 1.6; }
+
+.rest-invitation { display:flex; gap:14px; padding:20px; margin:16px 0; border:1px solid var(--line); border-radius:16px; background:var(--panel); }
+.rest-mark { color:var(--lime-deep); font-size:36px; line-height:1; }
+.rest-invitation strong { font-size:16px; color:var(--ink); }
+.rest-invitation p { margin:8px 0 14px; color:var(--muted); line-height:1.6; }
+.rest-invitation button { min-height:44px; }
+.mindfulness-modes { display:flex; gap:6px; margin:20px auto 0; padding:4px; border-radius:12px; background:var(--panel-muted); }
+.mindfulness-modes button { flex:1; min-height:44px; padding:8px 12px; color:var(--muted); background:transparent; border:1px solid transparent; border-radius:9px; font:inherit; font-size:13px; cursor:pointer; }
+.mindfulness-modes button[aria-pressed="true"] { background:var(--panel); border-color:var(--line-strong); color:var(--ink); }
+.mindfulness-settings { margin-top:18px; color:var(--muted); font-size:13px; }
+.mindfulness-settings summary { cursor:pointer; padding:8px; }
+.mindfulness-settings .mindfulness-options { margin-top:8px; }
+.mindfulness-readiness { margin-top:22px; padding:16px; background:var(--panel-muted); border-radius:12px; }
+.mindfulness-readiness p { margin:0 0 12px; font-size:14px; color:var(--muted); }
+.mindfulness-readiness button { min-height:44px; }
+@media(max-width:520px) { .mindfulness-card {justify-content:flex-start;} .mindfulness-card header {margin-bottom:16px;} .breath-stage {min-height:220px;} .breath-halo {width:184px;height:184px;} .breath-orb {width:150px;height:150px;} .mindfulness-footnote {padding-top:20px;} }
+
+/* The transcript stays alongside the reader; only the reading position moves. */
+.lesson-reference {display:block;overflow-wrap:anywhere;font-size:13px;min-height:44px;}
+.lesson-word.is-spoken {background:var(--lime);color:#202b13;border-radius:3px;box-shadow:0 0 0 2px var(--lime);}
+.citation-focus {box-shadow:inset 3px 0 var(--lime-deep);font-weight:600;}
+.audio-lesson:focus-visible {outline:2px solid var(--lime-deep);outline-offset:3px;}
+
+/* Reserve room for controls before sizing the breathing animation. */
+.mindfulness-overlay {overflow:hidden;padding:12px;}
+.mindfulness-card {display:flex;flex-direction:column;gap:8px;height:min(800px,calc(100dvh - 24px));min-height:0;max-height:none;overflow:hidden;padding:16px 24px;}
+.mindfulness-card header {flex-shrink:0;margin:0;}
+.mindfulness-card h2 {margin:0;font-size:24px;}
+.mindfulness-card p {line-height:1.4;}
+.mindfulness-modes {flex-shrink:0;margin:0;}
+.mindfulness-modes button {padding:6px;font-size:12px;}
+.breath-stage {flex:1;min-height:60px;overflow:hidden;position:relative;}
+.breath-halo {width:min(190px,26dvh);height:min(190px,26dvh);}
+.breath-orb {width:80%;height:80%;}
+#breath-phase {position:absolute;inset:50% 8px auto;margin:0;transform:translateY(-50%);font-size:17px;text-shadow:0 1px 6px var(--panel);}
+.mindfulness-prompt {font-size:13px;}
+.mindfulness-remaining,.mindfulness-actions,.mindfulness-settings,.mindfulness-readiness,.mindfulness-footnote {margin:0;flex-shrink:0;}
+.mindfulness-footnote {font-size:11px;padding:0;}
+.mindfulness-readiness {padding:10px;}
+.mindfulness-readiness p {margin:0 0 8px;font-size:13px;}
+.mindfulness-settings summary {padding:10px;min-height:40px;}
+.mindfulness-options {margin:0;}
+.mindfulness-card:has(.mindfulness-settings[open]) .breath-stage {flex:0 0 32px;min-height:32px;}
+.mindfulness-card:has(.mindfulness-settings[open]) .breath-halo {visibility:hidden;}
+@media(max-width:520px){
+ .mindfulness-overlay {padding:0;}
+ .mindfulness-card {width:100%;height:100dvh;min-height:0;padding:calc(10px + env(safe-area-inset-top)) 16px calc(10px + env(safe-area-inset-bottom));gap:6px;}
+ .mindfulness-card header {margin:0;}
+}
+@media(max-height:650px){
+ .mindfulness-card {gap:5px;padding:8px 14px;}
+ .mindfulness-card h2 {font-size:21px;}
+ #mindfulness-intro,.mindfulness-prompt {font-size:12px;}
+ .mindfulness-readiness {display:flex;gap:8px;align-items:center;text-align:left;padding:6px;}
+ .mindfulness-readiness p {margin:0;flex:1;}
+ .mindfulness-readiness button {flex:0 0 115px;padding:6px;}
+}
+@media(max-height:480px) and (min-width:600px){
+ .mindfulness-card {width:min(100%,760px);display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto auto auto 1fr auto auto;column-gap:20px;}
+ .mindfulness-card header {grid-column:1/-1;}
+ .mindfulness-card h2 {grid-column:1;grid-row:2;}
+ #mindfulness-intro {grid-column:1;grid-row:3;}
+ .breath-stage {grid-column:1;grid-row:4/6;min-height:0;}
+ .mindfulness-prompt {grid-column:1;grid-row:6;}
+ .mindfulness-modes {grid-column:2;grid-row:2/4;}
+ .mindfulness-remaining,.mindfulness-settings {grid-column:2;grid-row:4;align-self:center;}
+ .mindfulness-actions {grid-column:2;grid-row:5;}
+ .mindfulness-readiness {grid-column:2;grid-row:6;}
+ .mindfulness-footnote {grid-column:1/-1;}
+}
+
+#breath-phase {justify-self:center;inset-inline:auto;max-width:95%;padding:5px 10px;border-radius:12px;background:color-mix(in srgb,var(--panel) 92%,transparent);text-shadow:none;}

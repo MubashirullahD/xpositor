@@ -65,7 +65,7 @@ export function createAgentGuideService(snapshots, ai, { storage } = {}) {
       } catch (error) {
         if (attempt === 2) throw new GuideError(`The guide could not produce a complete, valid plan: ${error.message}`, 502, 'AGENT_PLAN_INVALID');
         options.onActivity?.({ tool: 'Checking review plan', path: null });
-        prompt = `Correct your previous plan and return the complete JSON replacement. Validation failed: ${error.message}\nEvery changed file must appear in at least one step's files array. A file may be revisited in later steps, but must not be repeated within the same step. Enumerate the complete changed inventory if needed. Preserve full scope; do not omit files or invent citations.`;
+        prompt = `Correct your previous plan and return the complete JSON replacement. Validation failed: ${error.message}\nEvery changed file must appear in at least one step's files array and exactly once in fileOverviews. A file may be revisited in later steps, but must not be repeated within the same step. Preserve full scope; do not omit files or invent citations.`;
       }
     }
   }

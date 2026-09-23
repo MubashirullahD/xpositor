@@ -13,7 +13,7 @@ export function createSpeechService({home=process.env.PATCHWORK_VOICE_HOME||join
   if(worker)return;
   const w=worker=workerFactory(new URL('./speech-worker.mjs',import.meta.url),[],{execArgv:[],env:{...process.env,PATCHWORK_VOICE_HOME:home,OMP_NUM_THREADS:'2'},stdio:['ignore','ignore','pipe','ipc']});
   let diagnostic='';w.stderr.on('data',chunk=>{diagnostic=(diagnostic+String(chunk)).slice(-1800);});
-  w.on('message',message=>{if(!pending||message.id!==pending.id)return;const p=pending;pending=null;clearTimeout(p.timer);if(message.error)p.reject(new GuideError(`Local voice could not generate audio: ${message.error}`,503,'VOICE_FAILED'));else p.resolve(Buffer.from(message.audio,'base64'));});
+  w.on('message',message=>{if(!pending||message.id!==pending.id)return;const p=pending;pending=null;clearTimeout(p.timer);if(message.error)p.reject(new GuideError(`Local voice could not generate audio: ${message.error}`,503,'VOICE_FAILED'));else {const audio=Buffer.from(message.audio,'base64');audio.timings=message.timings||[];p.resolve(audio);}});
   const failed=()=>{if(worker===w)close(diagnostic.trim()?`Local voice process failed: ${diagnostic.trim()}`:'Local voice process stopped unexpectedly. Try Play again.');};w.on('error',failed);w.on('exit',failed);
  }
  async function synthesize(text,voice='af_heart'){

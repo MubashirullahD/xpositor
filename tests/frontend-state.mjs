@@ -60,6 +60,10 @@ assert.deepEqual(sanitizeState({ schema: 2, apiToken: 'must-not-export', reviews
 console.log('frontend state and rendering tests passed');
 assert.equal(emptyState().preferences.wrap,true);
 assert.equal(emptyState().preferences.compactContext,true);
+assert.equal(emptyState().preferences.mindfulnessDuration,1);
+assert.equal(emptyState().preferences.mindfulnessRate,6);
+assert.equal(sanitizeState({schema:2,preferences:{mindfulnessDuration:5,mindfulnessRate:8}}).preferences.mindfulnessRate,8);
+assert.equal(sanitizeState({schema:2,preferences:{mindfulnessDuration:99,mindfulnessRate:3}}).preferences.mindfulnessDuration,1);
 assert.equal(sanitizeState({schema:2}).preferences.wrap,true);
 assert.equal(sanitizeState({schema:2,preferences:{wrap:false,compactContext:false}}).preferences.wrap,false);
 

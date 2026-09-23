@@ -1,4 +1,6 @@
+import { preparation, preparationMessage, watchPreparation, setResting } from './preparation.js';
 import { advanceTimer, toggleTimer, timerLabel, newTimer } from './focus-timer.js';
+import { newMindfulnessSession, mindfulnessProgress, startMindfulness, pauseMindfulness } from './mindfulness.js';
 import { randomId } from './platform.js';
 import { createWalkthroughUI } from './walkthrough.js';
 import { readReply, errorMessage } from './transport.js';
@@ -9,9 +11,9 @@ import { emptyState, openStorage, sanitizeState, migrateLegacy, validateSnapshot
 const root = document.querySelector('#root');
 export let data = emptyState();
 export const state = { snapshot:null, selectedFile:'', activeTab:'diff', online:navigator.onLine, connection:'connecting', connectionError:'', aiEnabled:false, aiProvider:'', repositoryGuide:false, guideMode:'walkthrough', aiMessage:'', models:[], modelSettingsOpen:false, modelsLoading:false, modelsError:'', queueCollapsed:false, utilityMenu:'', snapshotSaved:false, filesOpen:false, chatOpen:false, guideCollapsed:true, sourceLoading:new Set(), sourceErrors:new Map(), toast:'', storageError:'', demo:false, apiToken:'' };
-let storage, saveTimer, scrollTimer, toastTimer, refreshSequence = 0, dialogReturnFocus;
+let storage, saveTimer, scrollTimer, toastTimer, refreshSequence = 0, dialogReturnFocus, mindfulnessSession, mindfulnessReturnAction, mindfulnessTickTimer, mindfulnessMode='breathing', mindfulnessWaiting=false, mindfulnessSettingsOpen=false;
 const sourceRequests = new Map();
-let chatController, citation;
+let chatController, citation, supportingSource;
 const walkthrough = createWalkthroughUI({getState:()=>state,getData:()=>data,save:saveState,render,apiFetch,jump:jumpCitation});
 export const selectedFile = () => state.snapshot?.files.find((f) => f.id === state.selectedFile);
 export const currentSession = () => selectedFile() ? sessionFor(data,state.snapshot,selectedFile()) : null;
@@ -58,6 +60,7 @@ export function apiFetch(path, options={}) {
 function toast(text) { state.toast=text; clearTimeout(toastTimer); render(); toastTimer=setTimeout(() => {state.toast=''; render();},4500); }
 export function selectFile(id) {
   const next=files().find((f)=>f.id===id); if(!next) return;
+  supportingSource=null;
   capturePosition();
   if(state.filesOpen && history.state?.patchworkPanel) history.back();
   state.selectedFile=id; state.filesOpen=false;
@@ -89,7 +92,7 @@ function completionContent() {
   return `<section class="review-complete"><span class="completion-mark">${icon('check',32)}</span><h2 id="review-complete-title" tabindex="-1">Nice work. Review complete!</h2><p>You reviewed all ${files().length} file${files().length===1?'':'s'} in this snapshot.</p>${questions?`<p>${questions} open question${questions===1?' remains':'s remain'} in your notes.</p>`:''}<div><button class="primary-button" data-action="export-summary">Export review summary</button><button class="secondary-button" data-action="browse-reviewed">Browse reviewed files</button></div><button class="next-button" data-action="refresh-snapshot">Check for new changes</button></section>`;
 }
 function setActiveTab(tab) {
-  const f=selectedFile(); if(!f || !['diff','source','preview','notes'].includes(tab) || (tab==='preview'&&!isPreviewable(f))) return;
+  const f=selectedFile(); if(!f || !['overview','diff','source','preview','notes'].includes(tab) || (tab==='preview'&&!isPreviewable(f))) return;
   capturePosition(); state.activeTab=tab; saveState(); render(false);
   if(['source','preview'].includes(tab)) hydrateFileSource(f);
 }
@@ -141,6 +144,11 @@ function notesContent(file) {
   return `<section class="notes-card"><div class="notes-content"><h3>Questions & notes</h3><p>Private to this browser. Export a backup before changing tunnel links. Tap a code line to anchor a question.</p><form id="note-form"><div class="note-range"><label>Side <select name="side"><option value="new" ${session.noteSide==='old'?'':'selected'}>New source</option><option value="old" ${session.noteSide==='old'?'selected':''}>Old source</option></select></label><label>Start line <input name="start" type="number" min="1" step="1" value="${esc(session.noteStart)}"></label><label>End line <input name="end" type="number" min="1" step="1" value="${esc(session.noteEnd)}"></label></div><label for="note-text">Question or follow-up</label><textarea id="note-text" name="note" required placeholder="What needs another look?">${esc(session.noteDraft)}</textarea><button class="primary-button" type="submit">Save question</button><span class="note-save-status">Draft saved on this device${state.storageError?' — storage error':''}</span></form><div class="note-list">${notes.map((n)=>`<article class="review-note"><span class="eyebrow">${noteIsCurrent(n,state.snapshot,file)?'CURRENT REVISION':`HISTORICAL · ${esc(n.version.slice(0,12))}`} · ${esc(n.status)}</span><p class="note-anchor">${n.start?`${n.side==='old'?'Old':'New'} lines ${n.start}–${n.end||n.start}`:'Whole file'} · ${esc(n.createdAt)}</p><p class="note-text">${esc(n.text)}</p><button class="secondary-button" data-note-toggle="${esc(n.id)}">${n.status==='resolved'?'Reopen question':'Resolve question'}</button></article>`).join('')}</div>${data.historicalNotes.length?`<details class="legacy-notes"><summary>${data.historicalNotes.length} legacy notes (repository and revision unverified)</summary>${data.historicalNotes.map((n)=>`<article><b>${esc(n.path)}</b><p>${esc(n.text)}</p></article>`).join('')}</details>`:''}</div></section>`;
 }
 function renderContent(file) {
+  if(state.activeTab==='overview') {
+    const guide=currentWalkRecord()?.guide;
+    const summary=guide?.fileOverviews?.[file.path];
+    return `<section class="file-overview"><h3>File overview</h3>${summary?`<p>${esc(summary)}</p>`:`<p>${guide?'This walkthrough has no separate overview for this file.':'Start a Code guide walkthrough to prepare an overview of this file.'}</p>`}${guide?`<p class="overview-context">${esc(guide.summary)}</p>`:''}</section>`;
+  }
   if(state.activeTab==='notes') return notesContent(file);
   const sourceTab=state.activeTab!=='diff', key=sessionKey(state.snapshot,file);
   if(sourceTab && typeof file.source!=='string') return `<section class="source-empty"><h3>${state.sourceLoading.has(key)?'Reading snapshot source…':file.sourceAvailable===false?'Source unavailable for this entry':state.online?'Source is not cached for this snapshot':'Offline — source not cached'}</h3><p>${esc(state.sourceErrors.get(key)||file.sourceReason||'The diff is available. Source must be fetched from this exact immutable snapshot.')}</p>${state.online&&file.sourceAvailable!==false&&!state.sourceLoading.has(key)?'<button class="secondary-button" data-action="retry-source">Load snapshot source</button>':''}</section>`;
@@ -149,6 +157,52 @@ function renderContent(file) {
 function focusControls() {
   const timer=data.pomodoro;
   return `<div class="focus-controls"><p id="focus-phase">${timer.phase==='break'?'Screen-free break':'Focus session'}</p><output id="focus-clock" aria-live="off">${timerLabel(timer)}</output><p>25 minutes of focus · 5 minutes of rest</p><div><button class="primary-button" data-action="focus-toggle">${timer.endsAt===null?'Start / resume':'Pause'}</button><button class="secondary-button" data-action="focus-reset">Reset</button></div><p class="break-suggestions">During your break: do nothing, walk, stretch, have a conversation, or enjoy a small sweet snack if you fancy one. Give scrolling and feeds a rest.</p><p id="focus-status" role="status"></p></div>`;
+}
+function mindfulnessContent() {
+  const session=mindfulnessSession, progress=mindfulnessProgress(session);
+  const grounding=mindfulnessMode==='grounding';
+  const job=mindfulnessWaiting?preparation():null;
+  const active=session.status==='running'||session.status==='paused';
+  const remaining=remainingMindfulnessTime(progress.remainingMs);
+  return `<section class="mindfulness-overlay" role="dialog" aria-modal="true" aria-labelledby="mindfulness-title" aria-describedby="mindfulness-intro">
+    <div class="mindfulness-card">
+      <header><span class="mindfulness-kicker">${mindfulnessWaiting?'WHILE WE GET THINGS READY':'A MOMENT FOR YOURSELF'}</span><button class="icon-button" data-action="mindfulness-close" aria-label="Close mindfulness exercise" title="Close">${icon('close')}</button></header>
+      <h2 id="mindfulness-title">${grounding?'Notice this moment':'Mindful breathing'}</h2>
+      <p id="mindfulness-intro">${grounding?'Let your eyes rest on the room around you. There’s nothing to solve right now.':'You don’t need to empty your mind. Let your breath stay comfortable.'}</p>
+      <div class="mindfulness-modes" role="group" aria-label="Choose a mindful pause"><button data-action="mindfulness-breathing" aria-pressed="${!grounding}">Follow your breath</button><button data-action="mindfulness-grounding" aria-pressed="${grounding}">Notice your surroundings</button></div>
+      <div class="breath-stage ${!grounding&&active?'is-active':''} ${!grounding&&session.status==='running'?'is-running':''}" style="--breath-cycle:${session.cycleMs}ms;--breath-offset:-${progress.elapsedMs}ms">
+        <div class="breath-halo"><div class="breath-orb"></div></div>
+        <p id="breath-phase" aria-live="off">${session.status==='complete'?'A moment, taken':grounding?groundingPrompt(progress.elapsedMs):active?progress.phase==='in'?'Breathe in':'Breathe out':'Ready when you are'}</p>
+      </div>
+      <p class="mindfulness-prompt">${session.status==='complete'?'No need to feel any particular way. Return when it suits you.':grounding?'Feel the support beneath you. You can keep your eyes open and breathe normally.':'When a thought appears, you can notice it without following it. Gently return to the feeling of breathing.'}</p>
+      ${active?`<p class="mindfulness-remaining" id="mindfulness-remaining" aria-live="off">${remaining} remaining</p>`:''}
+      ${session.status==='ready'||session.status==='complete'?`<details class="mindfulness-settings" ${mindfulnessSettingsOpen?'open':''}><summary>Time & pace</summary><div class="mindfulness-options"><label>Duration <select id="mindfulness-duration" aria-label="Mindfulness duration">${[1,3,5].map(n=>`<option value="${n}" ${session.durationMs===n*60000?'selected':''}>${n} ${n===1?'minute':'minutes'}</option>`).join('')}</select></label><label>Breathing pace <select id="mindfulness-rate" aria-label="Breathing pace">${[6,8,10].map(n=>`<option value="${n}" ${Math.round(60000/session.cycleMs)===n?'selected':''}>${n} breaths / min</option>`).join('')}</select></label></div></details>`:''}
+      <div class="mindfulness-actions"><button class="${job?.status==='ready'?'secondary-button':'primary-button'}" data-action="mindfulness-toggle">${session.status==='running'?'Pause':session.status==='paused'?'Resume':session.status==='complete'?'Begin again':'Begin'}</button>${active?'<button class="secondary-button" data-action="mindfulness-end">End session</button>':''}</div>
+      ${job?`<div class="mindfulness-readiness" role="status"><p>${esc(preparationMessage())}</p><button class="${job.status==='ready'?'primary-button':'secondary-button'}" data-action="mindfulness-return">${job.status==='ready'?'Continue to '+(job.label==='Your audio'?'audio':'review'):job.status==='pending'?'Return to review':'View status'}</button></div>`:''}
+      <p class="mindfulness-footnote">Breathe gently at your own pace. Stop if you feel lightheaded.</p>
+    </div>
+  </section>`;
+}
+function groundingPrompt(elapsed){return ['Notice one colour around you','Feel where your feet are supported','Listen for one nearby sound','Let your attention rest here'][Math.min(3,Math.floor(elapsed/15000))];}
+watchPreparation(()=>{if(mindfulnessSession)queueMicrotask(()=>render(false));});
+function remainingMindfulnessTime(ms) {
+  const seconds=Math.ceil(ms/1000);
+  return `${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`;
+}
+function tickMindfulness() {
+  if(!mindfulnessSession||mindfulnessSession.status!=='running')return;
+  const progress=mindfulnessProgress(mindfulnessSession);
+  if(progress.complete){pauseMindfulness(mindfulnessSession);clearInterval(mindfulnessTickTimer);render(false);return;}
+  const phase=root.querySelector('#breath-phase');
+  if(phase)phase.textContent=mindfulnessMode==='grounding'?groundingPrompt(progress.elapsedMs):progress.phase==='in'?'Breathe in':'Breathe out';
+  const remaining=root.querySelector('#mindfulness-remaining');
+  if(remaining)remaining.textContent=`${remainingMindfulnessTime(progress.remainingMs)} remaining`;
+}
+function closeMindfulness() {
+  clearInterval(mindfulnessTickTimer);
+  mindfulnessSession=null;setResting(false);mindfulnessWaiting=false;
+  render(false);
+  const target=[...root.querySelectorAll('[data-action="mindfulness-open"]')].find(el=>el.dataset.location===mindfulnessReturnAction&&el.getClientRects().length)||root.querySelector('[data-lesson="play"],#agent-step-title');target?.focus({preventScroll:true});
 }
 function tickFocusTimer() {
   const message=advanceTimer(data.pomodoro);
@@ -216,13 +270,16 @@ function emptyContent() {
 const systemTheme = matchMedia('(prefers-color-scheme:dark)');
 systemTheme.addEventListener('change',()=>render());
 export function render(preservePosition=true) {
+  if(supportingSource&&supportingSource.snapshotId!==state.snapshot?.snapshotId)supportingSource=null;
   stopKeyboardScroll();
   const theme=data.preferences.theme||'system';
   document.documentElement.dataset.theme=theme==='system'?(systemTheme.matches?'dark':'light'):theme;
+  const mindfulnessSettings=root.querySelector('.mindfulness-settings');if(mindfulnessSettings)mindfulnessSettingsOpen=mindfulnessSettings.open;
   const modelPanel=root.querySelector('.model-settings');if(modelPanel)state.modelSettingsOpen=modelPanel.open;
   if(preservePosition) capturePosition();
   const active=document.activeElement;
   const focus=active?.id?{id:active.id,start:active.selectionStart,end:active.selectionEnd}:null;
+  const mindfulnessFocusAction=active?.closest?.('.mindfulness-overlay')?active.dataset.action:null;
   const file=selectedFile(), session=currentSession(), count=files().filter(reviewed).length;
   const guideHidden=overlayGuide()?!state.chatOpen:state.guideCollapsed;
   const drawerHidden=small()?!state.filesOpen:state.queueCollapsed;
@@ -230,23 +287,25 @@ export function render(preservePosition=true) {
   const unresolved=data.notes.filter((n)=>n.repoId===state.snapshot?.repoId&&n.status==='open').length;
   const controls=`<div class="backup-actions"><button class="secondary-button" data-action="export-backup">Export backup</button><button class="secondary-button" data-action="import-backup">Import backup</button><button class="secondary-button" data-action="export-summary">Export summary</button><button class="secondary-button" data-action="clear-cache">Clear cached source</button></div>`;
   root.innerHTML=`<div class="app-shell ${state.queueCollapsed?'queue-is-collapsed':''} ${state.filesOpen?'files-is-open':''} ${state.chatOpen?'chat-is-open':''} ${guideHidden?'guide-is-collapsed':''}" style="--code-size:${data.preferences.codeSize}px;--guide-width:${guideWidth()}px">
-    <header class="mobile-topbar" ${modal?'inert':''}><button class="icon-button" data-action="toggle-files" aria-label="Open files">${icon('menu')}</button><div class="mobile-wordmark"><span class="wordmark-mark">${icon('logo')}</span>patchwork</div><button class="icon-button" data-action="preferences" aria-label="Preferences" title="Preferences">${icon('sliders')}</button><button class="icon-button" data-action="toggle-chat" aria-label="Open code guide">${icon('message')}</button></header>
-    <nav class="sidebar rail" aria-label="Workspace navigation" ${modal?'inert':''}><div class="rail-brand" title="Patchwork" aria-label="Patchwork">${icon('logo',24)}</div><button class="icon-button" data-action="toggle-files" aria-label="Review queue" aria-controls="file-panel" aria-expanded="${!drawerHidden}" title="Review queue">${icon('panel')}</button><button class="icon-button" data-action="toggle-chat" aria-label="Code guide" aria-controls="chat-panel" aria-expanded="${!guideHidden}" title="Code guide">${icon('message')}</button><div class="rail-bottom"><button class="icon-button rail-timer" data-action="focus" aria-label="Focus timer" title="Focus timer">${icon('clock')}<span class="rail-timer-label" ${data.pomodoro.endsAt===null?'hidden':''}>${timerLabel(data.pomodoro)}</span></button><button class="icon-button" data-action="backups" aria-label="Backup & handoff" aria-expanded="${state.utilityMenu==='backups'}" title="Backup & handoff">${icon('archive')}</button><button class="icon-button" data-action="preferences" aria-label="Preferences" aria-expanded="${state.utilityMenu==='preferences'}" title="Preferences">${icon('sliders')}</button></div></nav>
+    <header class="mobile-topbar" ${modal?'inert':''}><button class="icon-button" data-action="toggle-files" aria-label="Open files">${icon('menu')}</button><div class="mobile-wordmark"><span class="wordmark-mark">${icon('logo')}</span>patchwork</div><button class="icon-button" data-action="mindfulness-open" data-location="mobile" aria-label="Mindful breathing" title="Mindful breathing">${icon('breathe')}</button><button class="icon-button" data-action="preferences" aria-label="Preferences" title="Preferences">${icon('sliders')}</button><button class="icon-button" data-action="toggle-chat" aria-label="Open code guide">${icon('message')}</button></header>
+    <nav class="sidebar rail" aria-label="Workspace navigation" ${modal?'inert':''}><div class="rail-brand" title="Patchwork" aria-label="Patchwork">${icon('logo',24)}</div><button class="icon-button" data-action="toggle-files" aria-label="Review queue" aria-controls="file-panel" aria-expanded="${!drawerHidden}" title="Review queue">${icon('panel')}</button><button class="icon-button" data-action="toggle-chat" aria-label="Code guide" aria-controls="chat-panel" aria-expanded="${!guideHidden}" title="Code guide">${icon('message')}</button><div class="rail-bottom"><button class="icon-button" data-action="mindfulness-open" data-location="rail" aria-label="Mindful breathing" title="Mindful breathing">${icon('breathe')}</button><button class="icon-button rail-timer" data-action="focus" aria-label="Focus timer" title="Focus timer">${icon('clock')}<span class="rail-timer-label" ${data.pomodoro.endsAt===null?'hidden':''}>${timerLabel(data.pomodoro)}</span></button><button class="icon-button" data-action="backups" aria-label="Backup & handoff" aria-expanded="${state.utilityMenu==='backups'}" title="Backup & handoff">${icon('archive')}</button><button class="icon-button" data-action="preferences" aria-label="Preferences" aria-expanded="${state.utilityMenu==='preferences'}" title="Preferences">${icon('sliders')}</button></div></nav>
     ${modal?'<button class="file-drawer-scrim" data-action="close-panels" tabindex="-1" aria-label="Close panel"></button>':''}
     <aside class="file-panel" id="file-panel" ${drawerHidden?'inert aria-hidden="true"':''} ${modal==='chat'?'inert':''} ${modal==='files'?'role="dialog" aria-modal="true" aria-label="Review files"':''}><div class="file-panel-header"><div><h1>${esc(state.snapshot?.workspaceName||'Review queue')}</h1></div><button class="close-files icon-button" data-action="close-queue" aria-label="Close files">${icon('close')}</button></div><div class="branch-row"><span class="branch-name">${icon('branch',14)}${esc(state.snapshot?.branch||'No branch loaded')}</span></div><label class="scope-control">Review <select id="review-scope" aria-label="Review scope">${['unstaged','staged','all'].map(scope=>`<option value="${scope}" ${(state.snapshot?.scope||data.preferences.scope)===scope?'selected':''}>${scope==='all'?'All changes':scope[0].toUpperCase()+scope.slice(1)}</option>`).join('')}</select></label><div class="queue-progress"><div class="progress-copy"><span>${count} of ${files().length} reviewed</span><b>${unresolved} open questions</b></div><progress max="${files().length||1}" value="${count}" aria-label="Files reviewed"></progress></div><div class="queue-heading"><span>CHANGED FILES ${files().length}</span><button data-action="refresh-snapshot" title="${esc(age())}">Refresh ${icon('wifi',14)}</button></div><div class="file-list">${files().map(renderFileRow).join('')}</div><details class="mobile-backups"><summary>Backup & handoff</summary><p>Backups contain private notes, chats, and code. Share only when you choose.</p>${controls}</details></aside>
     <main class="review-panel" ${modal?'inert':''}>${state.connection!=='connected'&&!state.connectionError?`<p class="connection-details" role="status">${esc(statusText())}</p>`:''}${state.connectionError?`<p class="connection-error">${esc(state.connectionError)}</p>`:''}<div id="storage-alert" role="alert" ${state.storageError?'':'hidden'}>${esc(state.storageError)}</div>${state.demo?'<p class="demo-banner">Demo workspace — sample files, no live repository.</p>':''}
-    ${file?`<header class="file-heading"><h2 aria-label="${esc(file.label)}" title="${esc(file.path)} · ${esc(file.status||'modified')} · Revision ${esc(file.version.slice(0,12))}"><span>${esc(file.path.slice(0,-file.label.length))}</span>${esc(file.label)}</h2>${file.oldPath?`<small class="rename-detail">Renamed from ${esc(file.oldPath)}</small>`:''}</header><div class="view-toolbar"><div class="review-tabs" role="tablist" aria-label="File views">${['diff','source',...(isPreviewable(file)?['preview']:[]),'notes'].map((tab)=>`<button id="tab-${tab}" role="tab" aria-selected="${state.activeTab===tab}" aria-controls="review-content" tabindex="${state.activeTab===tab?'0':'-1'}" class="review-tab ${state.activeTab===tab?'active':''}" data-tab="${tab}">${tab[0].toUpperCase()+tab.slice(1)}${tab==='notes'?` (${notesFor(data,state.snapshot,file).filter((n)=>n.status==='open').length})`:''}</button>`).join('')}</div>${state.activeTab==='diff'?'<button class="next-hunk-button" data-action="next-hunk">Next change ↓</button>':''}</div><div id="review-content" role="tabpanel" aria-labelledby="tab-${state.activeTab}" tabindex="0">${renderContent(file)}</div><section class="review-footer"><div class="footer-actions"><button class="primary-button" data-action="review-next" title="Reviewed & next (Return)" aria-keyshortcuts="Enter">Reviewed & next ${icon('check',16)}</button><button class="secondary-button" data-action="question">Question</button><button class="secondary-button" data-action="skip-file">Skip</button></div>${reviewed(file)?'<button class="secondary-button" data-action="reopen-file">Reopen review</button>':''}</section>`:files().length&&files().every(reviewed)?completionContent():emptyContent()}</main>
+    ${supportingSource?supportingContent():file?`<header class="file-heading"><h2 aria-label="${esc(file.label)}" title="${esc(file.path)} · ${esc(file.status||'modified')} · Revision ${esc(file.version.slice(0,12))}"><span>${esc(file.path.slice(0,-file.label.length))}</span>${esc(file.label)}</h2>${file.oldPath?`<small class="rename-detail">Renamed from ${esc(file.oldPath)}</small>`:''}</header><div class="view-toolbar"><div class="review-tabs" role="tablist" aria-label="File views">${['overview','diff','source',...(isPreviewable(file)?['preview']:[]),'notes'].map((tab)=>`<button id="tab-${tab}" role="tab" aria-selected="${state.activeTab===tab}" aria-controls="review-content" tabindex="${state.activeTab===tab?'0':'-1'}" class="review-tab ${state.activeTab===tab?'active':''}" data-tab="${tab}">${tab[0].toUpperCase()+tab.slice(1)}${tab==='notes'?` (${notesFor(data,state.snapshot,file).filter((n)=>n.status==='open').length})`:''}</button>`).join('')}</div>${state.activeTab==='diff'?'<button class="next-hunk-button" data-action="next-hunk">Next change ↓</button>':''}</div><div id="review-content" role="tabpanel" aria-labelledby="tab-${state.activeTab}" tabindex="0">${renderContent(file)}</div><section class="review-footer"><div class="footer-actions"><button class="primary-button" data-action="review-next" title="Reviewed & next (Return)" aria-keyshortcuts="Enter">Reviewed & next ${icon('check',16)}</button><button class="secondary-button" data-action="question">Question</button><button class="secondary-button" data-action="skip-file">Skip</button></div>${reviewed(file)?'<button class="secondary-button" data-action="reopen-file">Reopen review</button>':''}</section>`:files().length&&files().every(reviewed)?completionContent():emptyContent()}</main>
     <aside class="chat-panel" id="chat-panel" aria-label="Code guide" ${guideHidden?'inert aria-hidden="true"':''} ${modal==='files'?'inert':''} ${modal==='chat'?'role="dialog" aria-modal="true"':''}><div class="guide-resizer" role="separator" aria-label="Resize Code Guide" aria-orientation="vertical" aria-valuemin="260" aria-valuemax="${guideWidthLimit()}" aria-valuenow="${Math.round(guideWidth())}" tabindex="0" title="Drag to resize · Arrow keys to adjust · Double-click to reset"></div><div class="chat-header"><div class="chat-title"><div class="chat-avatar">${icon('spark')}</div><div><h2>Code guide</h2><span>${state.demo?'Demo · AI unavailable':esc(labelForProvider())}</span></div></div><button class="icon-button" data-action="close-guide" aria-label="Close code guide">${icon('close')}</button></div><div class="context-chip">${esc(file?.path||'Choose a file')}</div><div class="guide-modes"><button class="secondary-button" data-guide-mode="walkthrough" aria-pressed="${state.guideMode==='walkthrough'}">Walkthrough</button><button class="secondary-button" data-guide-mode="chat" aria-pressed="${state.guideMode==='chat'}">Conversation</button></div>${state.guideMode==='walkthrough'?`<div class="walkthrough-scroll">${walkthrough.html()}${modelControls()}</div>`:`<div class="chat-scroll" role="log" aria-live="polite">${conversationHistory(file)}${session?.chat.length?session.chat.map((m)=>`<div class="chat-message ${m.role==='user'?'user':'assistant'} ${m.pending?'pending':''}"><div class="message-bubble">${esc(m.text)}</div></div>`).join(''):`<p class="guide-intro">${state.demo?'This is sample code. Connect your laptop to ask an AI guide about real changes.':esc(state.aiMessage||'Ask about the selected file’s exact snapshot. Your provider must be configured on the laptop. Questions are sent only when you press Send.')}</p>`}</div>${file?`<form class="chat-composer" id="chat-form"><label class="sr-only" for="chat-draft">Question about ${esc(file.label)}</label><textarea id="chat-draft" name="message" rows="2" placeholder="Ask about this snapshot…">${esc(session.draft)}</textarea><div class="composer-bottom"><button type="button" class="new-conversation" data-action="new-chat" aria-label="New conversation" title="New conversation" ${chatController?'disabled':''}>${icon('plus')}</button>${modelControls()}<button class="send-control" type="${chatController?'button':'submit'}" ${chatController?'data-action="stop-chat"':''} aria-label="${chatController?'Stop response':'Send question'}" ${!chatController&&(!state.aiEnabled||!state.online||state.demo)?'disabled':''}>${icon(chatController?'stop':'send')}</button></div></form>`:''}`}</aside>
     ${state.utilityMenu?`<section id="utility-menu" class="utility-menu" popover="auto" aria-label="${state.utilityMenu==='preferences'?'Preferences':state.utilityMenu==='focus'?'Focus timer':'Backup & handoff'}"><header><h2>${state.utilityMenu==='preferences'?'Preferences':state.utilityMenu==='focus'?'Focus timer':'Backup & handoff'}</h2><button class="icon-button" data-action="close-utility" aria-label="Close menu">${icon('close')}</button></header>${state.utilityMenu==='focus'?focusControls():state.utilityMenu==='preferences'?`<label>Appearance <select id="theme-preference">${['system','light','dark'].map(t=>`<option value="${t}" ${theme===t?'selected':''}>${t[0].toUpperCase()+t.slice(1)}</option>`).join('')}</select></label><label>Code size <select id="code-size" aria-label="Code font size">${[13,14,16,18].map(n=>`<option value="${n}" ${data.preferences.codeSize===n?'selected':''}>${n}px</option>`).join('')}</select></label><label>Wrap long lines <input id="wrap-code" type="checkbox" ${data.preferences.wrap?'checked':''}></label><label>Fold unchanged context <input id="compact-context" type="checkbox" ${data.preferences.compactContext?'checked':''}></label><p>Keyboard: ↑ ↓ to scroll · ← → to switch files · Return to review & next</p><button class="secondary-button" data-action="focus">${icon('clock',16)} Focus timer</button>`:`<p>Backups contain private code, notes, and chats. Carry one when changing pairing links.</p>${controls}`}</section>`:''}
-    <input id="backup-file" type="file" accept="application/json,.json" hidden><div class="sr-only" role="status" aria-live="polite">${esc(state.toast)}</div>${state.toast?`<div class="toast">${esc(state.toast)}</div>`:''}</div>`;
-  document.documentElement.classList.toggle('modal-open',Boolean(modal));
-  document.body.classList.toggle('modal-open',Boolean(modal));
+    <input id="backup-file" type="file" accept="application/json,.json" hidden><div class="sr-only" role="status" aria-live="polite">${esc(state.toast)}</div>${state.toast?`<div class="toast">${esc(state.toast)}</div>`:''}</div>${mindfulnessSession?mindfulnessContent():''}`;
+  root.querySelector('.app-shell').inert=Boolean(mindfulnessSession);
+  document.documentElement.classList.toggle('modal-open',Boolean(modal||mindfulnessSession));
+  document.body.classList.toggle('modal-open',Boolean(modal||mindfulnessSession));
   const utility=root.querySelector('#utility-menu');
   if(utility) {
     utility.showPopover();
     utility.addEventListener('toggle',event=>{if(event.newState==='closed'&&root.contains(utility)){state.utilityMenu='';root.querySelectorAll('[data-action="preferences"],[data-action="backups"]').forEach(el=>el.setAttribute('aria-expanded','false'));}});
   }
   wireEvents();
+  root.querySelector('[data-action="close-supporting"]')?.addEventListener('click',()=>{supportingSource=null;citation=null;render();});
   bindGuideResize();
   walkthrough.bind(root);
   highlightCitation();
@@ -261,6 +320,7 @@ export function render(preservePosition=true) {
     if(small()&&!modal) window.scrollTo(0,session.scroll.window||0);
   }
   if(focus) {const el=document.getElementById(focus.id); if(el&&!el.closest('[inert]')) {el.focus({preventScroll:true});if(typeof el.setSelectionRange==='function'&&focus.start!==null) {try{el.setSelectionRange(focus.start,focus.end);}catch{}}}}
+  if(mindfulnessFocusAction)root.querySelector(`.mindfulness-overlay [data-action="${mindfulnessFocusAction}"]`)?.focus({preventScroll:true});
 }
 function openPanel(which) {
   const active=document.activeElement;
@@ -293,6 +353,11 @@ async function saveNote(form) {
   session.noteDraft='';session.noteStart='';session.noteEnd='';await saveState(true);toast(state.storageError?'Question is in this tab. Export a backup: device storage failed.':'Question saved privately on this device.');
 }
 function wireEvents() {
+  for(const [id,preference] of [['mindfulness-duration','mindfulnessDuration'],['mindfulness-rate','mindfulnessRate']]) root.querySelector(`#${id}`)?.addEventListener('change',e=>{
+    data.preferences[preference]=Number(e.target.value);
+    mindfulnessSession=newMindfulnessSession(data.preferences.mindfulnessDuration,data.preferences.mindfulnessRate);
+    saveState();render(false);root.querySelector(`#${id}`)?.focus();
+  });
   root.querySelector('#review-scope')?.addEventListener('change',async e=>{data.preferences.scope=e.target.value;await saveState();await hydrateFromCompanion();});
   root.querySelector('#theme-preference')?.addEventListener('change',e=>{data.preferences.theme=e.target.value;saveState();render();});
   root.querySelector('#guide-model')?.addEventListener('change',(e)=>{data.preferences.model=e.target.value;data.preferences.effort='';saveState();render();});
@@ -307,6 +372,23 @@ function wireEvents() {
   root.querySelectorAll('[data-note-toggle]').forEach((el)=>el.addEventListener('click',()=>{const n=data.notes.find((n)=>n.id===el.dataset.noteToggle);if(n)n.status=n.status==='open'?'resolved':'open';saveState();render();}));
   root.querySelectorAll('[data-action]').forEach((el)=>el.addEventListener('click',async()=>{
     switch(el.dataset.action) {
+      case 'mindfulness-return':{const resume=preparation()?.status==='ready'?preparation().resume:null;closeMindfulness();resume?.();break;}
+      case 'mindfulness-grounding':case 'mindfulness-breathing':mindfulnessMode=el.dataset.action==='mindfulness-grounding'?'grounding':'breathing';render(false);break;
+      case 'mindfulness-open':
+        mindfulnessReturnAction=el.dataset.location;mindfulnessWaiting=el.dataset.location==='waiting';setResting(true);mindfulnessMode='breathing';mindfulnessSettingsOpen=false;
+        state.utilityMenu='';
+        mindfulnessSession=newMindfulnessSession(data.preferences.mindfulnessDuration,data.preferences.mindfulnessRate);
+        if(mindfulnessWaiting){startMindfulness(mindfulnessSession);clearInterval(mindfulnessTickTimer);mindfulnessTickTimer=setInterval(tickMindfulness,100);}
+        render();root.querySelector('[data-action="mindfulness-toggle"]')?.focus();break;
+      case 'mindfulness-close':case 'mindfulness-end':closeMindfulness();break;
+      case 'mindfulness-toggle':
+        if(mindfulnessSession.status==='running') {pauseMindfulness(mindfulnessSession);clearInterval(mindfulnessTickTimer);}
+        else {
+          if(mindfulnessSession.status==='complete')mindfulnessSession=newMindfulnessSession(data.preferences.mindfulnessDuration,data.preferences.mindfulnessRate);
+          startMindfulness(mindfulnessSession);
+          clearInterval(mindfulnessTickTimer);mindfulnessTickTimer=setInterval(tickMindfulness,100);
+        }
+        render(false);root.querySelector('[data-action="mindfulness-toggle"]')?.focus();break;
       case 'refresh-models':hydrateModels(true);break;
       case 'new-chat': {const s=currentSession();if(!s||chatController)break;s.archives||=[];if(s.chat.length)s.archives.push(s.chat);s.chat=[];s.conversationId=randomId();saveState();render();break;}
       case 'focus-toggle':{el.disabled=true;const message=toggleTimer(data.pomodoro);await saveState();render();if(message)toast(message);break;}
@@ -365,20 +447,30 @@ async function sendChat() {
   catch(error){pending.error=true;pending.text=controller.signal.aborted?'Stopped.':`Guide unavailable: ${errorMessage(error.message)} Your question remains in this conversation.`;}
   finally {pending.pending=false;chatController=null;saveState();render();}
 }
-async function jumpCitation(target) {
-  const file=state.snapshot?.files.find((f)=>f.id===target.fileId);if(!file)return;
-  citation={...target,snapshotId:state.snapshot.snapshotId};
-  if(history.state?.patchworkPanel)history.back();
-  state.activeTab=target.side==='old'?'diff':'source';state.chatOpen=false;state.filesOpen=false;
-  selectFile(file.id);
-  if(target.side==='new')await hydrateFileSource(file);
+function supportingContent(){
+ const source=supportingSource;
+ return `<header class="file-heading"><h2>${esc(source.path)}</h2><button class="secondary-button" data-action="close-supporting">Return to changed file</button></header><p class="agent-activity">Supporting code · captured with this review</p><div id="review-content" tabindex="0"><section class="code-card"><div class="code-viewer ${data.preferences.wrap?'wrap-code':''}">${source.error?`<p role="alert">${esc(source.error)}</p>`:typeof source.text==='string'?source.text.split(/\r?\n/).map((text,i)=>`<div class="source-line"><span class="line-number" data-reference-line="${i+1}" data-side="new">${i+1}</span><code>${esc(text)||'&nbsp;'}</code></div>`).join(''):'Reading captured code…'}</div></section></div>`;
+}
+async function jumpCitation(target,{reveal=true}={}) {
+  const snapshot=state.snapshot,file=snapshot?.files.find((f)=>f.id===target.fileId);if(!snapshot)return;
+  const reference=citation={...target,snapshotId:snapshot.snapshotId};
+  if(reveal){if(history.state?.patchworkPanel)history.back();state.chatOpen=false;state.filesOpen=false;}
+  if(file){
+    state.activeTab=target.side==='old'?'diff':'source';selectFile(file.id);
+    if(target.side==='new')await hydrateFileSource(file);
+  }else{
+    const source=supportingSource={path:target.path,text:null,snapshotId:snapshot.snapshotId};render();
+    try{const response=await apiFetch(`/api/guide/source?snapshotId=${encodeURIComponent(snapshot.snapshotId)}&path=${encodeURIComponent(target.path)}`);const body=await response.json();if(!response.ok||typeof body.source!=='string')throw new Error(body.error||body.reason||'Captured source unavailable.');source.text=body.source;}catch(e){source.error=errorMessage(e.message);}
+  }
+  if(citation!==reference||state.snapshot!==snapshot)return;
   render();
-  const line=root.querySelector('.citation-highlight');
+  const line=root.querySelector('.citation-focus,.citation-highlight');
   if(line){line.closest('details')?.setAttribute('open','');line.scrollIntoView({block:'center',behavior:'smooth'});}
 }
 function highlightCitation() {
-  if(!citation||citation.snapshotId!==state.snapshot?.snapshotId||citation.fileId!==state.selectedFile)return;
-  root.querySelectorAll('[data-line]').forEach((el)=>{if(el.dataset.side===citation.side&&Number(el.dataset.line)>=citation.startLine&&Number(el.dataset.line)<=citation.endLine)el.closest('.code-line,.source-line')?.classList.add('citation-highlight');});
+  if(!citation||citation.snapshotId!==state.snapshot?.snapshotId)return;
+  if(supportingSource?citation.path!==supportingSource.path:citation.fileId!==state.selectedFile)return;
+  root.querySelectorAll('[data-line],[data-reference-line]').forEach((el)=>{const line=Number(el.dataset.line||el.dataset.referenceLine);if(el.dataset.side===citation.side&&line>=citation.startLine&&line<=citation.endLine){const row=el.closest('.code-line,.source-line');row?.classList.add('citation-highlight');if(line===citation.focusLine)row?.classList.add('citation-focus');}});
 }
 export async function hydrateFromCompanion() {
   const sequence=++refreshSequence;
@@ -420,7 +512,7 @@ window.addEventListener('offline',()=>{state.online=false;state.connection=state
 window.addEventListener('resize',()=>render());
 window.addEventListener('scroll',()=>{clearTimeout(scrollTimer);scrollTimer=setTimeout(()=>{capturePosition();saveState();},100);},{passive:true});
 window.addEventListener('pagehide',()=>{capturePosition();saveState(true);});
-document.addEventListener('visibilitychange',()=>{if(document.hidden){capturePosition();saveState(true);}else tickFocusTimer();});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){capturePosition();saveState(true);if(mindfulnessSession?.status==='running'){pauseMindfulness(mindfulnessSession);clearInterval(mindfulnessTickTimer);render(false);}}else tickFocusTimer();});
 // One animation owns the scroll position; key repeat never restarts the easing.
 let keyboardScroll=null, keyboardScrollFrame=0;
 function stopKeyboardScroll() {cancelAnimationFrame(keyboardScrollFrame);keyboardScroll=null;}
@@ -451,11 +543,11 @@ window.addEventListener('blur',stopKeyboardScroll);
 document.addEventListener('visibilitychange',()=>{if(document.hidden)stopKeyboardScroll();});
 // Reader shortcuts leave text fields, native controls, tab navigation and guide dialogs alone.
 document.addEventListener('keydown',e=>{
-  if(e.defaultPrevented||e.isComposing||e.altKey||e.ctrlKey||e.metaKey||e.shiftKey||state.utilityMenu||state.filesOpen||state.chatOpen&&overlayGuide())return;
+  if(e.defaultPrevented||e.isComposing||e.altKey||e.ctrlKey||e.metaKey||e.shiftKey||mindfulnessSession||state.utilityMenu||state.filesOpen||state.chatOpen&&overlayGuide())return;
   if(e.target.closest('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="tablist"],[role="separator"],.chat-panel,.utility-menu'))return;
   if(!selectedFile())return;
   if(e.key==='Enter') {
-    if(e.target.closest('button,a,summary,[role="button"]'))return;
+    if(supportingSource||e.target.closest('button,a,summary,[role="button"]'))return;
     e.preventDefault();if(!e.repeat)nextFile(true);
   }else if(e.key==='ArrowLeft'||e.key==='ArrowRight') {
     e.preventDefault();const list=files(),index=list.findIndex(f=>f.id===state.selectedFile),next=list[index+(e.key==='ArrowRight'?1:-1)];
@@ -468,6 +560,12 @@ document.addEventListener('keydown',e=>{
   }
 });
 document.addEventListener('keydown',(e)=>{
+  if(mindfulnessSession){
+    const panel=root.querySelector('.mindfulness-overlay');
+    if(e.key==='Escape'){e.preventDefault();closeMindfulness();return;}
+    if(e.key==='Tab'){const focusable=[...panel.querySelectorAll('button:not([disabled]),select,summary')].filter(el=>el.getClientRects().length);const first=focusable[0],last=focusable.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}
+    return;
+  }
   const panel=small()&&state.filesOpen?root.querySelector('#file-panel'):overlayGuide()&&state.chatOpen?root.querySelector('#chat-panel'):null;if(!panel)return;
   if(e.key==='Escape'){e.preventDefault();closePanels();return;}
   if(e.key==='Tab'){const focusable=[...panel.querySelectorAll('button:not([disabled]),textarea,input,select,a[href],summary')].filter((el)=>el.getClientRects().length);const first=focusable[0],last=focusable.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}

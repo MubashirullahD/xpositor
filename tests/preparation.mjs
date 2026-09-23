@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import {prepare,finishPreparation,preparation,preparationMessage,setResting,isResting,watchPreparation} from '../src/preparation.js';
+let updates=0;const stop=watchPreparation(()=>updates++);
+prepare('lesson','Your chapter');prepare('lesson','Your chapter');assert.equal(updates,1);
+setResting(true);assert.equal(isResting(),true);
+finishPreparation('other');assert.equal(preparation().status,'pending');
+assert.match(preparationMessage(),/still preparing/);
+prepare('audio','Your audio');finishPreparation('lesson');assert.equal(preparation().id,'audio');
+let resumed=false;finishPreparation('audio','ready',()=>{resumed=true;});assert.equal(resumed,false);assert.equal(isResting(),true);
+finishPreparation('audio','cancelled');assert.equal(preparation().status,'ready');
+preparation().resume();assert.equal(resumed,true);setResting(false);
+prepare('failed','Your walkthrough');finishPreparation('failed','error');assert.match(preparationMessage(),/needs attention/);stop();
+console.log('Preparation coordination passed: stale completion, quiet readiness, explicit resume and failures.');
