@@ -12,6 +12,18 @@ import {
   validateSnapshot,
 } from '../src/storage.js';
 import { escapeHtml, renderMarkdown } from '../src/render.js';
+import { highlightLines, languageForPath } from '../src/syntax.js';
+
+assert.equal(languageForPath('src/view.tsx'), 'tsx');
+assert.equal(languageForPath('README.md'), 'markdown');
+assert.equal(languageForPath('unknown.bin'), '');
+const highlighted = highlightLines('const markup = `<img>\n${value}`;\n// done', 'src/view.js');
+assert.equal(highlighted.length, 3, 'a multiline token keeps source line numbers aligned');
+assert.match(highlighted[0], /class="token keyword">const<\/span>/);
+assert.match(highlighted[0], /&lt;img&gt;/);
+assert.match(highlighted[1], /class="token template-string"/);
+assert.match(highlighted[2], /class="token comment"/);
+assert.deepEqual(highlightLines('<img src=x onerror=alert(1)>', 'unknown.bin'), ['&lt;img src=x onerror=alert(1)&gt;']);
 
 const file = {
   id: 'file-1', path: 'src/<img src=x onerror=alert(1)>.js', version: 'revision-a',
@@ -58,14 +70,15 @@ assert.equal(migrated.historicalNotes[0].label, 'Legacy note — repository and 
 assert.deepEqual(sanitizeState({ schema: 2, apiToken: 'must-not-export', reviews: {} }).apiToken, undefined);
 
 console.log('frontend state and rendering tests passed');
-assert.equal(emptyState().preferences.wrap,true);
+assert.equal(emptyState().preferences.wrap,false);
 assert.equal(emptyState().preferences.compactContext,true);
 assert.equal(emptyState().preferences.mindfulnessDuration,1);
 assert.equal(emptyState().preferences.mindfulnessRate,6);
 assert.equal(sanitizeState({schema:2,preferences:{mindfulnessDuration:5,mindfulnessRate:8}}).preferences.mindfulnessRate,8);
 assert.equal(sanitizeState({schema:2,preferences:{mindfulnessDuration:99,mindfulnessRate:3}}).preferences.mindfulnessDuration,1);
-assert.equal(sanitizeState({schema:2}).preferences.wrap,true);
+assert.equal(sanitizeState({schema:2}).preferences.wrap,false);
 assert.equal(sanitizeState({schema:2,preferences:{wrap:false,compactContext:false}}).preferences.wrap,false);
+assert.equal(sanitizeState({schema:2,preferences:{wrap:true}}).preferences.wrap,true);
 
 const workspacePreferences = sanitizeState({ ...emptyState(), preferences: { guideWidth: 470, scope: 'staged' } }).preferences;
 assert.equal(workspacePreferences.guideWidth, 470);

@@ -58,7 +58,7 @@ async page => {
  await page.getByRole('button',{name:'Open files',exact:true}).click();
  await page.getByRole('button',{name:'Refresh',exact:false}).click();
  await page.getByRole('button',{name:/calc.js/}).first().click();
- if(!await page.getByText('Needs review',{exact:true}).isVisible())throw Error('Changed file stayed reviewed');
+ if(await page.locator('.file-row.selected .review-state').getAttribute('aria-label')!=='Needs review')throw Error('Changed file stayed reviewed');
  await page.screenshot({path:'/tmp/patchwork-review-phone.png'});
  await page.setViewportSize({width:900,height:900});
  await page.getByRole('button',{name:'Code guide',exact:true}).click();

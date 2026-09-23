@@ -82,7 +82,7 @@ The default automated checks use temporary repositories and stub providers; they
 
 Patchwork does not stage, edit, commit, publish comments or approve pull requests. Review decisions are local personal state, not remote repository approvals.
 
-Reading defaults enable wrapping and folded unchanged context; saved choices remain respected. Outside text fields, menus, tabs and the guide, ↑/↓ smoothly scroll the reader, ←/→ select adjacent files without wrapping, and Return marks the current file reviewed and advances. Holding Return does not review additional files. Reduced-motion preferences disable smooth scrolling. Reviewing the final outstanding file opens a completion page, retained across reloads; refreshing changed code returns to the pending review.
+Reading defaults keep long lines unwrapped and fold unchanged context; saved choices remain respected. Outside text fields, menus, tabs and the guide, ↑/↓ smoothly scroll the reader, ←/→ select adjacent files without wrapping, and Return marks the current file reviewed and advances. Holding Return does not review additional files. Reduced-motion preferences disable smooth scrolling. Reviewing the final outstanding file opens a completion page, retained across reloads; refreshing changed code returns to the pending review.
 
 Opt-in live subscription checks: `node tests/live-agent-guide.mjs` exercises a 100-file plan and unchanged caller in a fork; `node tests/live-guide-resume.mjs` checks real thread resume and branching after companion restarts. These consume the signed-in Codex allowance. `tests/browser-agent-guide.cjs` covers guide reconnection, branches, citations, cancellation and phone layout with mocked responses.
 

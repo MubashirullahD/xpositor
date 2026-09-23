@@ -5,6 +5,7 @@ import { randomId } from './platform.js';
 import { createWalkthroughUI } from './walkthrough.js';
 import { readReply, errorMessage } from './transport.js';
 import { escapeHtml as esc, icon, renderMarkdown } from './render.js';
+import { highlightLines } from './syntax.js';
 import { demoFiles } from './demo.js';
 import { emptyState, openStorage, sanitizeState, migrateLegacy, validateSnapshot, reviewKey, sessionKey, comparisonKey, sessionFor, notesFor, noteIsCurrent, createBackup, parseBackup, mergeState, reviewSummary } from './storage.js';
 
@@ -122,12 +123,22 @@ function renderFileRow(file) {
 }
 function renderDiff(file) {
   let previousChange=false, hunk=0;
-  const rows=(file.lines || []).map(([rawKind,number,text])=>{
+  const diffLines=file.lines || [];
+  const oldLines=[], newLines=[], oldIndexes=[], newIndexes=[];
+  diffLines.forEach(([kind,,text],index)=>{
+    if(kind==='hunk')return;
+    if(kind!=='added'){oldIndexes[index]=oldLines.length;oldLines.push(text);}
+    if(kind!=='removed'){newIndexes[index]=newLines.length;newLines.push(text);}
+  });
+  const oldHtml=highlightLines(oldLines.join('\n'),file.path);
+  const newHtml=highlightLines(newLines.join('\n'),file.path);
+  const rows=diffLines.map(([rawKind,number,text],index)=>{
     const kind=['context','normal','added','removed','blank','hunk'].includes(rawKind)?rawKind:'normal';
     const changed=kind==='added'||kind==='removed';
     const hunkStart=(changed&&!previousChange)||kind==='hunk'; previousChange=changed;
     const line=Number(number), validLine=Number.isInteger(line)&&line>0;
-    return `<div class="code-line ${kind} ${hunkStart?'hunk-start':''}" ${hunkStart?`data-hunk="${hunk++}"`:''}><button class="line-number" ${validLine?`data-line="${line}" data-side="${kind==='removed'?'old':'new'}" aria-label="Add a note at ${kind==='removed'?'old':'new'} line ${line}"`:'disabled aria-label="Diff separator"'}>${esc(number)}</button><span class="line-sign">${kind==='added'?'+':kind==='removed'?'−':''}</span><code>${esc(text)||'&nbsp;'}</code></div>`;
+    const code=kind==='hunk'?esc(text):kind==='removed'?oldHtml[oldIndexes[index]]:newHtml[newIndexes[index]];
+    return `<div class="code-line ${kind} ${hunkStart?'hunk-start':''}" ${hunkStart?`data-hunk="${hunk++}"`:''}><button class="line-number" ${validLine?`data-line="${line}" data-side="${kind==='removed'?'old':'new'}" aria-label="Add a note at ${kind==='removed'?'old':'new'} line ${line}"`:'disabled aria-label="Diff separator"'}>${esc(number)}</button><span class="line-sign">${kind==='added'?'+':kind==='removed'?'−':''}</span><code>${code||'&nbsp;'}</code></div>`;
   });
   if(!data.preferences.compactContext) return rows.join('');
   const output=[];
@@ -152,7 +163,7 @@ function renderContent(file) {
   if(state.activeTab==='notes') return notesContent(file);
   const sourceTab=state.activeTab!=='diff', key=sessionKey(state.snapshot,file);
   if(sourceTab && typeof file.source!=='string') return `<section class="source-empty"><h3>${state.sourceLoading.has(key)?'Reading snapshot source…':file.sourceAvailable===false?'Source unavailable for this entry':state.online?'Source is not cached for this snapshot':'Offline — source not cached'}</h3><p>${esc(state.sourceErrors.get(key)||file.sourceReason||'The diff is available. Source must be fetched from this exact immutable snapshot.')}</p>${state.online&&file.sourceAvailable!==false&&!state.sourceLoading.has(key)?'<button class="secondary-button" data-action="retry-source">Load snapshot source</button>':''}</section>`;
-  return `<section class="code-card ${state.activeTab==='preview'?'preview-card':''}">${state.activeTab==='preview'?`<article class="markdown-preview">${renderMarkdown(file.source)}</article>`:`<div class="code-viewer ${data.preferences.wrap?'wrap-code':''}">${sourceTab?file.source.split(/\r?\n/).map((line,i)=>`<div class="source-line"><button class="line-number" data-line="${i+1}" data-side="new" aria-label="Add a note at line ${i+1}">${i+1}</button><code>${esc(line)||'&nbsp;'}</code></div>`).join(''):renderDiff(file)||'<p class="empty-diff">No textual diff available. Review the status and source where available.</p>'}</div>`}</section>`;
+  return `<section class="code-card ${state.activeTab==='preview'?'preview-card':''}">${state.activeTab==='preview'?`<article class="markdown-preview">${renderMarkdown(file.source)}</article>`:`<div class="code-viewer ${data.preferences.wrap?'wrap-code':''}">${sourceTab?highlightLines(file.source,file.path).map((line,i)=>`<div class="source-line"><button class="line-number" data-line="${i+1}" data-side="new" aria-label="Add a note at line ${i+1}">${i+1}</button><code>${line||'&nbsp;'}</code></div>`).join(''):renderDiff(file)||'<p class="empty-diff">No textual diff available. Review the status and source where available.</p>'}</div>`}</section>`;
 }
 function focusControls() {
   const timer=data.pomodoro;
@@ -452,7 +463,7 @@ async function sendChat() {
 }
 function supportingContent(){
  const source=supportingSource;
- return `<header class="file-heading"><h2>${esc(source.path)}</h2><button class="secondary-button" data-action="close-supporting">Return to changed file</button></header><p class="agent-activity">Supporting code · captured with this review</p><div id="review-content" tabindex="0"><section class="code-card"><div class="code-viewer ${data.preferences.wrap?'wrap-code':''}">${source.error?`<p role="alert">${esc(source.error)}</p>`:typeof source.text==='string'?source.text.split(/\r?\n/).map((text,i)=>`<div class="source-line"><span class="line-number" data-reference-line="${i+1}" data-side="new">${i+1}</span><code>${esc(text)||'&nbsp;'}</code></div>`).join(''):'Reading captured code…'}</div></section></div>`;
+ return `<header class="file-heading"><h2>${esc(source.path)}</h2><button class="secondary-button" data-action="close-supporting">Return to changed file</button></header><p class="agent-activity">Supporting code · captured with this review</p><div id="review-content" tabindex="0"><section class="code-card"><div class="code-viewer ${data.preferences.wrap?'wrap-code':''}">${source.error?`<p role="alert">${esc(source.error)}</p>`:typeof source.text==='string'?highlightLines(source.text,source.path).map((line,i)=>`<div class="source-line"><span class="line-number" data-reference-line="${i+1}" data-side="new">${i+1}</span><code>${line||'&nbsp;'}</code></div>`).join(''):'Reading captured code…'}</div></section></div>`;
 }
 async function jumpCitation(target,{reveal=true}={}) {
   const snapshot=state.snapshot,file=snapshot?.files.find((f)=>f.id===target.fileId);if(!snapshot)return;

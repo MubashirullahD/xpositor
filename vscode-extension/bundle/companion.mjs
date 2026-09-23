@@ -73,6 +73,7 @@ function contentType(path) {
 
 const assetFiles = new Map([
   ['/', 'index.html'], ['/index.html', 'index.html'], ['/src/styles.css', 'src/styles.css'],
+  ['/src/vendor/prism.js', 'src/vendor/prism.js'],
   ['/sw.js', 'public/sw.js'], ['/manifest.webmanifest', 'public/manifest.webmanifest'], ['/icon.svg', 'public/icon.svg'],
 ]);
 function staticPath(urlPath) {

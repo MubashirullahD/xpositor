@@ -462,6 +462,13 @@ progress::-webkit-progress-value { background:var(--lime-deep); border-radius:12
 .code-line { grid-template-columns:44px 20px minmax(max-content,1fr); font-size:var(--code-size,14px); min-height:25px; line-height:1.8; }
 .source-line { grid-template-columns:44px minmax(max-content,1fr); font-size:var(--code-size,14px); min-height:25px; line-height:1.8; }
 .code-line code, .source-line code { font-size:inherit; user-select:text; }
+.code-viewer .token.comment,.code-viewer .token.prolog,.code-viewer .token.doctype {color:#68776c;font-style:italic;}
+.code-viewer .token.keyword,.code-viewer .token.atrule,.code-viewer .token.important {color:#7453a5;}
+.code-viewer .token.string,.code-viewer .token.char,.code-viewer .token.attr-value {color:#276b49;}
+.code-viewer .token.number,.code-viewer .token.boolean,.code-viewer .token.constant {color:#a14b25;}
+.code-viewer .token.function,.code-viewer .token.class-name,.code-viewer .token.selector {color:#235f9b;}
+.code-viewer .token.property,.code-viewer .token.attr-name,.code-viewer .token.tag {color:#925122;}
+.code-viewer .token.operator,.code-viewer .token.punctuation {color:#57635b;}
 .code-line .line-number, .source-line .line-number { min-height:25px; padding:0 8px 0 0; color:#697366; background:transparent; border-radius:0; font-family:inherit; font-size:12px; text-decoration:none; }
 .code-line .line-number:hover, .source-line .line-number:hover { background:#dde8bd; }
 .wrap-code .code-line { grid-template-columns:44px 20px minmax(0,1fr); }
@@ -576,6 +583,13 @@ html.modal-open,body.modal-open { overflow:hidden!important; overscroll-behavior
 :root[data-theme="dark"] .file-row:hover, :root[data-theme="dark"] .file-row.selected, :root[data-theme="dark"] .workspace-switcher, :root[data-theme="dark"] .offline-card, :root[data-theme="dark"] .context-chip, :root[data-theme="dark"] .code-card, :root[data-theme="dark"] .code-toolbar, :root[data-theme="dark"] .code-meta, :root[data-theme="dark"] .notes-card, :root[data-theme="dark"] .source-empty, :root[data-theme="dark"] .chat-composer, :root[data-theme="dark"] .walkthrough details {background:var(--panel);color:var(--ink);}
 :root[data-theme="dark"] .code-viewer, :root[data-theme="dark"] .source-viewer {background:var(--surface-code);}
 :root[data-theme="dark"] .code-line, :root[data-theme="dark"] .source-line, :root[data-theme="dark"] .markdown-preview, :root[data-theme="dark"] .code-meta span:first-child {color:var(--ink);}
+:root[data-theme="dark"] .code-viewer .token.comment,:root[data-theme="dark"] .code-viewer .token.prolog,:root[data-theme="dark"] .code-viewer .token.doctype {color:#a5b7a7;}
+:root[data-theme="dark"] .code-viewer .token.keyword,:root[data-theme="dark"] .code-viewer .token.atrule,:root[data-theme="dark"] .code-viewer .token.important {color:#cba6f1;}
+:root[data-theme="dark"] .code-viewer .token.string,:root[data-theme="dark"] .code-viewer .token.char,:root[data-theme="dark"] .code-viewer .token.attr-value {color:#a8dba9;}
+:root[data-theme="dark"] .code-viewer .token.number,:root[data-theme="dark"] .code-viewer .token.boolean,:root[data-theme="dark"] .code-viewer .token.constant {color:#f0b18d;}
+:root[data-theme="dark"] .code-viewer .token.function,:root[data-theme="dark"] .code-viewer .token.class-name,:root[data-theme="dark"] .code-viewer .token.selector {color:#a8cdf5;}
+:root[data-theme="dark"] .code-viewer .token.property,:root[data-theme="dark"] .code-viewer .token.attr-name,:root[data-theme="dark"] .code-viewer .token.tag {color:#ecc58c;}
+:root[data-theme="dark"] .code-viewer .token.operator,:root[data-theme="dark"] .code-viewer .token.punctuation {color:#c2cfc3;}
 :root[data-theme="dark"] .code-line.added {background:#293a23;color:#c8e6a4;}
 :root[data-theme="dark"] .code-line.removed {background:#412925;color:#f0b6aa;}
 :root[data-theme="dark"] .code-line .line-number, :root[data-theme="dark"] .source-line .line-number {color:#a0afa1;}
