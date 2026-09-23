@@ -11,7 +11,7 @@ import { emptyState, openStorage, sanitizeState, migrateLegacy, validateSnapshot
 const root = document.querySelector('#root');
 export let data = emptyState();
 export const state = { snapshot:null, selectedFile:'', activeTab:'diff', online:navigator.onLine, connection:'connecting', connectionError:'', aiEnabled:false, aiProvider:'', repositoryGuide:false, guideMode:'walkthrough', aiMessage:'', models:[], modelSettingsOpen:false, modelsLoading:false, modelsError:'', queueCollapsed:false, utilityMenu:'', snapshotSaved:false, filesOpen:false, chatOpen:false, guideCollapsed:true, sourceLoading:new Set(), sourceErrors:new Map(), toast:'', storageError:'', demo:false, apiToken:'' };
-let storage, saveTimer, scrollTimer, toastTimer, refreshSequence = 0, dialogReturnFocus, mindfulnessSession, mindfulnessReturnAction, mindfulnessTickTimer, mindfulnessMode='breathing', mindfulnessWaiting=false, mindfulnessSettingsOpen=false;
+let storage, saveTimer, scrollTimer, toastTimer, refreshSequence = 0, dialogReturnFocus, mindfulnessSession, mindfulnessReturnAction, mindfulnessTickTimer, mindfulnessMode='breathing', mindfulnessWaiting=false, mindfulnessSettingsOpen=false, queueScroll=0;
 const sourceRequests = new Map();
 let chatController, citation, supportingSource;
 const walkthrough = createWalkthroughUI({getState:()=>state,getData:()=>data,save:saveState,render,apiFetch,jump:jumpCitation});
@@ -272,6 +272,8 @@ systemTheme.addEventListener('change',()=>render());
 export function render(preservePosition=true) {
   if(supportingSource&&supportingSource.snapshotId!==state.snapshot?.snapshotId)supportingSource=null;
   stopKeyboardScroll();
+  const visibleQueue=root.querySelector('.file-panel:not([inert])');
+  if(visibleQueue)queueScroll=visibleQueue.scrollTop;
   const theme=data.preferences.theme||'system';
   document.documentElement.dataset.theme=theme==='system'?(systemTheme.matches?'dark':'light'):theme;
   const mindfulnessSettings=root.querySelector('.mindfulness-settings');if(mindfulnessSettings)mindfulnessSettingsOpen=mindfulnessSettings.open;
@@ -309,6 +311,7 @@ export function render(preservePosition=true) {
   bindGuideResize();
   walkthrough.bind(root);
   highlightCitation();
+  root.querySelector('.file-panel').scrollTop=queueScroll;
   const walkPanel=root.querySelector('.walkthrough-scroll'), walkRecord=currentWalkRecord();
   if(walkPanel&&walkRecord)walkPanel.scrollTop=walkRecord.scroll||0;
   if(session) {
@@ -332,7 +335,7 @@ function openPanel(which) {
   state.filesOpen=which==='files'; state.chatOpen=which==='chat'; if(which==='chat') state.guideCollapsed=false;
   render();
   const panel=document.querySelector(which==='files'?'#file-panel':'#chat-panel');
-  panel?.querySelector('button,textarea')?.focus();
+  panel?.querySelector('button,textarea')?.focus({preventScroll:true});
 }
 function closePanels(fromHistory=false) {
   if(!fromHistory&&history.state?.patchworkPanel)history.back();
