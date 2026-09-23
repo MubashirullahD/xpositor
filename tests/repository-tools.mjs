@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createSnapshotStore } from '../snapshot.mjs';
-import { buildRepositoryGuidePrompt, validateRepositoryGuide } from '../agent-plan.mjs';
+import { buildRepositoryGuidePrompt, validateRepositoryGuide, REPOSITORY_GUIDE_SCHEMA } from '../agent-plan.mjs';
 import { createRepositoryTools } from '../repository-tools.mjs';
 const repo = mkdtempSync(join(tmpdir(), 'patchwork-repository-'));
 const git = (...args) => execFileSync('git', args, { cwd: repo, stdio: 'pipe' });
@@ -43,11 +43,12 @@ try {
   assert.throws(() => tools.call('review_inventory', { offset: -1 }));
   const prompt = buildRepositoryGuidePrompt(tools.repository, 'file0.js');
   assert.match(prompt, /Changed files: 101/);
+  assert(Buffer.byteLength(prompt) < 50000, 'Large guide prompts must stay bounded');
   assert.match(prompt, /file0\.js/);
   assert.match(prompt, /after/, 'Small captured diff excerpts are supplied with the inventory');
   assert(!prompt.includes('import { changed }'), 'Unchanged source must still be retrieved on demand');
   const plan = {
-    title: 'Understand the change', summary: 'Review the related code together.', assumptions: ['The symbolic link target is unavailable.'],fileOverviews:tools.repository.snapshot.files.map(file=>({path:file.path,summary:`Change in ${file.path}.`})),
+    title: 'Understand the change', summary: 'Review the related code together.', assumptions: ['The symbolic link target is unavailable.'],fileOverviews:[{path:'file0.js',summary:'Change in file0.js.'}],
     steps: [
       { title: 'Code', explanation: 'Follow the unchanged caller into the modified files.', files: Array.from({ length: 100 }, (_, i) => `file${i}.js`), citations: [{ path: 'caller.js', side: 'new', startLine: 1, endLine: 2 }, { path: 'file0.js', side: 'old', startLine: 1, endLine: 1 }] },
       { title: 'Link', explanation: 'Only the link metadata is captured.', files: ['outside'], citations: [] },
@@ -57,11 +58,16 @@ try {
   assert.equal(validated.fileOrder.length, 101);
   assert.equal(validated.totalChangedFiles, 101);
   assert.equal(Object.keys(validated.fileOverviews).length,101);
+  assert(REPOSITORY_GUIDE_SCHEMA.properties.fileOverviews.maxItems < 101, 'Large guides must not generate an overview for every file');
   assert.equal(validated.examinedCount, 100);
   assert.equal(validated.steps[0].citations[0].fileId, null);
   const changedPlan = mutate => { const copy = structuredClone(plan); mutate(copy); return copy; };
   assert.throws(() => validateRepositoryGuide(changedPlan(p => p.steps[0].files.pop()), tools), /omitted 1/);
-  assert.throws(() => validateRepositoryGuide(changedPlan(p => p.fileOverviews.pop()), tools), /one overview/);
+  const partialOverviews=changedPlan(p => p.fileOverviews=[p.fileOverviews[0]]);
+  assert.equal(validateRepositoryGuide(partialOverviews,tools).fileOverviews['file0.js'],'Change in file0.js.');
+  assert.match(validateRepositoryGuide(partialOverviews,tools).fileOverviews['file1.js'],/Follow the unchanged caller/);
+  const noOverviews=changedPlan(p => delete p.fileOverviews);
+  assert.equal(Object.keys(validateRepositoryGuide(noOverviews,tools).fileOverviews).length,101);
   assert.equal(validateRepositoryGuide(changedPlan(p => p.steps[1].files.push('file0.js')), tools).fileOrder.length, 101);
   assert.throws(() => validateRepositoryGuide(changedPlan(p => { p.steps[0].files[1] = 'file0.js'; }), tools), /more than once within a step/);
   assert.throws(() => validateRepositoryGuide(changedPlan(p => p.steps[0].files.push('caller.js')), tools), /outside the review scope/);

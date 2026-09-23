@@ -48,4 +48,12 @@ const repairing=createAgentGuideService(snapshots,{async generate(prompt,options
 }});
 repairing.start({requestId:'repair-request-0001',snapshotId:'s'});
 assert.equal((await repairing.runs.wait('repair-request-0001')).status,'completed');assert.equal(repairCalls,2);
+const manyFiles=Array.from({length:90},(_,i)=>({path:`file-${i}.js`,id:`many-${i}`,lines:[['added','1',`value${i}`]]}));
+const manyRepository={snapshot:{...snapshot,files:manyFiles},manifest:manyFiles.map(file=>({path:file.path,fileId:file.id,changed:true,available:true})),read:()=>({source:'value',version:'v'})};
+let largeCalls=0;
+const manyService=createAgentGuideService({getRepository:()=>manyRepository},{async generate(prompt,options){largeCalls++;return {status:200,body:{text:JSON.stringify({title:'Large change',summary:'Related files',assumptions:[],fileOverviews:[],steps:[{title:'Review the change',explanation:'These files implement the same behavior.',files:manyFiles.map(file=>file.path),citations:[]}]})}};}});
+manyService.start({requestId:'large-guide-request-01',snapshotId:'s'});
+assert.equal((await manyService.runs.wait('large-guide-request-01')).status,'completed');
+assert.equal(largeCalls,1,'A 90-file guide must not retry because individual overviews are missing');
+assert.equal(Object.keys(manyService.conversation('large-guide-request-01').guide.fileOverviews).length,90);
 console.log('Agent guide service passed: tool-backed generation, validated plan, duplicate prevention, branched context, main-step preservation and continuing follow-ups.');
