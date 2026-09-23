@@ -25,7 +25,7 @@ try{
  const restoredSnapshots=makeSnapshots();const second=createAgentGuideService(restoredSnapshots,ai,{storage});
  assert.equal(restoredSnapshots.capture('all',{reuse:true}).snapshotId,snapshot.snapshotId);
  assert.equal(second.conversation(main).guide.title,'A change');
- second.start({requestId:main,snapshotId:snapshot.snapshotId});assert.equal(calls.length,2,'Completed request must not replay after restart');
+ second.start({requestId:main,snapshotId:snapshot.snapshotId});assert.equal(calls.length,1,'Completed request must not replay after restart');
  second.question({requestId:'persistent-followup-1',conversationId:main,question:'Continue'});await second.runs.wait('persistent-followup-1');
  assert.equal(calls.at(-1).resumeThreadId,'provider-thread-original');
  second.question({requestId:'persistent-branch-01',conversationId:main,question:'Explore',branch:true});await second.runs.wait('persistent-branch-01');

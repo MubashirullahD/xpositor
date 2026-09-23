@@ -1,6 +1,6 @@
 import { LESSON_SCHEMA, lessonPrompt, validateLesson } from './lesson-plan.mjs';
 import { createRepositoryTools } from './repository-tools.mjs';
-import { buildRepositoryGuidePrompt, validateRepositoryGuide, REPOSITORY_GUIDE_SCHEMA } from './agent-plan.mjs';
+import { buildRepositoryGuidePrompt, validateRepositoryGuide, REPOSITORY_GUIDE_SCHEMA, SINGLE_FILE_REPOSITORY_GUIDE_SCHEMA } from './agent-plan.mjs';
 import { createGuideRuns } from './guide-runs.mjs';
 import { GuideError } from './review-guide.mjs';
 import { generateFileOverviews } from './file-overviews.mjs';
@@ -85,13 +85,14 @@ export function createAgentGuideService(snapshots, ai, { storage } = {}) {
     try {
       const run=runs.start(id, { ...input, conversationId: id }, async (_, options) => {
         if(ai.status){const availability=await ai.status();if(!availability.capabilities?.repositoryGuide)throw new GuideError('Repository exploration currently requires Codex with a ChatGPT subscription. Select Codex on the laptop.',400,'GUIDE_PROVIDER');}
-        const progress=await generateFileOverviews(repository,ai,{signal:options.signal,model:input.model,effort:input.effort,onProgress:value=>{
+        const singleFile=repository.snapshot.files.length===1;
+        const progress=singleFile?{fileOverviews:{}}:await generateFileOverviews(repository,ai,{signal:options.signal,model:input.model,effort:input.effort,onProgress:value=>{
           record.fileOverviews=value.fileOverviews;record.overviewStatus=value.overviewStatus;
           options.onProgress({phase:value.phase,completed:value.completed,total:value.total,ready:Object.keys(value.fileOverviews).length});persist();
         }});
         options.onProgress({phase:'walkthrough',completed:repository.snapshot.files.length,total:repository.snapshot.files.length,ready:Object.keys(progress.fileOverviews).length});
         const prompt=buildRepositoryGuidePrompt(repository,input.selectedPath,progress.fileOverviews);
-        const result=await generate(record,prompt,{...options,model:input.model,effort:input.effort,turnTimeoutMs:repositoryGuideTimeoutMs(repository.snapshot.files.length)},REPOSITORY_GUIDE_SCHEMA);
+        const result=await generate(record,prompt,{...options,model:input.model,effort:input.effort,turnTimeoutMs:repositoryGuideTimeoutMs(repository.snapshot.files.length)},singleFile?SINGLE_FILE_REPOSITORY_GUIDE_SCHEMA:REPOSITORY_GUIDE_SCHEMA);
         Object.assign(record.guide.fileOverviews,progress.fileOverviews);persist();
         return {...result,guide:record.guide};
       });
