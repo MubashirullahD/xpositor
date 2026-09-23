@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -24,9 +25,10 @@ try {
  assert.equal(childEnvironment('claude',env).ANTHROPIC_AUTH_TOKEN,undefined);
  assert.equal(resolveAiProvider({...env,PATCHWORK_CODEX_BIN:'/nonexistent/codex',PATCHWORK_CLAUDE_BIN:'/nonexistent/claude'}).available,false);
  const info={provider:'claude',command:fakeCli,available:true};
- const answer=await answerWithCli(info,{question:'Explain this file.',file:{path:'demo.js'},source:'const x=1;'}, {env});
+ const fakeSpawn=process.platform==='win32' ? (_command,args,options)=>spawn(process.execPath,[fakeCli,...args],options) : undefined;
+ const answer=await answerWithCli(info,{question:'Explain this file.',file:{path:'demo.js'},source:'const x=1;'}, {env,spawn:fakeSpawn});
  assert.equal(answer.status,200);assert.equal(answer.body.text,'Claude answer: true');
- assert.equal((await inspectAiProvider(info,{env:{...env,TEST_API:'yes'}})).available,false);
+ assert.equal((await inspectAiProvider(info,{env:{...env,TEST_API:'yes'},spawn:fakeSpawn})).available,false);
  const aborted=new AbortController();aborted.abort();
  assert.equal((await runCommand(process.execPath,['-e','setTimeout(()=>{},5000)'],{signal:aborted.signal})).reason,'aborted');
  console.log('Providers: no automatic API billing, auth gates, tool isolation, stdin prompts and cancellation passed.');

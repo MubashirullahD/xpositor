@@ -11,6 +11,13 @@ const appRoot = fileURLToPath(new URL('..', import.meta.url));
 const fixture = mkdtempSync(join(tmpdir(), 'patchwork-http-test-'));
 const repo = join(fixture, 'repo');
 const app = join(fixture, 'app');
+function trySymlink(target, path) {
+  try { symlinkSync(target, path); return true; }
+  catch (error) {
+    if (process.platform === 'win32' && ['EACCES', 'EPERM'].includes(error.code)) return false;
+    throw error;
+  }
+}
 mkdirSync(repo); mkdirSync(app); mkdirSync(join(app, 'src')); mkdirSync(join(app, 'src/vendor')); mkdirSync(join(app, 'public'));
 for (const name of readdirSync(appRoot).filter((name) => name.endsWith('.mjs'))) cpSync(join(appRoot, name), join(app, name));
 writeFileSync(join(app, 'index.html'), '<html><script type="module" src="/src/main.js"></script></html>');
@@ -19,14 +26,14 @@ writeFileSync(join(app, 'src/module.js'), 'export const module = true;');
 writeFileSync(join(app, 'src/vendor/prism.js'), 'export const highlighter = true;');
 writeFileSync(join(app, '.env'), 'STATIC_SECRET');
 writeFileSync(join(fixture, 'secret'), 'EXTERNAL_SECRET');
-symlinkSync(join(fixture, 'secret'), join(app, 'src/leak.js'));
+const staticSymlinkSupported = trySymlink(join(fixture, 'secret'), join(app, 'src/leak.js'));
 const git = (...args) => execFileSync('git', args, { cwd: repo, stdio: 'pipe' });
 git('init', '-q'); git('config', 'user.name', 'Test'); git('config', 'user.email', 'test@example.invalid');
 writeFileSync(join(repo, 'unchanged.txt'), 'not part of review');
 writeFileSync(join(repo, 'file name.js'), 'before\n'); git('add', '.'); git('commit', '-qm', 'Fixture');
 writeFileSync(join(repo, 'file name.js'), 'CAPTURED_SOURCE\n');
 writeFileSync(join(repo, 'helper.js'), 'export const helper = () => true;\n');
-symlinkSync(join(fixture, 'secret'), join(repo, 'link'));
+const repoSymlinkSupported = trySymlink(join(fixture, 'secret'), join(repo, 'link'));
 let received = '';
 let providerCalls = 0;
 const provider = createServer((request, response) => {
@@ -99,8 +106,10 @@ try {
   writeFileSync(join(repo, file.path), 'EDITED_AFTER_CAPTURE\n');
   const sourcePayload = await (await get(fileUrl)).json();
   assert.equal(sourcePayload.source, 'CAPTURED_SOURCE\n'); assert.equal(sourcePayload.version, file.version);
-  const linkPayload = await (await get(`/api/file?snapshotId=${snapshot.snapshotId}&path=link`)).json();
-  assert.equal(linkPayload.source, null); assert.equal(linkPayload.sourceAvailable, false);
+  if (repoSymlinkSupported) {
+    const linkPayload = await (await get(`/api/file?snapshotId=${snapshot.snapshotId}&path=link`)).json();
+    assert.equal(linkPayload.source, null); assert.equal(linkPayload.sourceAvailable, false);
+  }
   const ask = (body) => fetch(`${base}/api/ai`, { method: 'POST', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify(body) });
   assert.equal((await ask({ message: 'Explain', file })).status, 400);
   assert.equal((await ask({ snapshotId: snapshot.snapshotId, message: 'Explain', file: { id: file.id, path: 'unchanged.txt' } })).status, 404);
@@ -155,7 +164,7 @@ try {
   const contextUrl = `/api/guide/source?snapshotId=${snapshot.snapshotId}&path=unchanged.txt`;
   assert.equal((await (await get(contextUrl)).json()).source, 'not part of review');
   assert.equal((await get(`/api/guide/source?snapshotId=${snapshot.snapshotId}&path=../secret`)).status, 404);
-  assert.equal((await (await get(`/api/guide/source?snapshotId=${snapshot.snapshotId}&path=link`)).json()).source, null);
+  if (repoSymlinkSupported) assert.equal((await (await get(`/api/guide/source?snapshotId=${snapshot.snapshotId}&path=link`)).json()).source, null);
   assert.equal((await get('/api/guide/run?id=unknown')).status, 404);
   assert.equal((await fetch(`${base}/api/guide/voice`)).status,401);
   assert.equal((await get('/api/guide/voice')).status,200);
@@ -180,7 +189,7 @@ try {
   assert.equal((await post('/api/guide/start',{...repositoryRequest,selectedPath:helper.path})).status,409);
   const conversation=(await (await get('/api/guide/conversation?id=http-guide-request-001')).json()).conversation;
   assert(!('threadId' in conversation));
-  console.log('Companion smoke passed: portable fixtures, immutable source, authoritative AI, walkthrough HTTP/streaming, pairing, static allowlist, CSP, symlinks.');
+  console.log(`Companion smoke passed: portable fixtures, immutable source, authoritative AI, walkthrough HTTP/streaming, pairing, static allowlist, CSP, ${staticSymlinkSupported && repoSymlinkSupported ? 'symlinks' : 'symlinks skipped (creation unavailable)'}.`);
 } finally {
   if (companion && companion.exitCode === null) { const exited = once(companion, 'exit'); companion.kill('SIGTERM'); await exited; }
   if (provider.listening) await new Promise((resolveClose) => provider.close(resolveClose));

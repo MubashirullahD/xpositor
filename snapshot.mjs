@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { closeSync, constants, fstatSync, lstatSync, mkdtempSync, openSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, fstatSync, lstatSync, mkdtempSync, openSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, extname, join, relative, resolve, sep } from 'node:path';
 
@@ -28,7 +28,12 @@ export function createSnapshotStore(repository, options = {}) {
     }
   }
   const actualRoot = realpathSync(decode(git(['rev-parse', '--show-toplevel'])).trimEnd());
-  if (actualRoot !== repoRoot) throw new SnapshotError('Choose the Git repository root, not a subdirectory.', 400);
+  const sameRoot = relative(repoRoot, actualRoot) === '' || (() => {
+    const requested = statSync(repoRoot);
+    const actual = statSync(actualRoot);
+    return requested.dev === actual.dev && requested.ino !== 0 && requested.ino === actual.ino;
+  })();
+  if (!sameRoot) throw new SnapshotError('Choose the Git repository root, not a subdirectory.', 400);
   const repoId = hash(repoRoot);
   function metadata(scope) {
     const head = decode(git(['rev-parse', '--verify', '--quiet', 'HEAD'], [0, 1])).trim() || null;

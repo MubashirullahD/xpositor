@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, lstatSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
@@ -23,7 +23,9 @@ try {
   writeFileSync(join(stageRoot, 'package.json'), `${JSON.stringify(packageForInstall, null, 2)}\n`);
   writeFileSync(join(stageRoot, '.vscodeignore'), '.vscode/**\ntest/**\nprepare-bundle.mjs\npackage.mjs\n');
 
-  const productionPackages = execFileSync('npm', ['ls', '--omit=dev', '--all', '--parseable'], {
+  const npmCli = process.env.npm_execpath;
+  if (!npmCli) throw new Error('Run packaging with npm run package.');
+  const productionPackages = execFileSync(process.execPath, [npmCli, 'ls', '--omit=dev', '--all', '--parseable'], {
     cwd: extensionRoot,
     encoding: 'utf8',
     maxBuffer: 2 * 1024 * 1024,
@@ -32,6 +34,7 @@ try {
   for (const packagePath of productionPackages) {
     if (!packagePath.startsWith(`${sourceNodeModules}${sep}`)) continue;
     const packageRelativePath = relative(extensionRoot, packagePath);
+    if (lstatSync(packagePath).isSymbolicLink()) throw new Error(`Linked runtime dependency cannot be packaged: ${packageRelativePath}. Run npm ci in vscode-extension.`);
     cpSync(packagePath, join(stageRoot, packageRelativePath), { recursive: true });
   }
 

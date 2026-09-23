@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 const Module = require('node:module');
+const { resolve } = require('node:path');
 const test = require('node:test');
 
 const originalLoad = Module._load;
@@ -137,9 +138,9 @@ test('multi-root workspaces launch the Git repository chosen by the user', async
 test('development hosts prefer the sibling companion while deployed extensions prefer the bundle', () => {
   const h = makeHarness();
   h.extension.context.extensionMode = 1;
-  assert.equal(h.extension.companionPath(), '/companion.mjs');
+  assert.equal(h.extension.companionPath(), resolve('/companion.mjs'));
   h.extension.context.extensionMode = 0;
-  assert.equal(h.extension.companionPath(), '/extension/bundle/companion.mjs');
+  assert.equal(h.extension.companionPath(), resolve('/extension/bundle/companion.mjs'));
 });
 
 test('LAN is ready immediately without cloudflared and can switch to a tunnel', async()=>{
@@ -187,7 +188,7 @@ test('voice setup runs once and reports completion or failure', async () => {
   h.extension.installVoice();
   h.extension.installVoice();
   assert.equal(h.spawns.length, 1);
-  assert.equal(h.spawns[0].args[0], '/extension/bundle/setup-voice.mjs');
+  assert.equal(h.spawns[0].args[0], resolve('/extension/bundle/setup-voice.mjs'));
   assert.equal(h.extension.voiceStatus, 'installing');
   h.spawns[0].child.emit('exit', 0, null);
   assert.equal(h.extension.voiceStatus, 'ready');

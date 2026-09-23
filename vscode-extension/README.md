@@ -5,7 +5,7 @@ This is the laptop-side launcher for Patchwork. It contributes a Patchwork icon 
 ## Try it locally
 
 1. Open the `vscode-extension` folder from this checkout in VS Code.
-2. Run `npm install` in that folder once.
+2. Run `npm ci` in that folder once.
 3. Press `F5` to launch an Extension Development Host.
 4. Open a Git repository in that new window. In a multi-root workspace, Patchwork asks which Git repository to review.
 5. Click the Patchwork icon in the Activity Bar.
@@ -50,15 +50,26 @@ The extension never stages, edits, resets, or commits files. It only launches th
 
 ## Build and install a local VSIX
 
-From this directory:
+From this directory, build the VSIX:
 
 ```sh
-npm install
+npm ci
 npm run package
+```
+
+Install or update it from this directory (`patchwork\vscode-extension>` in PowerShell). The VSIX is in the current directory, so do not repeat `vscode-extension` in its path. On Windows PowerShell, invoke `code.cmd` so PowerShell does not pick `Code.exe`, which opens a window without processing extension installation flags:
+
+```powershell
+code.cmd --install-extension .\patchwork-vscode-0.1.0.vsix --force
+```
+
+On macOS or Linux:
+
+```sh
 code --install-extension ./patchwork-vscode-0.1.0.vsix --force
 ```
 
-The package contains the launcher, QR renderer, bundled read-only companion, PWA shell, and production QR runtime dependencies. It is installed locally and is not published to the VS Code Marketplace.
+The `--force` flag replaces an installed build with the same version number. After installation, run **Developer: Reload Window** from VS Code's Command Palette, then click the Patchwork icon in the Activity Bar. Alternatively, open **Extensions → … → Install from VSIX…**, choose the rebuilt VSIX, and reload the window. The package contains the launcher, QR renderer, bundled read-only companion, PWA shell, and production QR runtime dependencies. It is installed locally and is not published to the VS Code Marketplace.
 
 ### Audio walkthrough
 

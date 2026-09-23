@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { mkdtemp, writeFile, chmod, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -31,7 +32,10 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
 });
 `);
 await chmod(binary, 0o755);
-const client = new CodexReviewClient(binary, { timeoutMs: 2000, repositoryMode: true });
+const fakeSpawn = process.platform === 'win32'
+  ? (_command, args, options) => spawn(process.execPath, [binary, ...args], options)
+  : undefined;
+const client = new CodexReviewClient(binary, { timeoutMs: 2000, repositoryMode: true, spawn: fakeSpawn });
 const calls = [], activity = [];
 try {
  const text = await client.answer('Explore', { repositoryTools: {

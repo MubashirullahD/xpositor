@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { mkdtemp, writeFile, chmod, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -36,7 +37,10 @@ readline.createInterface({input:process.stdin}).on('line', line => {
 });
 `);
 await chmod(binary,0o755);
-const client = new CodexReviewClient(binary, {timeoutMs:300});
+const fakeSpawn = process.platform === 'win32'
+  ? (_command, args, options) => spawn(process.execPath, [binary, ...args], options)
+  : undefined;
+const client = new CodexReviewClient(binary, {timeoutMs:300, spawn:fakeSpawn});
 try {
  await assert.rejects(client.answer('Do not enable tools here', { repositoryTools: {} }), /dedicated guide process/);
  const catalog=await client.models();assert.equal(catalog.defaultModel,'future-model');assert.deepEqual(catalog.models[0].efforts,['xhigh']);
@@ -57,10 +61,10 @@ try {
  await assert.rejects(client.answer('wait override',{sessionKey:'timeout-override',turnTimeoutMs:30}),/timed out/);
  assert(Date.now()-started<250,'Per-answer timeout override was not used');
  await assert.rejects(client.answer('invalid timeout',{turnTimeoutMs:0}),/positive integer/);
- const denied=new CodexReviewClient(binary,{env:{...process.env,TEST_AUTH:'apiKey'}});
+ const denied=new CodexReviewClient(binary,{env:{...process.env,TEST_AUTH:'apiKey'},spawn:fakeSpawn});
  try { assert.equal((await denied.status()).available,false); await assert.rejects(denied.answer('no generation'),/will not switch to API billing/); }
  finally { await denied.close(); }
- const metered=new CodexReviewClient(binary,{env:{...process.env,TEST_PLAN:'self_serve_business_usage_based'}});
+ const metered=new CodexReviewClient(binary,{env:{...process.env,TEST_PLAN:'self_serve_business_usage_based'},spawn:fakeSpawn});
  try { await assert.rejects(metered.answer('no generation'),/usage-based or could not be verified/); } finally { await metered.close(); }
  console.log('Codex protocol: subscription gate, inherited tool isolation, streaming, continuity, version boundaries, cancel and timeout passed.');
 } finally { await client.close(); await rm(root,{recursive:true,force:true}); }

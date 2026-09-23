@@ -23,7 +23,7 @@
   ],
   "main": "./extension.js",
   "scripts": {
-    "test": "node --test test/*.test.cjs && node test/qr-smoke.cjs",
+    "test": "node test/run.cjs",
     "vscode:prepublish": "node prepare-bundle.mjs",
     "package": "node package.mjs"
   },
@@ -135,6 +135,6 @@
     }
   },
   "devDependencies": {
-    "@vscode/vsce": "^4.0.0"
+    "@vscode/vsce": "3.6.2"
   }
 }

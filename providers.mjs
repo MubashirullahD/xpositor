@@ -87,7 +87,7 @@ export function runCommand(command, args, options = {}) {
     let stdout = '';
     let stderr = '';
     let settled = false;
-    const child = spawn(command, args, {
+    const child = (options.spawn || spawn)(command, args, {
       cwd,
       env,
       shell: false,
@@ -198,7 +198,7 @@ export async function inspectAiProvider(info, options = {}) {
   if (info.provider === 'api') return { ...info, auth: 'api-key', billing: 'api', message: 'OpenAI API · usage billed separately (explicitly selected)' };
   try {
     if (info.provider === 'codex') return { ...info, ...await codexClient(info.command, options).status() };
-    const result = await runCommand(info.command, ['auth', 'status', '--json'], { env: childEnvironment('claude', env), timeoutMs: 8_000 });
+    const result = await runCommand(info.command, ['auth', 'status', '--json'], { env: childEnvironment('claude', env), timeoutMs: 8_000, spawn: options.spawn });
     const auth = result.ok ? JSON.parse(result.stdout) : {};
     const subscription = auth.loggedIn === true && auth.authMethod === 'claude.ai';
     return { ...info, available: subscription, auth: subscription ? 'claude.ai' : 'unverified', billing: subscription ? 'subscription' : 'none', message: subscription ? 'Claude Code · subscription login' : 'Sign in to Claude Code with a Claude subscription. API billing is not enabled automatically.' };
@@ -219,7 +219,7 @@ export async function answerWithCli(providerInfo, input, options = {}) {
     const cwd = await mkdtemp(join(tmpdir(), 'patchwork-claude-'));
     try {
       const args = ['-p', '--output-format', 'json', '--permission-mode', 'plan', '--max-turns', '1', '--no-session-persistence', '--tools', '', '--disable-slash-commands', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--setting-sources', '', '--settings', '{"disableAllHooks":true}', ...(options.jsonSchema ? ['--json-schema', JSON.stringify(options.jsonSchema)] : [])];
-      const result = await runCommand(command, args, { cwd, env: childEnvironment(provider, options.env || process.env), input: input.prompt && input.history?.length ? `Previous conversation:\n${JSON.stringify(input.history)}\n\n${prompt}` : prompt, timeoutMs: options.timeoutMs, signal: options.signal });
+      const result = await runCommand(command, args, { cwd, env: childEnvironment(provider, options.env || process.env), input: input.prompt && input.history?.length ? `Previous conversation:\n${JSON.stringify(input.history)}\n\n${prompt}` : prompt, timeoutMs: options.timeoutMs, signal: options.signal, spawn: options.spawn });
       if (!result.ok) return { status: result.reason === 'timeout' ? 504 : 502, body: { error: result.reason === 'aborted' ? 'Stopped.' : 'Claude Code could not finish. Check its login and subscription allowance on the laptop.' } };
       const payload = JSON.parse(result.stdout);
       const text = options.jsonSchema && payload.structured_output ? JSON.stringify(payload.structured_output) : parseClaudeOutput(result.stdout);

@@ -10,13 +10,24 @@ const repo = join(root, 'repo');
 mkdirSync(repo);
 const git = (...args) => execFileSync('git', args, { cwd: repo, stdio: 'pipe' });
 const write = (name, content) => writeFileSync(join(repo, name), content);
+function trySymlink(target, path) {
+  try { symlinkSync(target, path); return true; }
+  catch (error) {
+    if (process.platform === 'win32' && ['EACCES', 'EPERM'].includes(error.code)) return false;
+    throw error;
+  }
+}
 try {
   git('init', '-q'); git('config', 'user.name', 'Test'); git('config', 'user.email', 'test@example.invalid');
   const store = createSnapshotStore(repo);
   write('unborn.js', 'initial\n');
   assert.equal(store.capture().files[0].status, '?');
   git('add', '.'); git('commit', '-qm', 'Initial');
-  const awkward = ['space name.js', 'unicode-你好.js', 'quote"name.js', 'tab\tname.js', 'line\nbreak.js', 'foo-bar.js', 'foo_bar.js'];
+  const awkward = [
+    'space name.js', 'unicode-你好.js',
+    ...(process.platform === 'win32' ? ['quote-name.js', 'tab-name.js', 'line-break.js'] : ['quote"name.js', 'tab\tname.js', 'line\nbreak.js']),
+    'foo-bar.js', 'foo_bar.js',
+  ];
   for (const name of awkward) write(name, 'before\n');
   mkdirSync(join(repo, 'tracked-dir')); write('tracked-dir/file.js', 'safe original\n');
   write('delete.js', 'one\ntwo\n'); write('rename.js', 'rename contents\n'); write('binary.bin', Buffer.from([0, 1, 2]));
@@ -28,10 +39,11 @@ try {
   mkdirSync(join(repo, 'nested')); write('nested/new.js', 'new\n');
   rmSync(join(repo, 'tracked-dir'), { recursive: true });
   mkdirSync(join(root, 'external-dir')); writeFileSync(join(root, 'external-dir/file.js'), 'EXTERNAL_SECRET');
-  symlinkSync(join(root, 'external-dir'), join(repo, 'tracked-dir'));
+  const directorySymlinkSupported = trySymlink(join(root, 'external-dir'), join(repo, 'tracked-dir'));
   write('bom.txt', '\ufeffpreserve BOM\n');
   write('long.txt', Array.from({ length: 150 }, (_, i) => `line ${i}`).join('\n'));
-  writeFileSync(join(root, 'secret'), 'EXTERNAL_SECRET'); symlinkSync(join(root, 'secret'), join(repo, 'link'));
+  writeFileSync(join(root, 'secret'), 'EXTERNAL_SECRET');
+  const fileSymlinkSupported = trySymlink(join(root, 'secret'), join(repo, 'link'));
   const first = store.capture();
   assert.equal(new Set(first.files.map((f) => f.id)).size, first.files.length);
   for (const name of awkward) {
@@ -46,7 +58,7 @@ try {
   const renamed = first.files.find((f) => f.path === 'renamed file.js');
   assert.equal(renamed.oldPath, 'rename.js'); assert.equal(renamed.added, 0); assert.equal(renamed.removed, 0);
   assert.equal(first.files.find((f) => f.path === 'binary.bin').binary, true);
-  assert.equal(store.getFile(first.snapshotId, { path: 'link' }).source, null);
+  if (fileSymlinkSupported) assert.equal(store.getFile(first.snapshotId, { path: 'link' }).source, null);
   assert.equal(store.getFile(first.snapshotId, { path: 'tracked-dir/file.js' }).source, null);
   assert.equal(store.getFile(first.snapshotId, { path: 'bom.txt' }).source, '\ufeffpreserve BOM\n');
   assert.equal(store.getFile(first.snapshotId, { path: 'long.txt' }).file.added, 150);
@@ -67,5 +79,5 @@ try {
   assert.throws(() => createSnapshotStore(root), /Git .*failed/);
   git('config', 'core.repositoryformatversion', '999');
   assert.throws(() => store.capture(), /Git .*failed/);
-  console.log('Snapshot regression checks passed (paths, renames, deletes, binary, links, versions, limits, eviction, Git errors).');
+  console.log(`Snapshot regression checks passed (paths, renames, deletes, binary, ${directorySymlinkSupported && fileSymlinkSupported ? 'links' : 'links skipped (creation unavailable)'}, versions, limits, eviction, Git errors).`);
 } finally { rmSync(root, { recursive: true, force: true }); }

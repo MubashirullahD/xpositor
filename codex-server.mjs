@@ -269,7 +269,15 @@ export class CodexReviewClient {
   }
 
   async close() {
+    const child = this.child;
     this.fail(new Error('Code guide closed.'));
-    if (this.cwd) await rm(this.cwd, { recursive: true, force: true });
+    if (child && child.exitCode === null && child.signalCode === null) {
+      await new Promise((resolve) => {
+        const exited = () => { clearTimeout(timer); resolve(); };
+        const timer = setTimeout(() => { child.off('exit', exited); resolve(); }, 1_500);
+        child.once('exit', exited);
+      });
+    }
+    if (this.cwd) await rm(this.cwd, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 }

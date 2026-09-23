@@ -21,7 +21,7 @@ try{
  const ai={async generate(prompt,options){calls.push(options);options.onThread?.(options.resumeThreadId||'provider-thread-original');if(stall)return new Promise((_,reject)=>options.signal.addEventListener('abort',()=>reject(new Error('Stopped'))));return {status:200,body:{text:options.parallelKey?JSON.stringify({files:[{path:'a.js',summary:'This file changes its exported value.'}]}):options.jsonSchema?JSON.stringify(plan):'Continued.'}};}};
  const first=createAgentGuideService(snapshots,ai,{storage});const main='persistent-main-0001';
  first.start({requestId:main,snapshotId:snapshot.snapshotId});await first.runs.wait(main);
- assert.equal(statSync(join(root,'.state',snapshots.repoId,'conversations.json')).mode&0o777,0o600);
+ if(process.platform!=='win32')assert.equal(statSync(join(root,'.state',snapshots.repoId,'conversations.json')).mode&0o777,0o600);
  const restoredSnapshots=makeSnapshots();const second=createAgentGuideService(restoredSnapshots,ai,{storage});
  assert.equal(restoredSnapshots.capture('all',{reuse:true}).snapshotId,snapshot.snapshotId);
  assert.equal(second.conversation(main).guide.title,'A change');

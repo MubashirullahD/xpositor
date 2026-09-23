@@ -69,12 +69,40 @@ The separate **Mindful breathing** icon opens a quiet exercise without changing 
 ## Checks and packaging
 
 ```sh
+cd vscode-extension
+npm ci
+cd ..
 npm test
 npm run extension:bundle
 cd vscode-extension
-npm install
 npm run package
 ```
+
+Run the commands from a clean checkout on macOS, Windows, or Linux with Node.js 20+ and Git. `npm ci` installs the extension's locked dependencies before the root test suite invokes its extension tests. The package command creates `vscode-extension/patchwork-vscode-0.1.0.vsix`.
+
+### Update a locally installed extension
+
+After rebuilding the VSIX, install it over the existing version. If your PowerShell prompt ends in `patchwork>` (the repository root), run:
+
+```powershell
+code.cmd --install-extension .\vscode-extension\patchwork-vscode-0.1.0.vsix --force
+```
+
+If your prompt ends in `patchwork\vscode-extension>`, run this instead; the VSIX is already in the current directory:
+
+```powershell
+code.cmd --install-extension .\patchwork-vscode-0.1.0.vsix --force
+```
+
+Use `code.cmd` on Windows because `code` may resolve to `Code.exe` and only open a window.
+
+On macOS or Linux:
+
+```sh
+code --install-extension ./vscode-extension/patchwork-vscode-0.1.0.vsix --force
+```
+
+In VS Code, run **Developer: Reload Window** from the Command Palette after installation, then open the Patchwork Activity Bar icon. You can also use **Extensions → … → Install from VSIX…**, select the rebuilt file, and reload the window. `--force` replaces the installed build even when the version number is unchanged. See the [extension README](vscode-extension/README.md#build-and-install-a-local-vsix) for details.
 
 For the browser regression, start the companion with AI disabled and run `playwright-cli open http://127.0.0.1:4321`, then `playwright-cli run-code --filename=tests/browser-review.cjs`. The scenario uses stub responses and an isolated browser, checks phone/tablet behavior and saves screenshots under `/tmp`.
 
