@@ -3,6 +3,7 @@ import { createRepositoryTools } from './repository-tools.mjs';
 import { buildRepositoryGuidePrompt, validateRepositoryGuide, REPOSITORY_GUIDE_SCHEMA } from './agent-plan.mjs';
 import { createGuideRuns } from './guide-runs.mjs';
 import { GuideError } from './review-guide.mjs';
+import { generateFileOverviews } from './file-overviews.mjs';
 
 const MIN_WALKTHROUGH_TIMEOUT_MS = 5 * 60_000;
 const PER_CHANGED_FILE_TIMEOUT_MS = 30_000;
@@ -41,7 +42,7 @@ export function createAgentGuideService(snapshots, ai, { storage } = {}) {
   }
   function view(record) {
     return structuredClone({ id: record.id, snapshotId: record.snapshotId, parentId: record.parentId,
-      title: record.title, persistenceError:record.persistenceError||null, step: record.step, guide: record.guide, lessons:record.lessons||{}, messages: record.messages, runId: record.runId });
+      title: record.title, persistenceError:record.persistenceError||null, step: record.step, guide: record.guide, fileOverviews:record.fileOverviews||{}, overviewStatus:record.overviewStatus||{}, lessons:record.lessons||{}, messages: record.messages, runId: record.runId });
   }
   async function generate(record, prompt, options, schema, parent) {
     const tools = createRepositoryTools(snapshots, record.snapshotId);
@@ -74,16 +75,26 @@ export function createAgentGuideService(snapshots, ai, { storage } = {}) {
     requireStorage();
     requireInput(input, ['requestId', 'snapshotId', 'selectedPath', 'model', 'effort']);
     const repository = snapshots.getRepository(input.snapshotId);
-    const prompt = buildRepositoryGuidePrompt(repository, input.selectedPath);
     storage?.saveSnapshot(input.snapshotId,snapshots.exportRecord(input.snapshotId));
     const id = input.requestId;
     let record = conversations.get(id);
     const fresh = !record;
-    if (!record) record = { id, snapshotId: input.snapshotId, parentId: null, title: 'Walkthrough', step: 0, guide: null, messages: [], threadId: null, runId: id };
+    if (!record) record = { id, snapshotId: input.snapshotId, parentId: null, title: 'Walkthrough', step: 0, guide: null, fileOverviews:{}, overviewStatus:{}, messages: [], threadId: null, runId: id };
     if (fresh && conversations.size >= 128) throw new GuideError('The companion conversation limit has been reached. Back up and clear the repository guide cache on the laptop before starting more conversations.', 413, 'GUIDE_CONVERSATION_LIMIT');
     conversations.set(id, record);
     try {
-      const run=runs.start(id, { ...input, conversationId: id }, (_, options) => generate(record, prompt, { ...options, model: input.model, effort: input.effort, turnTimeoutMs: repositoryGuideTimeoutMs(repository.snapshot.files.length) }, REPOSITORY_GUIDE_SCHEMA));
+      const run=runs.start(id, { ...input, conversationId: id }, async (_, options) => {
+        if(ai.status){const availability=await ai.status();if(!availability.capabilities?.repositoryGuide)throw new GuideError('Repository exploration currently requires Codex with a ChatGPT subscription. Select Codex on the laptop.',400,'GUIDE_PROVIDER');}
+        const progress=await generateFileOverviews(repository,ai,{signal:options.signal,model:input.model,effort:input.effort,onProgress:value=>{
+          record.fileOverviews=value.fileOverviews;record.overviewStatus=value.overviewStatus;
+          options.onProgress({phase:value.phase,completed:value.completed,total:value.total,ready:Object.keys(value.fileOverviews).length});persist();
+        }});
+        options.onProgress({phase:'walkthrough',completed:repository.snapshot.files.length,total:repository.snapshot.files.length,ready:Object.keys(progress.fileOverviews).length});
+        const prompt=buildRepositoryGuidePrompt(repository,input.selectedPath,progress.fileOverviews);
+        const result=await generate(record,prompt,{...options,model:input.model,effort:input.effort,turnTimeoutMs:repositoryGuideTimeoutMs(repository.snapshot.files.length)},REPOSITORY_GUIDE_SCHEMA);
+        Object.assign(record.guide.fileOverviews,progress.fileOverviews);persist();
+        return {...result,guide:record.guide};
+      });
       return track(record,run);
     } catch (error) { if (fresh) conversations.delete(id); throw error; }
   }

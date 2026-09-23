@@ -58,7 +58,7 @@ try {
   assert.equal(validated.fileOrder.length, 101);
   assert.equal(validated.totalChangedFiles, 101);
   assert.equal(Object.keys(validated.fileOverviews).length,101);
-  assert(REPOSITORY_GUIDE_SCHEMA.properties.fileOverviews.maxItems < 101, 'Large guides must not generate an overview for every file');
+  assert(!('fileOverviews' in REPOSITORY_GUIDE_SCHEMA.properties), 'The walkthrough must reuse prepared file overviews');
   assert.equal(validated.examinedCount, 100);
   assert.equal(validated.steps[0].citations[0].fileId, null);
   const changedPlan = mutate => { const copy = structuredClone(plan); mutate(copy); return copy; };

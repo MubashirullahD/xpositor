@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { createAgentGuideService, repositoryGuideTimeoutMs } from '../agent-guide-service.mjs';
+const batchPaths=prompt=>JSON.parse(prompt.slice(prompt.lastIndexOf('\n[')+1)).map(file=>file.path);
+const overviewReply=prompt=>({status:200,body:{text:JSON.stringify({files:batchPaths(prompt).map(path=>({path,summary:`${path} changes this behavior.`}))})}});
 const files = ['a.js','b.js'].map((path,i)=>({path,id:String(i),lines:[['added','1','new code']]}));
 const snapshot = { snapshotId:'s',repoId:'r',scope:'all',files };
 const sources = new Map([['a.js','new code'],['b.js','new code'],['caller.js','callA();']]);
@@ -7,7 +9,7 @@ const repository = { snapshot, manifest:[...sources].map(([path])=>({path,change
 const snapshots = {getRepository(id){assert.equal(id,'s');return repository;}};
 const plan = {title:'Overview',summary:'Two related changes',assumptions:[],fileOverviews:files.map(file=>({path:file.path,summary:`${file.path} changes this behavior.`})),steps:files.map(file=>({title:file.path,explanation:'Explain this change',files:[file.path],citations:[{path:file.path,side:'new',startLine:1,endLine:1}]}))};
 const calls=[];
-const ai={async generate(prompt,options){calls.push({prompt,options});options.onThread('thread-'+options.sessionKey);options.repositoryTools.call('review_read',{path:'caller.js'});options.onActivity({tool:'review_read',path:'caller.js'});options.onDelta('Thinking');return {status:200,body:{text:options.jsonSchema?JSON.stringify(plan):'Follow-up answer'}};}};
+const ai={async generate(prompt,options){calls.push({prompt,options});if(options.parallelKey)return overviewReply(prompt);options.onThread('thread-'+options.sessionKey);options.repositoryTools.call('review_read',{path:'caller.js'});options.onActivity({tool:'review_read',path:'caller.js'});options.onDelta('Thinking');return {status:200,body:{text:options.jsonSchema?JSON.stringify(plan):'Follow-up answer'}};}};
 const service=createAgentGuideService(snapshots,ai);
 assert.equal(repositoryGuideTimeoutMs(1),5*60_000);
 assert.equal(repositoryGuideTimeoutMs(90),45*60_000);
@@ -16,23 +18,23 @@ const main='main-conversation-01';
 service.start({requestId:main,snapshotId:'s',selectedPath:'a.js'});
 const completed=await service.runs.wait(main);assert.equal(completed.status,'completed');assert.equal(completed.result.guide.totalChangedFiles,2);
 assert.equal(service.conversation(main).guide.fileOverviews['a.js'],'a.js changes this behavior.');
-assert.equal(calls[0].options.turnTimeoutMs,5*60_000);
-service.start({requestId:main,snapshotId:'s',selectedPath:'a.js'});assert.equal(calls.length,1);
+assert.equal(calls[1].options.turnTimeoutMs,5*60_000);
+service.start({requestId:main,snapshotId:'s',selectedPath:'a.js'});assert.equal(calls.length,2);
 service.selectStep(main,1);
 const child='child-conversation-01';
 service.question({requestId:child,conversationId:main,question:'Explain this more',step:0,branch:true});
 await service.runs.wait(child);
-assert.equal(calls[1].options.turnTimeoutMs,undefined);
+assert.equal(calls[2].options.turnTimeoutMs,undefined);
 assert.equal(service.conversation(main).step,1);
 assert.equal(service.conversation(main).messages.length,0);
 assert.equal(service.conversation(child).step,0);
 assert.equal(service.conversation(child).parentId,main);
-assert.equal(calls[1].options.forkSessionKey,'repository:s:'+main);
+assert.equal(calls[2].options.forkSessionKey,'repository:s:'+main);
 assert.equal(service.conversation(child).messages.length,2);
 service.question({requestId:'followup-request-01',conversationId:child,question:'An example?'});
 await service.runs.wait('followup-request-01');
-assert.equal(calls[2].options.forkSessionKey,undefined);
-assert.equal(calls[2].options.sessionKey,'repository:s:'+child);
+assert.equal(calls[3].options.forkSessionKey,undefined);
+assert.equal(calls[3].options.sessionKey,'repository:s:'+child);
 assert.equal(service.conversation(child).messages.length,4);
 assert(!('threadId' in service.conversation(child)));
 assert.throws(()=>service.selectStep(main,10),error=>error.status===400);
@@ -41,6 +43,7 @@ assert.throws(()=>service.start({requestId:main,snapshotId:'s',selectedPath:'b.j
 assert.equal(service.list('s').length,2);
 let repairCalls=0;
 const repairing=createAgentGuideService(snapshots,{async generate(prompt,options){
+ if(options.parallelKey)return overviewReply(prompt);
  repairCalls++;options.onThread('repair-thread');
  if(repairCalls===1){const invalid=structuredClone(plan);invalid.steps[1].files.push('b.js');return {status:200,body:{text:JSON.stringify(invalid)}};}
  assert.match(prompt,/appears more than once/);
@@ -51,7 +54,7 @@ assert.equal((await repairing.runs.wait('repair-request-0001')).status,'complete
 const manyFiles=Array.from({length:90},(_,i)=>({path:`file-${i}.js`,id:`many-${i}`,lines:[['added','1',`value${i}`]]}));
 const manyRepository={snapshot:{...snapshot,files:manyFiles},manifest:manyFiles.map(file=>({path:file.path,fileId:file.id,changed:true,available:true})),read:()=>({source:'value',version:'v'})};
 let largeCalls=0;
-const manyService=createAgentGuideService({getRepository:()=>manyRepository},{async generate(prompt,options){largeCalls++;return {status:200,body:{text:JSON.stringify({title:'Large change',summary:'Related files',assumptions:[],fileOverviews:[],steps:[{title:'Review the change',explanation:'These files implement the same behavior.',files:manyFiles.map(file=>file.path),citations:[]}]})}};}});
+const manyService=createAgentGuideService({getRepository:()=>manyRepository},{async generate(prompt,options){if(options.parallelKey)return overviewReply(prompt);largeCalls++;assert.match(prompt,/file-0.js changes this behavior/);return {status:200,body:{text:JSON.stringify({title:'Large change',summary:'Related files',assumptions:[],steps:[{title:'Review the change',explanation:'These files implement the same behavior.',files:manyFiles.map(file=>file.path),citations:[]}]})}};}});
 manyService.start({requestId:'large-guide-request-01',snapshotId:'s'});
 assert.equal((await manyService.runs.wait('large-guide-request-01')).status,'completed');
 assert.equal(largeCalls,1,'A 90-file guide must not retry because individual overviews are missing');

@@ -11,7 +11,7 @@ async page => {
   else if(path==='/api/config')body={aiEnabled:true,provider:'codex',capabilities:{repositoryGuide:true}};
   else if(path==='/api/models')body={models:[]};
   else if(path==='/api/guide/start'){
-   starts++;rootId=input.requestId;conversations[rootId]={id:rootId,snapshotId:snapshot.snapshotId,parentId:null,title:guide.title,step:0,guide:null,messages:[],runId:rootId};runs[rootId]={id:rootId,conversationId:rootId,status:'running',text:'',revision:1};body={run:runs[rootId]};
+   starts++;rootId=input.requestId;conversations[rootId]={id:rootId,snapshotId:snapshot.snapshotId,parentId:null,title:guide.title,step:0,guide:null,fileOverviews:{'a.js':'This file exports the changed constant used by its caller.'},overviewStatus:{'a.js':'ready'},messages:[],runId:rootId};runs[rootId]={id:rootId,conversationId:rootId,status:'running',text:'',revision:1,progress:{phase:'overviews',completed:1,total:1,ready:1}};body={run:runs[rootId]};
   }else if(path==='/api/guide/lesson'){
    runs[input.requestId]={id:input.requestId,conversationId:input.conversationId,status:'failed',error:'Audio chapter unavailable in this mock.',revision:1};body={run:runs[input.requestId]};
   }else if(path==='/api/guide/run'){
@@ -30,6 +30,7 @@ async page => {
  await page.setViewportSize({width:1440,height:900});await page.goto(base);await page.getByRole('heading',{name:'a.js',exact:true}).waitFor();
  await page.getByRole('button',{name:'Code guide',exact:true}).click();await page.getByRole('button',{name:'Start walkthrough',exact:true}).click();
  await page.getByRole('button',{name:'Stop',exact:true}).waitFor();await page.reload();await page.getByRole('heading',{name:'a.js',exact:true}).waitFor();await page.getByRole('button',{name:'Code guide',exact:true}).click();
+ await page.getByRole('tab',{name:'Overview'}).click();await page.getByText('This file exports the changed constant used by its caller.',{exact:true}).waitFor();
  if(starts!==1)throw Error('Reload duplicated guide generation');rootReady=true;
  await page.getByRole('heading',{name:'Intent',exact:true}).waitFor();await page.getByRole('button',{name:'Next',exact:true}).click();
  await page.getByRole('tab',{name:'Overview'}).click();await page.getByText('This file exports the changed constant used by its caller.',{exact:true}).waitFor();

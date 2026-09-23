@@ -156,9 +156,12 @@ function notesContent(file) {
 }
 function renderContent(file) {
   if(state.activeTab==='overview') {
-    const guide=currentWalkRecord()?.guide;
-    const summary=guide?.fileOverviews?.[file.path];
-    return `<section class="file-overview"><h3>File overview</h3>${summary?`<p>${esc(summary)}</p>`:`<p>${guide?'This walkthrough has no separate overview for this file.':'Start a Code guide walkthrough to prepare an overview of this file.'}</p>`}${guide?`<p class="overview-context">${esc(guide.summary)}</p>`:''}</section>`;
+    const record=currentWalkRecord(),guide=record?.guide,status=record?.overviewStatus?.[file.path];
+    const summary=status==='ready'?record.fileOverviews?.[file.path]:status?null:guide?.fileOverviews?.[file.path];
+    const workspace=state.snapshot&&data.agentGuides?.[JSON.stringify([state.snapshot.repoId,state.snapshot.snapshotId])];
+    const preparing=workspace?.pending?.action==='start'&&workspace.pending.recordId===record?.id;
+    const message=status==='skipped'?'Overview skipped for this lockfile.':status==='failed'?'A file-specific overview could not be prepared.':preparing?'Preparing this file’s overview…':guide?'This walkthrough has no file-specific overview for this file.':'Start a Code guide walkthrough to prepare an overview of this file.';
+    return `<section class="file-overview"><h3>File overview</h3><p>${esc(summary||message)}</p>${guide?`<p class="overview-context">${esc(guide.summary)}</p>`:''}</section>`;
   }
   if(state.activeTab==='notes') return notesContent(file);
   const sourceTab=state.activeTab!=='diff', key=sessionKey(state.snapshot,file);

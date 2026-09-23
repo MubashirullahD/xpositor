@@ -13,7 +13,7 @@ export function createGuideRuns({ maxRuns = 24, maxReplyBytes = 256 * 1024 } = {
   }
   function view(run) {
     return structuredClone({ id: run.id, snapshotId: run.input.snapshotId, conversationId: run.input.conversationId,
-      revision: run.revision, status: run.status, text: run.text, activity: run.activity,
+      revision: run.revision, status: run.status, text: run.text, activity: run.activity, progress:run.progress||null,
       result: run.result, error: run.error, createdAt: run.createdAt, finishedAt: run.finishedAt });
   }
   function notify(run) {
@@ -37,7 +37,7 @@ export function createGuideRuns({ maxRuns = 24, maxReplyBytes = 256 * 1024 } = {
     if ([...runs.values()].some(run => run.status === 'running' || run.status === 'stopping')) throw new GuideError('Another guide response is running. Wait or stop it first.', 429, 'GUIDE_RUN_BUSY');
     while (runs.size >= maxRuns) runs.delete(runs.keys().next().value);
     const run = { id, fingerprint, input: JSON.parse(serialized), status: 'running', revision: 1,
-      text: '', activity: null, result: null, error: null, createdAt: new Date().toISOString(), finishedAt: null,
+      text: '', activity: null, progress:null, result: null, error: null, createdAt: new Date().toISOString(), finishedAt: null,
       controller: new AbortController(), listeners: new Set(), failure: null };
     runs.set(id, run);
     run.completion = Promise.resolve().then(async () => {
@@ -58,6 +58,11 @@ export function createGuideRuns({ maxRuns = 24, maxReplyBytes = 256 * 1024 } = {
             if (run.controller.signal.aborted) return;
             run.activity = { tool: String(activity?.tool || '').slice(0, 100), path: typeof activity?.path === 'string' ? activity.path.slice(0, 4096) : null };
             notify(run);
+          },
+          onProgress(progress) {
+            if(run.controller.signal.aborted)return;
+            if(Buffer.byteLength(JSON.stringify(progress))>maxReplyBytes)throw new Error('Guide progress exceeded its size limit.');
+            run.progress=structuredClone(progress);notify(run);
           },
         });
         if (run.failure) throw new Error(run.failure);

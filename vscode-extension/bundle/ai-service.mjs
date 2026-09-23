@@ -8,6 +8,7 @@ export function createAiService(snapshots, env = process.env) {
   let info = resolveAiProvider(env);
   let cachedStatus, statusAt = 0, statusPromise;
   let busy = false;
+  const parallelBusy = new Set();
   async function status(refresh = false) {
     if (!refresh && cachedStatus && Date.now() - statusAt < 30_000) return cachedStatus;
     if (statusPromise) return statusPromise;
@@ -33,11 +34,11 @@ export function createAiService(snapshots, env = process.env) {
     return {...await listProviderModels(info,{env,refresh}),provider:info.provider};
   }
 
-  async function generate(prompt, { history = [], sessionKey, signal, onDelta, jsonSchema, model, effort, repositoryTools, onActivity, forkSessionKey, forkThreadId, resumeThreadId, onThread, turnTimeoutMs } = {}) {
+  async function generate(prompt, { history = [], sessionKey, signal, onDelta, jsonSchema, model, effort, repositoryTools, onActivity, forkSessionKey, forkThreadId, resumeThreadId, onThread, turnTimeoutMs, parallelKey } = {}) {
     prompt = `${GUIDE_INSTRUCTIONS}\n\n${prompt}`;
-    if (busy) return { status: 429, body: { error: 'Another explanation is running. Stop it or wait before asking again.' } };
+    if (parallelKey ? busy || parallelBusy.has(parallelKey) || parallelBusy.size>=4 : busy || parallelBusy.size) return { status: 429, body: { error: 'Another explanation is running. Stop it or wait before asking again.' } };
     if (Buffer.byteLength(prompt) > MAX_CONTEXT) throw new SnapshotError('The selected code exceeds the guide context limit. Choose fewer files.', 413, 'AI_CONTEXT_LIMIT');
-    busy = true;
+    if(parallelKey)parallelBusy.add(parallelKey);else busy = true;
     try {
       const config = await status();
       if (!config.aiEnabled) return { status: 503, body: { error: config.message } };
@@ -51,7 +52,7 @@ export function createAiService(snapshots, env = process.env) {
         effort ||= choice.defaultEffort;
       }
       if (repositoryTools && info.provider !== 'codex') return { status: 400, body: { error: 'Repository exploration currently requires Codex with a ChatGPT subscription. Select Codex on the laptop.' } };
-      if (info.provider !== 'api') return await answerWithCli(info, { prompt, history }, { env, sessionKey:sessionKey?(repositoryTools?sessionKey:`${sessionKey}:${model||'default'}:${effort||'default'}`):undefined, signal, onDelta, jsonSchema, model, effort, repositoryTools, onActivity, forkSessionKey, forkThreadId, resumeThreadId, onThread, turnTimeoutMs });
+      if (info.provider !== 'api') return await answerWithCli(info, { prompt, history }, { env, sessionKey:sessionKey?(repositoryTools?sessionKey:`${sessionKey}:${model||'default'}:${effort||'default'}`):undefined, signal, onDelta, jsonSchema, model, effort, repositoryTools, onActivity, forkSessionKey, forkThreadId, resumeThreadId, onThread, turnTimeoutMs, parallelKey });
       // API mode is deliberately opt-in. Auto detection never selects an API key.
       const historyMessages = history.map((item) => ({ role: item.role, content: item.text }));
       const timeout = AbortSignal.timeout(90_000);
@@ -68,7 +69,7 @@ export function createAiService(snapshots, env = process.env) {
       return { status: 200, body: { text, model: payload.model || config.model, billing: 'api' } };
     } catch (error) {
       return { status: signal?.aborted ? 499 : 502, body: { error: signal?.aborted ? 'Stopped.' : error.name === 'TimeoutError' ? 'The explanation timed out. Try a smaller question.' : error.message || 'The guide could not finish.' } };
-    } finally { busy = false; }
+    } finally {if(parallelKey)parallelBusy.delete(parallelKey);else busy = false; }
   }
 
   async function answer(input, options = {}) {

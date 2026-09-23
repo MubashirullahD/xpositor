@@ -18,14 +18,14 @@ try{
  const snapshot=snapshots.capture('all',{reuse:true});
  const plan={title:'A change',summary:'Review a.js',assumptions:[],fileOverviews:[{path:'a.js',summary:'This file changes its exported value.'}],steps:[{title:'Read it',explanation:'a.js changed.',files:['a.js'],citations:[{path:'a.js',side:'new',startLine:1,endLine:1}]}]};
  const calls=[];let stall=false;
- const ai={async generate(prompt,options){calls.push(options);options.onThread(options.resumeThreadId||'provider-thread-original');if(stall)return new Promise((_,reject)=>options.signal.addEventListener('abort',()=>reject(new Error('Stopped'))));return {status:200,body:{text:options.jsonSchema?JSON.stringify(plan):'Continued.'}};}};
+ const ai={async generate(prompt,options){calls.push(options);options.onThread?.(options.resumeThreadId||'provider-thread-original');if(stall)return new Promise((_,reject)=>options.signal.addEventListener('abort',()=>reject(new Error('Stopped'))));return {status:200,body:{text:options.parallelKey?JSON.stringify({files:[{path:'a.js',summary:'This file changes its exported value.'}]}):options.jsonSchema?JSON.stringify(plan):'Continued.'}};}};
  const first=createAgentGuideService(snapshots,ai,{storage});const main='persistent-main-0001';
  first.start({requestId:main,snapshotId:snapshot.snapshotId});await first.runs.wait(main);
  assert.equal(statSync(join(root,'.state',snapshots.repoId,'conversations.json')).mode&0o777,0o600);
  const restoredSnapshots=makeSnapshots();const second=createAgentGuideService(restoredSnapshots,ai,{storage});
  assert.equal(restoredSnapshots.capture('all',{reuse:true}).snapshotId,snapshot.snapshotId);
  assert.equal(second.conversation(main).guide.title,'A change');
- second.start({requestId:main,snapshotId:snapshot.snapshotId});assert.equal(calls.length,1,'Completed request must not replay after restart');
+ second.start({requestId:main,snapshotId:snapshot.snapshotId});assert.equal(calls.length,2,'Completed request must not replay after restart');
  second.question({requestId:'persistent-followup-1',conversationId:main,question:'Continue'});await second.runs.wait('persistent-followup-1');
  assert.equal(calls.at(-1).resumeThreadId,'provider-thread-original');
  second.question({requestId:'persistent-branch-01',conversationId:main,question:'Explore',branch:true});await second.runs.wait('persistent-branch-01');

@@ -19,6 +19,8 @@ const revision = reconnected[0].revision;
 assert.equal(registry.get(id, revision), null);
 callbacks.onActivity({ tool: 'review_read', path: 'caller.js' });
 assert.equal(registry.get(id).activity.path, 'caller.js');
+callbacks.onProgress({phase:'overviews',completed:1,total:3,fileOverviews:{'a.js':'Ready'},overviewStatus:{'a.js':'ready'}});
+assert.equal(registry.get(id).progress.fileOverviews['a.js'],'Ready');
 finish({ text: 'Final' });
 assert.equal((await registry.wait(id)).status, 'completed');
 assert.equal(registry.start(id, input, execute).status, 'completed'); assert.equal(executions, 1);

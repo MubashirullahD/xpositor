@@ -6,19 +6,21 @@ import { errorMessage } from './transport.js';
 const idValid = value => typeof value === 'string' && /^[a-zA-Z0-9_-]{16,80}$/.test(value);
 const text = (value, max = 8000) => typeof value === 'string' ? value.slice(0, max) : '';
 const keyFor = snapshot => JSON.stringify([snapshot.repoId, snapshot.snapshotId]);
+const overviewMap = value => Object.fromEntries(Object.entries(value||{}).filter(([path,summary])=>typeof path==='string'&&typeof summary==='string').slice(0,2000).map(([path,summary])=>[text(path,4096),text(summary,800)]));
+const overviewStatuses = value => Object.fromEntries(Object.entries(value||{}).filter(([path,status])=>typeof path==='string'&&['ready','skipped','failed'].includes(status)).slice(0,2000));
 export function sanitizeAgentWorkspace(value) {
   const records = {};
   for (const record of Object.values(value?.records || {}).slice(0, 128)) {
     if (!idValid(record?.id) || typeof record.snapshotId !== 'string') continue;
     let guide = null;
     if (record.guide && Array.isArray(record.guide.steps) && record.guide.steps.length && record.guide.steps.length <= 2000) {
-      guide = { title:text(record.guide.title,140),summary:text(record.guide.summary,4000),assumptions:(Array.isArray(record.guide.assumptions)?record.guide.assumptions:[]).filter(v=>typeof v==='string').slice(0,30),fileOverviews:Object.fromEntries(Object.entries(record.guide.fileOverviews||{}).filter(([path,summary])=>typeof path==='string'&&typeof summary==='string').slice(0,2000).map(([path,summary])=>[text(path,4096),text(summary,800)])),
+      guide = { title:text(record.guide.title,140),summary:text(record.guide.summary,4000),assumptions:(Array.isArray(record.guide.assumptions)?record.guide.assumptions:[]).filter(v=>typeof v==='string').slice(0,30),fileOverviews:overviewMap(record.guide.fileOverviews),
         steps:record.guide.steps.filter(step=>step&&typeof step==='object').map(step=>({title:text(step.title,180),explanation:text(step.explanation,6000),files:(Array.isArray(step.files)?step.files:[]).slice(0,2000).filter(f=>f&&typeof f.path==='string'&&typeof f.fileId==='string').map(f=>({path:f.path,fileId:f.fileId})),citations:(Array.isArray(step.citations)?step.citations:[]).slice(0,30).filter(c=>c&&typeof c.path==='string'&&['new','old'].includes(c.side)&&Number.isInteger(c.startLine)&&Number.isInteger(c.endLine)&&c.startLine>0&&c.endLine>=c.startLine&&c.endLine-c.startLine<80).map(c=>({path:c.path,fileId:typeof c.fileId==='string'?c.fileId:null,side:c.side,startLine:c.startLine,endLine:c.endLine}))})),
         coverage:(Array.isArray(record.guide.coverage)?record.guide.coverage:[]).slice(0,2000).filter(c=>c&&typeof c==='object').map(c=>({path:text(c.path,4096),sourceRead:Boolean(c.sourceRead),diffExamined:Boolean(c.diffExamined),reason:text(c.reason,500)})),
         totalChangedFiles:Math.max(0,Number(record.guide.totalChangedFiles)||0) };
     }
     if(guide&&!guide.steps.length)guide=null;
-    records[record.id] = {id:record.id,snapshotId:record.snapshotId,parentId:idValid(record.parentId)?record.parentId:null,title:text(record.title,140),guide,lessons:sanitizeLessons(record.lessons),lessonPosition:Object.fromEntries(Object.entries(record.lessonPosition||{}).filter(([key,n])=>/^\d{1,4}$/.test(key)&&Number.isInteger(n)&&n>=0&&n<8)),step:Math.max(0,Math.min((guide?.steps.length||1)-1,Number.isInteger(record.step)?record.step:0)),finished:Boolean(record.finished),scroll:Number.isFinite(record.scroll)?Math.max(0,record.scroll):0,overviewOpen:Boolean(record.overviewOpen),draft:text(record.draft),runId:idValid(record.runId)?record.runId:null,messages:(Array.isArray(record.messages)?record.messages:[]).filter(m=>m&&['user','assistant'].includes(m.role)&&typeof m.text==='string').slice(-2000).map(m=>({role:m.role,text:text(m.text,256*1024)}))};
+    records[record.id] = {id:record.id,snapshotId:record.snapshotId,parentId:idValid(record.parentId)?record.parentId:null,title:text(record.title,140),guide,fileOverviews:overviewMap(record.fileOverviews),overviewStatus:overviewStatuses(record.overviewStatus),lessons:sanitizeLessons(record.lessons),lessonPosition:Object.fromEntries(Object.entries(record.lessonPosition||{}).filter(([key,n])=>/^\d{1,4}$/.test(key)&&Number.isInteger(n)&&n>=0&&n<8)),step:Math.max(0,Math.min((guide?.steps.length||1)-1,Number.isInteger(record.step)?record.step:0)),finished:Boolean(record.finished),scroll:Number.isFinite(record.scroll)?Math.max(0,record.scroll):0,overviewOpen:Boolean(record.overviewOpen),draft:text(record.draft),runId:idValid(record.runId)?record.runId:null,messages:(Array.isArray(record.messages)?record.messages:[]).filter(m=>m&&['user','assistant'].includes(m.role)&&typeof m.text==='string').slice(-2000).map(m=>({role:m.role,text:text(m.text,256*1024)}))};
   }
   const pending = value?.pending;
   return {records,activeId:idValid(value?.activeId)?value.activeId:'',pending:pending&&idValid(pending.input?.requestId)&&['start','question','lesson'].includes(pending.action)?{action:pending.action,input:JSON.parse(JSON.stringify(pending.input)),recordId:text(pending.recordId,80),acknowledged:Boolean(pending.acknowledged)}:null};
@@ -26,6 +28,7 @@ export function sanitizeAgentWorkspace(value) {
 
 export function createAgentGuideUI({getState,getData,save,render,apiFetch,jump}) {
   let polling=false,error='',activity='',partial='',retryTimer;
+  const seenProgress=new Map();
   const attemptedLessons=new Set();
   const workspace=()=>{const state=getState();if(!state.snapshot)return null;getData().agentGuides||={};return getData().agentGuides[keyFor(state.snapshot)]||=( {records:{},activeId:'',pending:null} );};
   const current=()=>{const w=workspace();return w?.records[w.activeId];};
@@ -53,7 +56,7 @@ export function createAgentGuideUI({getState,getData,save,render,apiFetch,jump})
       ${guide?`<details class="agent-overview" ${record.overviewOpen?'open':''}><summary>${esc(guide.title)}</summary><p>${esc(guide.summary)}</p><p>${guide.totalChangedFiles} changed files in the plan.</p>${guide.assumptions.map(a=>`<p>${esc(a)}</p>`).join('')}${unexamined.length?`<details><summary>${unexamined.length} files not examined</summary><ul>${unexamined.map(f=>`<li>${esc(f.path)}${f.reason?': '+esc(f.reason):''}</li>`).join('')}</ul></details>`:''}<ol>${guide.steps.map((s,i)=>`<li><button class="agent-step-link" data-agent-step="${i}">${esc(s.title)}</button></li>`).join('')}</ol></details>
       ${record.lessons?.[record.step]?'':`<p class="eyebrow">${record.parentId?'EXPLORING':'STEP '+(record.step+1)+' OF '+guide.steps.length}</p><h3 id="agent-step-title" tabindex="-1">${esc(step.title)}</h3><p class="step-explanation">${esc(step.explanation)}</p>
       <div class="guide-citations">${step.citations.map((c,i)=>`<button class="secondary-button" data-agent-citation="${i}">${esc(c.path)} · ${c.side} ${c.startLine}–${c.endLine}</button>`).join('')}</div>`}
-      ${!record.lessons?.[record.step]&&!record.parentId?`<div class="walk-controls"><button class="secondary-button" data-agent="previous" ${record.step===0?'disabled':''}>Back</button><button class="primary-button" data-agent="next" ${record.finished?'disabled':''}>${record.finished?'Walkthrough complete ✓':record.step===guide.steps.length-1?'Finish':'Next'}</button></div>`:''}`:'<h3>Putting the walkthrough together</h3>'}
+      ${!record.lessons?.[record.step]&&!record.parentId?`<div class="walk-controls"><button class="secondary-button" data-agent="previous" ${record.step===0?'disabled':''}>Back</button><button class="primary-button" data-agent="next" ${record.finished?'disabled':''}>${record.finished?'Walkthrough complete ✓':record.step===guide.steps.length-1?'Finish':'Next'}</button></div>`:''}`:`<h3>${activity.startsWith('Preparing file overviews')?'Preparing file overviews':'Putting the walkthrough together'}</h3><p>Open a file’s Overview tab as soon as its summary is ready.</p>`}
       ${guide?`${record.lessons?.[record.step]?player.html()+`<button class="agent-step-link" data-agent="next" ${record.finished?'disabled':''}>${record.finished?'Chapter complete ✓':record.step===guide.steps.length-1?'Finish walkthrough':'Next chapter'}</button>`:`<p class="agent-activity">${error?'This chapter is not ready yet.':!enabled()?'Reconnect to prepare this chapter and its audio.':'Preparing this chapter and its audio…'}</p>${error?`<button class="secondary-button" data-agent="lesson" ${pending||!enabled()?'disabled':''}>Retry chapter</button>`:''}`}`:''}
       <div class="walk-chat" role="log" aria-live="polite">${record.messages.map(m=>`<div class="chat-message ${m.role}"><div class="message-bubble">${esc(m.text)}</div></div>`).join('')}${pending&&w.pending.recordId===record.id&&guide&&pending&&w.pending.action!=='lesson'&&partial?`<div class="chat-message assistant"><div class="message-bubble">${esc(partial)}</div></div>`:''}</div>
       ${status}
@@ -69,7 +72,7 @@ export function createAgentGuideUI({getState,getData,save,render,apiFetch,jump})
   async function start() {
     if(!enabled()||workspace().pending)return;
     const state=getState(),id=randomId();
-    return submit('start',{requestId:id,snapshotId:state.snapshot.snapshotId,selectedPath:state.snapshot.files.find(f=>f.id===state.selectedFile)?.path,...choices()}, {id,snapshotId:state.snapshot.snapshotId,parentId:null,title:'Main walkthrough',step:0,guide:null,messages:[],draft:'',runId:id});
+    return submit('start',{requestId:id,snapshotId:state.snapshot.snapshotId,selectedPath:state.snapshot.files.find(f=>f.id===state.selectedFile)?.path,...choices()}, {id,snapshotId:state.snapshot.snapshotId,parentId:null,title:'Main walkthrough',step:0,guide:null,fileOverviews:{},overviewStatus:{},messages:[],draft:'',runId:id});
   }
   async function ask(branch=false) {
     const parent=current();if(!parent?.draft.trim()||!enabled()||workspace().pending)return;
@@ -86,7 +89,8 @@ export function createAgentGuideUI({getState,getData,save,render,apiFetch,jump})
       if(!pending.acknowledged){await request(pending.action,pending.input);pending.acknowledged=true;await save();}
       const {run}=await request(`run?id=${encodeURIComponent(pending.input.requestId)}`);
       if(!run)throw new Error('The laptop did not return this guide run.');
-      activity=run.activity?.path?`Reading ${run.activity.path}`:run.activity?.tool==='review_search'?'Finding related code…':run.status==='stopping'?'Stopping…':'Your guide is thinking…';
+      activity=run.status==='stopping'?'Stopping…':run.progress?.phase==='overviews'?`Preparing file overviews · ${run.progress.completed} of ${run.progress.total} ready`:run.activity?.path?`Reading ${run.activity.path}`:run.activity?.tool==='review_search'?'Finding related code…':'Your guide is thinking…';
+      if(pending.action==='start'&&run.progress){const marker=`${run.progress.phase}:${run.progress.completed}`;if(seenProgress.get(pending.input.requestId)!==marker){const {conversation}=await request(`conversation?id=${encodeURIComponent(pending.recordId)}`);const record=w.records[pending.recordId];if(record){record.fileOverviews=conversation.fileOverviews||record.fileOverviews;record.overviewStatus=conversation.overviewStatus||record.overviewStatus;await save();}seenProgress.set(pending.input.requestId,marker);}}
       partial=run.text||'';error='';
       if(!['running','stopping'].includes(run.status)) {
         const {conversation}=await request(`conversation?id=${encodeURIComponent(pending.recordId)}`);

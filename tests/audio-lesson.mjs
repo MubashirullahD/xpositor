@@ -18,7 +18,7 @@ const old=structuredClone(lesson);old.segments[0].citation={path:'a.js',side:'ol
 assert.deepEqual(sanitizeLessons({0:valid})[0],valid);assert.deepEqual(sanitizeLessons({0:{segments:[null]}}),{});
 const plan={title:'Review',summary:'Change',assumptions:[],fileOverviews:[{path:'a.js',summary:'The value changes.'}],steps:[{title:'Value',explanation:'Value changes',files:['a.js'],citations:[]}]};
 let calls=0;
-const inMemory=createAgentGuideService({getRepository:()=>repository},{async generate(prompt,options){calls++;options.onThread?.('thread');return {status:200,body:{text:JSON.stringify(options.jsonSchema.properties.segments?lesson:plan)}};}});
+const inMemory=createAgentGuideService({getRepository:()=>repository},{async generate(prompt,options){calls++;options.onThread?.('thread');return {status:200,body:{text:JSON.stringify(options.parallelKey?{files:[{path:'a.js',summary:'The value changes.'}]}:options.jsonSchema.properties.segments?lesson:plan)}};}});
 inMemory.start({requestId:'lesson-test-main-01',snapshotId:'snapshot'});await inMemory.runs.wait('lesson-test-main-01');
 inMemory.lesson({requestId:'lesson-test-build-01',conversationId:'lesson-test-main-01',step:0});assert.equal((await inMemory.runs.wait('lesson-test-build-01')).status,'completed');
 assert.equal(inMemory.conversation('lesson-test-main-01').lessons[0].segments.length,4);

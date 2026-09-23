@@ -173,7 +173,7 @@ function cliPrompt(input) {
 const codexClients = new Map();
 function codexClient(command, options) {
   const repositoryMode = Boolean(options.repositoryTools);
-  const key = `${command}:${repositoryMode ? 'repository' : 'text'}`;
+  const key = `${command}:${repositoryMode ? 'repository' : 'text'}:${options.parallelKey||'main'}`;
   let client = codexClients.get(key);
   if (!client || client.closed) {
     client = new CodexReviewClient(command, { ...options, repositoryMode });
