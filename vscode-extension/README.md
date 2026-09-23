@@ -46,6 +46,15 @@ The extension asks the companion for an available local port by default, which a
 
 Set `patchwork.aiProvider` to `codex` or `claude` to reuse the CLI login already authenticated on the laptop. `auto` tries a verified Codex subscription login, then Claude Code. It never falls back to an API key automatically. Patchwork invokes the CLI locally; credentials and subscription sessions never go to the phone. Codex uses ephemeral app-server threads with tools disabled. Claude Code uses a tool-free invocation. API billing requires explicitly choosing `api`.
 
+The pairing sidebar checks the companion's actual provider login and displays the connected provider. Use **Recheck connection** after installing or signing in, and **Choose provider** to open the setting; changing the setting restarts the companion. On Windows, installing only the Codex VS Code extension may leave no `codex` command for Patchwork. Install the CLI separately in PowerShell, sign in, then reload VS Code so its extension host gets the updated PATH:
+
+```powershell
+npm install -g @openai/codex
+codex
+```
+
+Choose ChatGPT sign-in when Codex starts. Patchwork supports npm's Windows `.cmd` launchers without invoking a shell. If Codex is still unavailable, run `where.exe codex` in PowerShell and check the reported location. For Claude Code, install its CLI and verify `claude auth status`. A connected Claude account gives file explanations and the classic walkthrough; repository-wide agent guides and model selection currently require Codex.
+
 The extension never stages, edits, resets, or commits files. It only launches the local companion and optional tunnel, then manages their lifetimes.
 
 ## Build and install a local VSIX

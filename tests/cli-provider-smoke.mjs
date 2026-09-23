@@ -4,6 +4,8 @@ import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { answerWithCli, childEnvironment, inspectAiProvider, resolveAiProvider, runCommand } from '../providers.mjs';
+import { cliInvocation } from '../cli-launch.mjs';
+import { mkdir } from 'node:fs/promises';
 
 const tempRoot = await mkdtemp(join(tmpdir(), 'patchwork-cli-provider-'));
 const fakeCli = join(tempRoot, 'fake-ai');
@@ -19,6 +21,14 @@ else {
 `);
 await chmod(fakeCli, 0o755);
 try {
+ const codexScript=join(tempRoot,'node_modules','@openai','codex','bin','codex.js');
+ await mkdir(join(tempRoot,'node_modules','@openai','codex','bin'),{recursive:true});
+ await writeFile(codexScript,'console.log("ok")');
+ const windowsShim=join(tempRoot,'codex.cmd');
+ await writeFile(windowsShim,'@echo off\r\n');
+ assert.deepEqual(cliInvocation(windowsShim),{command:process.execPath,prefix:[codexScript]});
+ assert.equal(resolveAiProvider({PATCHWORK_AI_PROVIDER:'codex',PATCHWORK_CODEX_BIN:windowsShim}).available,true);
+ assert.equal((await runCommand(windowsShim,['--version'])).ok,true);
  const env={...process.env,OPENAI_API_KEY:'must-not-bill',ANTHROPIC_API_KEY:'must-not-bill',ANTHROPIC_AUTH_TOKEN:'must-not-bill'};
  assert.equal(childEnvironment('codex',env).OPENAI_API_KEY,undefined);
  assert.equal(childEnvironment('claude',env).ANTHROPIC_API_KEY,undefined);
@@ -31,5 +41,5 @@ try {
  assert.equal((await inspectAiProvider(info,{env:{...env,TEST_API:'yes'},spawn:fakeSpawn})).available,false);
  const aborted=new AbortController();aborted.abort();
  assert.equal((await runCommand(process.execPath,['-e','setTimeout(()=>{},5000)'],{signal:aborted.signal})).reason,'aborted');
- console.log('Providers: no automatic API billing, auth gates, tool isolation, stdin prompts and cancellation passed.');
+ console.log('Providers: Windows npm shim, no automatic API billing, auth gates, tool isolation, stdin prompts and cancellation passed.');
 } finally { await rm(tempRoot,{recursive:true,force:true}); }

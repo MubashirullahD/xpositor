@@ -45,6 +45,7 @@ assert.deepEqual(created.body.guide, guide);
 assert.deepEqual(created.body.scope.includedPaths, ['src/entry.js', 'src/helper.js']);
 assert.equal(created.body.snapshotId, 'snap-1');
 assert.equal(calls[0].options.jsonSchema, GUIDE_SCHEMA);
+assert.equal(calls[0].options.turnTimeoutMs, 10 * 60_000);
 assert.match(calls[0].prompt, /"selectedId":"entry"/);
 assert.match(calls[0].prompt, /"id":"helper"/);
 
@@ -57,6 +58,7 @@ assert.equal(resumed.status, 200);
 assert.equal(resumed.body.text, 'The helper is called by the entry point.');
 assert.equal(resumed.body.stepIndex, 0);
 assert.deepEqual(calls[1].options.history, [{ role: 'user', text: 'What does the helper do?' }, { role: 'assistant', text: 'It returns a value.' }]);
+assert.equal(calls[1].options.turnTimeoutMs, 10 * 60_000);
 assert.match(calls[1].prompt, /No caller is included in this immutable context/);
 assert.match(calls[1].prompt, /illustrative example/);
 

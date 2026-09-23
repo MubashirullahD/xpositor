@@ -25,6 +25,7 @@ class Launcher {
     this.fs = dependencies.fs || fs;
     this.networkInterfaces = dependencies.networkInterfaces || networkInterfaces;
     this.spawn = dependencies.spawn || spawn;
+    this.fetch = dependencies.fetch || fetch;
     this.randomBytes = dependencies.randomBytes || crypto.randomBytes;
     this.setTimeout = dependencies.setTimeout || setTimeout;
     this.clearTimeout = dependencies.clearTimeout || clearTimeout;
@@ -35,6 +36,7 @@ class Launcher {
     this.lastError = '';
     this.voiceStatus = 'idle';
     this.voiceError = '';
+    this.aiStatus = { state: 'idle' };
     this.statusBar = undefined;
   }
 
@@ -50,6 +52,9 @@ class Launcher {
     this.context.subscriptions.push(api.commands.registerCommand('patchwork.start', () => { void this.revealPairingView(); void this.start(); }));
     this.context.subscriptions.push(api.commands.registerCommand('patchwork.stop', () => this.stop(true)));
     this.context.subscriptions.push({ dispose: () => this.stop(false) });
+    if (api.workspace.onDidChangeConfiguration) this.context.subscriptions.push(api.workspace.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration('patchwork.aiProvider') && this.session) void this.restartForProvider();
+    }));
     if (api.workspace.getConfiguration('patchwork').get('autoStart', false)) { void this.revealPairingView(); void this.start(); }
   }
 
@@ -62,6 +67,7 @@ class Launcher {
   async startNewSession() {
     if (this.session?.phase === 'starting' || this.session?.phase === 'ready') { this.renderPairingView(); return; }
     if (this.session) await this.stop(false, { preserveError: true });
+    this.aiStatus = { state: 'idle' };
     const root = await chooseRepositoryFolder(this.vscode, this.fs);
     if (!root) return this.showFailure('Patchwork needs an open Git repository. In a multi-root workspace, choose the repository to review.');
     const config = this.vscode.workspace.getConfiguration('patchwork', root.uri);
@@ -156,6 +162,36 @@ class Launcher {
     session.startupTimer = undefined;
     this.lastError = '';
     this.setStatus('ready');
+    void this.refreshAiStatus(session);
+  }
+
+  async refreshAiStatus(session = this.session) {
+    if (!session || !session.port || !this.owns(session)) return;
+    this.aiStatus = { state: 'checking' };
+    this.renderPairingView();
+    try {
+      const response = await this.fetch(`http://127.0.0.1:${session.port}/api/config?refresh=true`, {
+        headers: { 'x-patchwork-token': session.token },
+        signal: AbortSignal.timeout(12000),
+      });
+      if (!response.ok) throw new Error(`Provider check returned HTTP ${response.status}.`);
+      const result = await response.json();
+      if (this.owns(session)) {
+        this.aiStatus = { state: result.aiEnabled ? 'connected' : 'unavailable', ...result };
+        this.renderPairingView();
+      }
+    } catch (error) {
+      if (this.owns(session)) {
+        this.aiStatus = { state: 'error', message: `Could not check the AI provider: ${error.message}` };
+        this.renderPairingView();
+      }
+    }
+  }
+
+  async restartForProvider() {
+    if (this.startPromise) await this.startPromise;
+    await this.stop(false);
+    await this.start();
   }
 
   async fail(session, message) {
@@ -215,7 +251,7 @@ class Launcher {
   async revealPairingView() { try { await this.vscode.commands.executeCommand('workbench.view.extension.patchwork'); } catch (error) { this.vscode.window.showErrorMessage(`Patchwork could not open its sidebar: ${error.message}`); } }
   renderPairingView() {
     if (!pairingView) return;
-    try { pairingView.webview.html = pairingHtml({ status: this.status, url: this.session?.pairingUrl || '', root: this.session?.root || '', error: this.lastError, mode:this.session?.mode||(this.transport||this.vscode.workspace.getConfiguration('patchwork').get('transport','lan')), multipleAddresses:(this.session?.addresses?.length||0)>1, voiceStatus:this.voiceStatus === 'idle' && this.voiceInstalled() ? 'ready' : this.voiceStatus, voiceError:this.voiceError }); }
+    try { pairingView.webview.html = pairingHtml({ status: this.status, url: this.session?.pairingUrl || '', root: this.session?.root || '', error: this.lastError, mode:this.session?.mode||(this.transport||this.vscode.workspace.getConfiguration('patchwork').get('transport','lan')), multipleAddresses:(this.session?.addresses?.length||0)>1, voiceStatus:this.voiceStatus === 'idle' && this.voiceInstalled() ? 'ready' : this.voiceStatus, voiceError:this.voiceError, aiStatus:this.aiStatus, aiChoice:this.vscode.workspace.getConfiguration('patchwork').get('aiProvider','auto') }); }
     catch (error) { this.vscode.window.showErrorMessage(`Patchwork could not render its sidebar: ${error.message}`); }
   }
   voiceInstalled() {
@@ -268,6 +304,8 @@ class Launcher {
     this.renderPairingView();
   }
   async handlePairingMessage(message) {
+    if (message.type === 'refresh-ai') { await this.refreshAiStatus(); return; }
+    if (message.type === 'ai-settings') { await this.vscode.commands.executeCommand('workbench.action.openSettings', 'patchwork.aiProvider'); return; }
     if (message.type === 'install-voice') { this.installVoice(); return; }
     if (message.type === 'cloudflared-help') { await this.vscode.env.openExternal(this.vscode.Uri.parse('https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/')); return; }
     if(['lan','tunnel'].includes(message.type)) {
@@ -365,12 +403,18 @@ function pairingHtml(state) {
       ? '<p>Local voice is installed. Refresh the phone page if it is already open.</p>'
       : `<p>Download Kokoro and its voice model to this laptop. Requires Node.js 20+ and npm.</p><button id="install-voice">Install local voice</button>${state.voiceStatus === 'error' ? `<p class="error">${escapeHtml(state.voiceError || 'Voice setup failed. Try again.')}</p>` : ''}`;
   const voicePanel = `<section class="setup"><h2>Spoken walkthrough</h2>${voiceState}</section>`;
+  const ai = state.aiStatus || { state: 'idle' };
+  const aiLabel = ai.state === 'connected' ? `${ai.provider === 'codex' ? 'Codex' : ai.provider === 'claude' ? 'Claude Code' : 'API'} connected · ${ai.billing === 'subscription' ? 'subscription login verified' : 'API billing selected'}`
+    : ai.state === 'checking' ? 'Checking local AI login…'
+      : ai.state === 'idle' ? 'Start the companion to check your AI login.' : escapeHtml(ai.message || 'No subscription CLI is connected.');
+  const aiHelp = '<p class="note">Patchwork needs a separate Codex or Claude Code CLI on this laptop. Installing the Codex VS Code extension alone may not put <code>codex</code> on PATH. On Windows, install Codex CLI with <code>npm install -g @openai/codex</code>, run <code>codex</code> in PowerShell and choose ChatGPT sign-in, then reload VS Code and recheck. For Claude Code, install its CLI and sign in with a Claude subscription. Auto uses verified Codex first, then verified Claude Code.</p>';
+  const aiPanel = `<section class="setup"><h2>AI connection</h2><p>Provider setting: ${escapeHtml(state.aiChoice || 'auto')}</p><p>${aiLabel}</p>${aiHelp}<div class="actions"><button id="refresh-ai">Recheck connection</button><button class="secondary" id="ai-settings">Choose provider</button></div></section>`;
   const content = state.status === 'ready' && state.url
     ? `<h1>Scan to review</h1><p>${lan?'Connect your phone to the same Wi-Fi and scan this link.':'Scan this HTTPS link from any network.'}</p><div class="card">${qrSvg(state.url)}</div><code>${safeUrl}</code><div class="actions"><button id="copy">Copy pairing link</button><button class="secondary" id="open">Open on this laptop</button></div><button class="link" id="stop">Stop companion</button><p class="note"><strong>${lan?'Local-network, read-only companion.':'HTTPS, read-only companion.'}</strong> ${lan?'HTTP is unencrypted. Use a trusted Wi-Fi network. Offline installation requires HTTPS; downloaded code remains readable in the open tab.':''} Keep this pairing link private. Patchwork cannot stage, edit, reset, or commit files.</p>`
     : state.status === 'starting' ? `<h1>${lan?'Starting local review':'Creating secure link'}</h1><div class="state"><span class="spinner"></span><strong>${lan?'Starting the companion…':'Starting the companion and tunnel…'}</strong></div><button class="link" id="stop">Cancel startup</button>`
       : state.status === 'error' ? `<h1>Patchwork needs attention</h1><p class="error">${safeError || 'The companion could not start.'}</p><div class="actions"><button id="retry">Try again</button></div>`
         : '<h1>Pair your phone</h1><p>Choose local LAN for a quick connection or HTTPS tunnel for access from another network.</p>';
-  return `<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'"><style>:root{color-scheme:light dark}body{margin:0;padding:18px 16px 24px;color:var(--vscode-foreground);font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.eyebrow{color:var(--vscode-textLink-foreground);font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}h1{margin:9px 0 8px;font-size:21px;line-height:1.15}h2{font-size:14px;margin:0}p{color:var(--vscode-descriptionForeground);line-height:1.5}.card{display:grid;place-items:center;margin:18px 0 16px;padding:14px;border:1px solid var(--vscode-panel-border);border-radius:10px;background:#fff}svg{display:block;width:min(220px,100%);height:auto}code{display:block;margin:10px 0 8px;padding:10px;overflow-wrap:anywhere;border-radius:5px;background:var(--vscode-textBlockQuote-background);font-size:11px}.transport{padding-top:14px}.actions{display:flex;flex-wrap:wrap;gap:7px}button{padding:7px 10px;border:0;border-radius:4px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);cursor:pointer}button.secondary{background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground)}button.link{margin-top:15px;padding:0;background:transparent;color:var(--vscode-textLink-foreground);text-decoration:underline}button.inline{margin:0}.note{margin-top:18px;padding:10px 11px;border-left:3px solid var(--vscode-textLink-foreground);background:var(--vscode-textBlockQuote-background)}.setup{margin-top:22px;padding-top:16px;border-top:1px solid var(--vscode-panel-border)}.state{display:flex;align-items:center;gap:9px;margin:22px 0;padding:14px;border:1px solid var(--vscode-panel-border);border-radius:8px}.spinner{width:13px;height:13px;border:2px solid var(--vscode-panel-border);border-top-color:var(--vscode-textLink-foreground);border-radius:50%;animation:spin 800ms linear infinite}.error{padding:11px;border-left:3px solid var(--vscode-errorForeground);background:var(--vscode-textBlockQuote-background);overflow-wrap:anywhere}@keyframes spin{to{transform:rotate(360deg)}}</style></head><body><span class="eyebrow">Patchwork · ${safeRoot}</span>${transportButtons}${tunnelNote}${content}${state.multipleAddresses?'<button class="link" id="address">Choose LAN address</button>':''}${voicePanel}<script nonce="${nonce}">const vscode=acquireVsCodeApi();for(const type of ['copy','open','retry','stop','lan','tunnel','address','install-voice','cloudflared-help'])document.getElementById(type)?.addEventListener('click',()=>vscode.postMessage({type}));</script></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'"><style>:root{color-scheme:light dark}body{margin:0;padding:18px 16px 24px;color:var(--vscode-foreground);font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.eyebrow{color:var(--vscode-textLink-foreground);font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}h1{margin:9px 0 8px;font-size:21px;line-height:1.15}h2{font-size:14px;margin:0}p{color:var(--vscode-descriptionForeground);line-height:1.5}.card{display:grid;place-items:center;margin:18px 0 16px;padding:14px;border:1px solid var(--vscode-panel-border);border-radius:10px;background:#fff}svg{display:block;width:min(220px,100%);height:auto}code{display:block;margin:10px 0 8px;padding:10px;overflow-wrap:anywhere;border-radius:5px;background:var(--vscode-textBlockQuote-background);font-size:11px}.transport{padding-top:14px}.actions{display:flex;flex-wrap:wrap;gap:7px}button{padding:7px 10px;border:0;border-radius:4px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);cursor:pointer}button.secondary{background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground)}button.link{margin-top:15px;padding:0;background:transparent;color:var(--vscode-textLink-foreground);text-decoration:underline}button.inline{margin:0}.note{margin-top:18px;padding:10px 11px;border-left:3px solid var(--vscode-textLink-foreground);background:var(--vscode-textBlockQuote-background)}.setup{margin-top:22px;padding-top:16px;border-top:1px solid var(--vscode-panel-border)}.setup code{display:inline;padding:1px 3px;margin:0}.state{display:flex;align-items:center;gap:9px;margin:22px 0;padding:14px;border:1px solid var(--vscode-panel-border);border-radius:8px}.spinner{width:13px;height:13px;border:2px solid var(--vscode-panel-border);border-top-color:var(--vscode-textLink-foreground);border-radius:50%;animation:spin 800ms linear infinite}.error{padding:11px;border-left:3px solid var(--vscode-errorForeground);background:var(--vscode-textBlockQuote-background);overflow-wrap:anywhere}@keyframes spin{to{transform:rotate(360deg)}}</style></head><body><span class="eyebrow">Patchwork · ${safeRoot}</span>${transportButtons}${tunnelNote}${content}${state.multipleAddresses?'<button class="link" id="address">Choose LAN address</button>':''}${aiPanel}${voicePanel}<script nonce="${nonce}">const vscode=acquireVsCodeApi();for(const type of ['copy','open','retry','stop','lan','tunnel','address','install-voice','cloudflared-help','refresh-ai','ai-settings'])document.getElementById(type)?.addEventListener('click',()=>vscode.postMessage({type}));</script></body></html>`;
 }
 function escapeHtml(value) { return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;'); }
 

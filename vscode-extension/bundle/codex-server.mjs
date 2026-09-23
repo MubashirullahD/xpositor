@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { cliInvocation } from './cli-launch.mjs';
 
 const MAX_FRAME = 2 * 1024 * 1024;
 const MAX_REPLY = 256 * 1024;
@@ -42,7 +43,8 @@ export class CodexReviewClient {
       'model_provider="openai"', 'forced_login_method="chatgpt"', 'model_reasoning_effort="medium"',
     ];
     const args = ['app-server', ...config.flatMap((value) => ['-c', value])];
-    this.child = this.spawn(this.command, args, { cwd: this.cwd, env: this.env, shell: false, stdio: ['pipe', 'pipe', 'pipe'] });
+    const invocation = cliInvocation(this.command);
+    this.child = this.spawn(invocation.command, [...invocation.prefix, ...args], { cwd: this.cwd, env: this.env, shell: false, stdio: ['pipe', 'pipe', 'pipe'] });
     let buffer = '';
     this.child.stdout.setEncoding('utf8');
     this.child.stdout.on('data', (chunk) => {

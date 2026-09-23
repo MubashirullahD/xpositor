@@ -35,7 +35,7 @@ export function createWalkthroughUI({getState,getData,save,render,apiFetch,jump}
     preparingWalk=true;prepare('legacy:'+snapshot.snapshotId,'Your walkthrough');pending=true;error='';controller=new AbortController();render();
     try {
       const fileIds=setup.scope==='selected'?[selectedId]:undefined;
-      const response=await apiFetch('/api/walkthrough',{method:'POST',headers:{'content-type':'application/json'},signal:AbortSignal.any([controller.signal,AbortSignal.timeout(120000)]),body:JSON.stringify({model:getState().aiProvider==='codex'?getData().preferences.model||undefined:undefined,effort:getState().aiProvider==='codex'?getData().preferences.effort||undefined:undefined,snapshotId:snapshot.snapshotId,selectedId,fileIds,depth:setup.depth,timeMinutes:setup.timeMinutes})});
+      const response=await apiFetch('/api/walkthrough',{method:'POST',headers:{'content-type':'application/json'},signal:AbortSignal.any([controller.signal,AbortSignal.timeout(11*60*1000)]),body:JSON.stringify({model:getState().aiProvider==='codex'?getData().preferences.model||undefined:undefined,effort:getState().aiProvider==='codex'?getData().preferences.effort||undefined:undefined,snapshotId:snapshot.snapshotId,selectedId,fileIds,depth:setup.depth,timeMinutes:setup.timeMinutes})});
       const body=await response.json();if(!response.ok)throw new Error(errorMessage(body,'The walkthrough could not start.'));
       const walk=sanitizeWalkthrough({...body,fileIds,step:0,understood:[],chats:{},draft:''});if(!walk)throw new Error('The walkthrough response is invalid.');
       getData().walkthroughs[walkthroughKey(snapshot)]=walk;save();
@@ -52,7 +52,7 @@ export function createWalkthroughUI({getState,getData,save,render,apiFetch,jump}
     messages.push({role:'user',text:question});const reply={role:'assistant',text:'',pending:true};messages.push(reply);walk.draft='';pending=true;error='';controller=new AbortController();save();render();
     let lastRender=0;
     try{
-      const response=await apiFetch('/api/walkthrough/followup/stream',{method:'POST',headers:{'content-type':'application/json'},signal:AbortSignal.any([controller.signal,AbortSignal.timeout(120000)]),body:JSON.stringify({model:getState().aiProvider==='codex'?getData().preferences.model||undefined:undefined,effort:getState().aiProvider==='codex'?getData().preferences.effort||undefined:undefined,snapshotId:snapshot.snapshotId,selectedId:walk.selectedId,fileIds:walk.fileIds,guide:walk.guide,stepIndex,question,history})});
+      const response=await apiFetch('/api/walkthrough/followup/stream',{method:'POST',headers:{'content-type':'application/json'},signal:AbortSignal.any([controller.signal,AbortSignal.timeout(11*60*1000)]),body:JSON.stringify({model:getState().aiProvider==='codex'?getData().preferences.model||undefined:undefined,effort:getState().aiProvider==='codex'?getData().preferences.effort||undefined:undefined,snapshotId:snapshot.snapshotId,selectedId:walk.selectedId,fileIds:walk.fileIds,guide:walk.guide,stepIndex,question,history})});
       const body=await readReply(response,(text)=>{reply.text+=text;if(Date.now()-lastRender>100){lastRender=Date.now();render();}});reply.text=body.text;
     }catch(e){reply.error=true;reply.text=controller.signal.aborted?'Stopped.':`Guide unavailable: ${errorMessage(e.message)}`;}
     finally{reply.pending=false;pending=false;controller=null;save();render();}

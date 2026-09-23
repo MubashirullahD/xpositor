@@ -6,6 +6,7 @@ export const WALKTHROUGH_LIMITS = Object.freeze({
   maxHistoryItemChars: 4000,
   maxHistoryBytes: 24 * 1024,
 });
+const WALKTHROUGH_TIMEOUT_MS = 10 * 60_000;
 
 export function createWalkthroughService(snapshots, ai) {
   if (!snapshots || typeof snapshots.get !== 'function' || typeof snapshots.getFile !== 'function') throw new TypeError('Walkthrough service needs a snapshot store.');
@@ -17,7 +18,7 @@ export function createWalkthroughService(snapshots, ai) {
       const context = buildGuideContext(snapshots, input.snapshotId, input.selectedId, input.fileIds);
       const prompt = buildGuidePrompt(context, { depth: input.depth ?? 'standard', timeMinutes: input.timeMinutes ?? 15 });
       assertPromptSize(prompt);
-      const result = await generate(ai, prompt, { ...safeOptions(options), model:input.model, effort:input.effort, jsonSchema: GUIDE_SCHEMA });
+      const result = await generate(ai, prompt, { ...safeOptions(options), model:input.model, effort:input.effort, jsonSchema: GUIDE_SCHEMA, turnTimeoutMs: WALKTHROUGH_TIMEOUT_MS });
       if (result.status !== 200) return result;
       const value = parseGuideResponse(result.body);
       let guide;
@@ -37,7 +38,7 @@ export function createWalkthroughService(snapshots, ai) {
       const history = validateHistory(input.history);
       const prompt = buildStepPrompt(context, guide, input.stepIndex, input.question);
       assertPromptSize(prompt);
-      const result = await generate(ai, prompt, { ...safeOptions(options), model:input.model, effort:input.effort, history });
+      const result = await generate(ai, prompt, { ...safeOptions(options), model:input.model, effort:input.effort, history, turnTimeoutMs: WALKTHROUGH_TIMEOUT_MS });
       if (result.status !== 200) return result;
       if (!result.body || typeof result.body.text !== 'string' || !result.body.text.trim()) return invalidModelResponse(new GuideError('The provider returned an empty follow-up response.', 502, 'GUIDE_EMPTY_RESPONSE'));
       return { status: 200, body: { ...result.body, scope: context.scope, snapshotId: context.snapshotId, selectedId: context.selectedId, stepIndex: input.stepIndex } };

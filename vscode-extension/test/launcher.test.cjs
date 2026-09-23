@@ -12,6 +12,13 @@ Module._load = function patchedLoad(request, parent, isMain) {
 const { Launcher, pairingHtml } = require('../extension.js');
 Module._load = originalLoad;
 
+test('pairing panel explains CLI setup and shows verified provider status', () => {
+  const html = pairingHtml({status:'ready',url:'http://localhost:4321/?token=x',mode:'lan',aiChoice:'auto',aiStatus:{state:'connected',provider:'claude',billing:'subscription'}});
+  assert.match(html,/Claude Code connected · subscription login verified/);
+  assert.match(html,/npm install -g @openai\/codex/);
+  assert.match(html,/refresh-ai/);
+});
+
 class FakeProcess extends EventEmitter {
   constructor() {
     super();
@@ -34,6 +41,7 @@ function makeHarness({ configuration = {transport:'tunnel'}, folders = ['/repo']
   const spawns = [];
   const secrets = new Map();
   const timers = [];
+  const providerChecks = [];
   configuration={transport:'tunnel',...configuration};
   const api = {
     ExtensionMode: { Development: 1 },
@@ -60,6 +68,10 @@ function makeHarness({ configuration = {transport:'tunnel'}, folders = ['/repo']
     extensionDir: '/extension',
     dependencies: {
       fs: fakeFs,
+      fetch: async (url, options) => {
+        providerChecks.push({url,options});
+        return {ok:true,json:async()=>({aiEnabled:true,provider:'claude',billing:'subscription',message:'Claude Code · subscription login'})};
+      },
       networkInterfaces:()=>({wifi:[{address:'192.168.1.10',family:'IPv4',internal:false}]}),
       spawn: (file, args, options) => { const child = new FakeProcess(); spawns.push({ file, args, options, child }); return child; },
       randomBytes: (length) => Buffer.alloc(length, spawns.length + 1),
@@ -68,7 +80,7 @@ function makeHarness({ configuration = {transport:'tunnel'}, folders = ['/repo']
       stopTimeout: 1,
     },
   });
-  return { extension, errors, infos, commands, spawns, timers, secrets };
+  return { extension, errors, infos, commands, spawns, timers, secrets, providerChecks };
 }
 
 async function settle() { await new Promise((resolve) => setImmediate(resolve)); }
@@ -99,6 +111,17 @@ test('quick tunnel becomes ready once and stale callbacks cannot alter a restart
   assert.match(h.extension.session.pairingUrl, /second\.trycloudflare\.com/);
   assert.notEqual(h.extension.session.pairingUrl, firstUrl);
   assert.equal(h.errors.length, 0);
+});
+
+test('ready companion verifies AI login over loopback with its pairing token', async () => {
+  const h = makeHarness({configuration:{transport:'lan'}});
+  await h.extension.start();
+  h.spawns[0].child.stdout.emit('data', Buffer.from('Patchwork companion: http://127.0.0.1:4311\n'));
+  await settle();
+  assert.equal(h.extension.aiStatus.state,'connected');
+  assert.equal(h.extension.aiStatus.provider,'claude');
+  assert.equal(h.providerChecks[0].url,'http://127.0.0.1:4311/api/config?refresh=true');
+  assert.equal(h.providerChecks[0].options.headers['x-patchwork-token'],h.extension.session.token);
 });
 
 test('startup deadline preserves a useful failure after cleanup', async () => {

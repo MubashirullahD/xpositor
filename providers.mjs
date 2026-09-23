@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CodexReviewClient } from './codex-server.mjs';
+import { cliInvocation } from './cli-launch.mjs';
 
 const MAX_OUTPUT = 160 * 1024;
 const DEFAULT_TIMEOUT_MS = 90 * 1000;
@@ -20,17 +21,24 @@ function commandFor(provider, env = process.env) {
     : String(env.PATCHWORK_CLAUDE_BIN || 'claude');
 }
 
-function commandAvailable(command) {
-  if (!command) return false;
-  if (command.includes('/') || command.includes('\\')) return existsSync(command);
+function locateCommand(command) {
+  if (!command) return null;
+  if (command.includes('/') || command.includes('\\')) {
+    if (!existsSync(command)) return null;
+    try { cliInvocation(command); return command; } catch { return null; }
+  }
   try {
-    execFileSync(process.platform === 'win32' ? 'where' : 'which', [command], {
-      stdio: 'ignore',
+    const output = execFileSync(process.platform === 'win32' ? 'where' : 'which', [command], {
+      encoding: 'utf8',
       timeout: 2_000,
     });
-    return true;
+    if (process.platform !== 'win32') return command;
+    for (const candidate of output.split(/\r?\n/).filter(Boolean)) {
+      try { cliInvocation(candidate); return candidate; } catch { /* Try the next installed executable. */ }
+    }
+    return null;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -38,19 +46,22 @@ export function resolveAiProvider(env = process.env) {
   const requested = configuredProvider(env);
   if (requested === 'none') return { requested, provider: 'none', command: null, available: false };
   if (requested !== 'auto') {
+    const found = requested === 'api' ? null : locateCommand(commandFor(requested, env));
     return {
       requested,
       provider: requested,
-      command: requested === 'api' ? null : commandFor(requested, env),
-      available: requested === 'api' ? Boolean(env.OPENAI_API_KEY) : commandAvailable(commandFor(requested, env)),
+      command: requested === 'api' ? null : found || commandFor(requested, env),
+      available: requested === 'api' ? Boolean(env.OPENAI_API_KEY) : Boolean(found),
     };
   }
 
-  if (commandAvailable(commandFor('codex', env))) {
-    return { requested, provider: 'codex', command: commandFor('codex', env), available: true };
+  const codex = locateCommand(commandFor('codex', env));
+  if (codex) {
+    return { requested, provider: 'codex', command: codex, available: true };
   }
-  if (commandAvailable(commandFor('claude', env))) {
-    return { requested, provider: 'claude', command: commandFor('claude', env), available: true };
+  const claude = locateCommand(commandFor('claude', env));
+  if (claude) {
+    return { requested, provider: 'claude', command: claude, available: true };
   }
   return { requested, provider: 'none', command: null, available: false };
 }
@@ -79,6 +90,7 @@ export function childEnvironment(provider, env = process.env) {
 }
 
 export function runCommand(command, args, options = {}) {
+  const invocation = cliInvocation(command);
   const timeoutMs = options.timeoutMs || DEFAULT_TIMEOUT_MS;
   const cwd = options.cwd || process.cwd();
   const env = options.env || process.env;
@@ -87,7 +99,7 @@ export function runCommand(command, args, options = {}) {
     let stdout = '';
     let stderr = '';
     let settled = false;
-    const child = (options.spawn || spawn)(command, args, {
+    const child = (options.spawn || spawn)(invocation.command, [...invocation.prefix, ...args], {
       cwd,
       env,
       shell: false,
@@ -194,7 +206,11 @@ export async function closeProviders() {
 
 export async function inspectAiProvider(info, options = {}) {
   const env = options.env || process.env;
-  if (!info.available) return { ...info, auth: 'unavailable', billing: 'none', message: 'Install Codex or Claude Code and sign in on the laptop to enable explanations.' };
+  if (!info.available) return { ...info, auth: 'unavailable', billing: 'none', message: info.provider === 'codex'
+    ? 'Codex CLI was not found. Install it on this laptop, sign in with ChatGPT, then reload VS Code and recheck.'
+    : info.provider === 'claude'
+      ? 'Claude Code CLI was not found. Install it on this laptop, sign in with a Claude subscription, then reload VS Code and recheck.'
+      : 'No subscription CLI was found. Install Codex or Claude Code on this laptop, sign in, then reload VS Code and recheck.' };
   if (info.provider === 'api') return { ...info, auth: 'api-key', billing: 'api', message: 'OpenAI API · usage billed separately (explicitly selected)' };
   try {
     if (info.provider === 'codex') return { ...info, ...await codexClient(info.command, options).status() };
@@ -219,7 +235,7 @@ export async function answerWithCli(providerInfo, input, options = {}) {
     const cwd = await mkdtemp(join(tmpdir(), 'patchwork-claude-'));
     try {
       const args = ['-p', '--output-format', 'json', '--permission-mode', 'plan', '--max-turns', '1', '--no-session-persistence', '--tools', '', '--disable-slash-commands', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--setting-sources', '', '--settings', '{"disableAllHooks":true}', ...(options.jsonSchema ? ['--json-schema', JSON.stringify(options.jsonSchema)] : [])];
-      const result = await runCommand(command, args, { cwd, env: childEnvironment(provider, options.env || process.env), input: input.prompt && input.history?.length ? `Previous conversation:\n${JSON.stringify(input.history)}\n\n${prompt}` : prompt, timeoutMs: options.timeoutMs, signal: options.signal, spawn: options.spawn });
+      const result = await runCommand(command, args, { cwd, env: childEnvironment(provider, options.env || process.env), input: input.prompt && input.history?.length ? `Previous conversation:\n${JSON.stringify(input.history)}\n\n${prompt}` : prompt, timeoutMs: options.turnTimeoutMs || options.timeoutMs, signal: options.signal, spawn: options.spawn });
       if (!result.ok) return { status: result.reason === 'timeout' ? 504 : 502, body: { error: result.reason === 'aborted' ? 'Stopped.' : 'Claude Code could not finish. Check its login and subscription allowance on the laptop.' } };
       const payload = JSON.parse(result.stdout);
       const text = options.jsonSchema && payload.structured_output ? JSON.stringify(payload.structured_output) : parseClaudeOutput(result.stdout);

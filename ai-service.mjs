@@ -55,7 +55,7 @@ export function createAiService(snapshots, env = process.env) {
       if (info.provider !== 'api') return await answerWithCli(info, { prompt, history }, { env, sessionKey:sessionKey?(repositoryTools?sessionKey:`${sessionKey}:${model||'default'}:${effort||'default'}`):undefined, signal, onDelta, jsonSchema, model, effort, repositoryTools, onActivity, forkSessionKey, forkThreadId, resumeThreadId, onThread, turnTimeoutMs, parallelKey });
       // API mode is deliberately opt-in. Auto detection never selects an API key.
       const historyMessages = history.map((item) => ({ role: item.role, content: item.text }));
-      const timeout = AbortSignal.timeout(90_000);
+      const timeout = AbortSignal.timeout(turnTimeoutMs || 90_000);
       const response = await fetch(env.OPENAI_API_URL || 'https://api.openai.com/v1/responses', {
         method: 'POST', signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
         headers: { authorization: `Bearer ${env.OPENAI_API_KEY}`, 'content-type': 'application/json' },
