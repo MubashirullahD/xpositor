@@ -42,7 +42,7 @@ export function createAgentGuideService(snapshots, ai, { storage } = {}) {
     return record;
   }
   function view(record) {
-    if (record.mode === 'deep') return structuredClone({ id:record.id, mode:'deep', snapshotId:record.snapshotId, title:record.title, persistenceError:record.persistenceError||null, sections:record.sections, position:record.position, completed:record.completed, explanations:record.explanations, runId:record.runId });
+    if (record.mode === 'deep') return structuredClone({ id:record.id, mode:'deep', snapshotId:record.snapshotId, title:record.title, persistenceError:record.persistenceError||null, sections:record.sections, position:record.position, group:record.group||0, completed:record.completed, explanations:record.explanations, runId:record.runId });
     return structuredClone({ id: record.id, snapshotId: record.snapshotId, parentId: record.parentId,
       title: record.title, persistenceError:record.persistenceError||null, step: record.step, guide: record.guide, fileOverviews:record.fileOverviews||{}, overviewStatus:record.overviewStatus||{}, lessons:record.lessons||{}, messages: record.messages, runId: record.runId });
   }
@@ -85,12 +85,13 @@ export function createAgentGuideService(snapshots, ai, { storage } = {}) {
   }
   function advanceDeep(input) {
     requireStorage();
-    if(!input||Object.keys(input).some(key=>!['conversationId','position','completed'].includes(key)))throw new GuideError('Invalid deep review navigation.',400,'DEEP_NAVIGATION');
+    if(!input||Object.keys(input).some(key=>!['conversationId','position','completed','group'].includes(key)))throw new GuideError('Invalid deep review navigation.',400,'DEEP_NAVIGATION');
     const record=find(input.conversationId);
     if(record.mode!=='deep'||!Number.isSafeInteger(input.position)||input.position<0||input.position>=record.sections.length)throw new GuideError('Choose a section in this review.',400,'DEEP_POSITION');
+    if(input.group!==undefined&&(!Number.isSafeInteger(input.group)||input.group<0||input.group>=(record.explanations[input.position]?.explanations.length||1)))throw new GuideError('Choose a line group.',400,'DEEP_GROUP');
     if(input.completed!==undefined){if(!Array.isArray(input.completed)||input.completed.length>record.sections.length||input.completed.some(index=>!Number.isSafeInteger(index)||index<0||index>=record.sections.length))throw new GuideError('Invalid completed section list.',400,'DEEP_COMPLETED');record.completed=[...new Set([...record.completed,...input.completed])].sort((a,b)=>a-b);}
     if(input.position>record.position&&!record.completed.includes(record.position))record.completed.push(record.position);
-    record.position=input.position;persist();return view(record);
+    record.position=input.position;record.group=input.group||0;persist();return view(record);
   }
   async function generate(record, prompt, options, schema, parent) {
     const tools = createRepositoryTools(snapshots, record.snapshotId);

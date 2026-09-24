@@ -63,7 +63,9 @@ export function createWalkthroughUI({getState,getData,save,render,apiFetch,jump,
     finally{reply.pending=false;pending=false;controller=null;save();render();}
   }
   function bind(root) {
-    if(deep.workspace()?.mode==='deep'&&deep.current()){deep.bind(root);return;}
+    if(getState().guideMode!=='walkthrough'){deep.stopAudio();agent.bind(root);return;}
+    if(deep.workspace()?.mode==='deep'&&deep.current()){agent.pause();deep.bind(root);return;}
+    deep.stopAudio();
     root.querySelectorAll('[data-walk-mode]').forEach(el=>el.addEventListener('click',async()=>{
       if(el.dataset.walkMode==='resume-deep'){deep.workspace().mode='deep';await save();render();deep.focusCurrent(true,false);return;}
       await deep.start();
@@ -87,5 +89,5 @@ export function createWalkthroughUI({getState,getData,save,render,apiFetch,jump,
     root.querySelector('#walk-draft')?.addEventListener('input',(e)=>{current().draft=e.target.value;save();});
     root.querySelector('#walk-question')?.addEventListener('submit',(e)=>{e.preventDefault();followup(current().draft);});
   }
-  return {html,bind,cancelPrefetch:()=>deep.cancelPrefetch()};
+  return {html,bind,filePicker:deep.filePicker,selectFile:deep.selectFile,stopAudio:deep.stopAudio,cancelPrefetch:()=>deep.cancelPrefetch()};
 }

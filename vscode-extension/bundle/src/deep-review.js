@@ -1,3 +1,4 @@
+import { createDeepAudio } from './deep-audio.js';
 import { escapeHtml as esc } from './render.js';
 import { randomId } from './platform.js';
 import { errorMessage } from './transport.js';
@@ -13,16 +14,18 @@ export function sanitizeDeepWorkspace(value) {
     const explanations = {};
     for (const [index,item] of Object.entries(record.explanations||{})) {
       if (!/^\d+$/.test(index) || Number(index)>=sections.length || !item || !Array.isArray(item.explanations)) continue;
-      explanations[index]={explanations:item.explanations.slice(0,12).filter(e=>e&&Number.isSafeInteger(e.startLine)&&Number.isSafeInteger(e.endLine)&&typeof e.text==='string').map(e=>({startLine:e.startLine,endLine:e.endLine,text:e.text.slice(0,1400)})),pointers:(Array.isArray(item.pointers)?item.pointers:[]).slice(0,4).filter(p=>p&&typeof p.text==='string'&&p.citation&&typeof p.citation.path==='string').map(p=>({text:p.text.slice(0,500),citation:{path:p.citation.path,fileId:p.citation.fileId||null,side:p.citation.side,startLine:p.citation.startLine,endLine:p.citation.endLine}})),narration:typeof item.narration==='string'?item.narration.slice(0,15000):''};
+      explanations[index]={explanations:item.explanations.slice(0,12).filter(e=>e&&Number.isSafeInteger(e.startLine)&&Number.isSafeInteger(e.endLine)&&typeof e.text==='string').map(e=>({startLine:e.startLine,endLine:e.endLine,text:e.text.slice(0,1400),...(typeof e.title==='string'?{title:e.title.slice(0,100)}:{})})),pointers:(Array.isArray(item.pointers)?item.pointers:[]).slice(0,4).filter(p=>p&&typeof p.text==='string'&&p.citation&&typeof p.citation.path==='string').map(p=>({text:p.text.slice(0,500),citation:{path:p.citation.path,fileId:p.citation.fileId||null,side:p.citation.side,startLine:p.citation.startLine,endLine:p.citation.endLine}})),narration:typeof item.narration==='string'?item.narration.slice(0,15000):''};
     }
-    records[record.id]={id:record.id,mode:'deep',snapshotId:record.snapshotId,title:'Deep file review',sections,position:Number.isSafeInteger(record.position)?Math.max(0,Math.min(sections.length-1,record.position)):0,completed:(Array.isArray(record.completed)?record.completed:[]).filter(n=>Number.isSafeInteger(n)&&n>=0&&n<sections.length),explanations,runId:validId(record.runId)?record.runId:null,scroll:Number.isFinite(record.scroll)&&record.scroll>=0?record.scroll:0};
+    records[record.id]={id:record.id,mode:'deep',snapshotId:record.snapshotId,title:'Deep file review',sections,position:Number.isSafeInteger(record.position)?Math.max(0,Math.min(sections.length-1,record.position)):0,completed:(Array.isArray(record.completed)?record.completed:[]).filter(n=>Number.isSafeInteger(n)&&n>=0&&n<sections.length),explanations,runId:validId(record.runId)?record.runId:null,group:Number.isSafeInteger(record.group)?Math.max(0,Math.min((explanations[record.position]?.explanations.length||1)-1,record.group)):0,scroll:Number.isFinite(record.scroll)&&record.scroll>=0?record.scroll:0};
   }
   const pending=value?.pending;
   return {mode:value?.mode==='deep'?'deep':'overview',activeId:validId(value?.activeId)?value.activeId:'',records,pending:pending&&validId(pending.requestId)&&validId(pending.recordId)&&Number.isSafeInteger(pending.index)?{requestId:pending.requestId,recordId:pending.recordId,index:pending.index,prefetch:Boolean(pending.prefetch),acknowledged:Boolean(pending.acknowledged)}:null};
 }
 
 export function createDeepReviewUI({getState,getData,save,render,apiFetch,showSection}) {
-  let error='',polling=false,retryTimer,prefetchTimer,audio=null,audioUrl=null,audioIndex=-1,audioLoading=false,audioReady=false,audioGeneration=0,focusedSection='';
+  let error='',polling=false,retryTimer,prefetchTimer,focusedSection='',sectionsOpen=false,navigation=0;
+  const active=()=>workspace()?.mode==='deep'&&getState().guideMode==='walkthrough';
+  const player=createDeepAudio({apiFetch,render,next:()=>navigate(1,true),active});
   const workspace=()=>{const s=getState();if(!s.snapshot)return null;getData().deepReviews||={};return getData().deepReviews[keyFor(s.snapshot)]||={mode:'overview',activeId:'',records:{},pending:null};};
   const current=()=>{const w=workspace();return w?.records[w.activeId];};
   const enabled=()=>getState().online&&getState().aiEnabled&&!getState().demo;
@@ -30,27 +33,50 @@ export function createDeepReviewUI({getState,getData,save,render,apiFetch,showSe
     const response=await apiFetch(`/api/guide/deep/${path}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(input)});
     const body=await response.json();if(!response.ok){const failure=new Error(errorMessage(body));failure.status=response.status;throw failure;}return body;
   }
-  function stopAudio(){audioGeneration++;audio?.pause();if(audioUrl)URL.revokeObjectURL(audioUrl);audio=null;audioUrl=null;audioIndex=-1;audioLoading=false;audioReady=false;}
-  function focusCurrent(force=false,reveal=force){const record=current(),position=record?.position,section=record?.sections[position];if(!section)return;const key=`${record.id}:${position}`;if(!force&&focusedSection===key)return;focusedSection=key;queueMicrotask(()=>{if(current()?.id===record.id&&current()?.position===position)showSection(section,{reveal});});}
+  const stopAudio=()=>player.stop();
+  const group=()=>current()?.group||0;
+  const item=()=>current()?.explanations[current().position]?.explanations[group()];
+  function audioItem(index=current()?.position,g=group()) {
+    const r=current(),text=r?.explanations[index]?.explanations[g]?.text;
+    return text?{snapshotId:r.snapshotId,id:r.id,index,group:g,text}:null;
+  }
+  function followingAudio(){const r=current();return audioItem(r.position,group()+1)||audioItem(r.position+1,0);}
+  function focusCurrent(force=false,reveal=force){
+    const record=current(),position=record?.position,section=record?.sections[position],range=item();
+    if(!section)return;
+    const key=`${record.id}:${position}:${group()}:${Boolean(range)}`;
+    if(!force&&focusedSection===key)return;focusedSection=key;
+    const target=range?{...section,startLine:range.startLine,endLine:range.endLine}:section.kind==='summary'?section:{...section,kind:'pending'};
+    queueMicrotask(()=>{if(current()?.id===record.id&&current()?.position===position&&focusedSection===key)showSection(target,{reveal});});
+  }
+  function filePicker(){
+    if(!active()||!current())return '';
+    const r=current(),section=r.sections[r.position];
+    const files=[...new Set(r.sections.map(s=>s.fileId))];
+    return `<select id="deep-file" class="context-chip deep-file-select" aria-label="Changed file">${files.map(id=>{const first=r.sections.findIndex(s=>s.fileId===id);return `<option value="${first}" ${id===section.fileId?'selected':''}>${esc(r.sections[first].path)}</option>`;}).join('')}</select>`;
+  }
   function html() {
     const record=current(),w=workspace();if(!record)return '<p class="guide-intro">Choose Deep file review to start.</p>';
-    const section=record.sections[record.position],explanation=record.explanations[record.position];
-    const captured=getState().snapshot?.files.find(file=>file.id===section.fileId),sourceReady=typeof captured?.source==='string';
-    const fileSections=record.sections.filter(s=>s.fileId===section.fileId),fileIndex=fileSections.findIndex(s=>s.id===section.id)+1;
+    const section=record.sections[record.position],explanation=record.explanations[record.position],range=item();
+    const fileSections=record.sections.map((s,index)=>({...s,index})).filter(s=>s.fileId===section.fileId);
     const files=[...new Set(record.sections.map(s=>s.fileId))],fileNumber=files.indexOf(section.fileId)+1;
-    const complete=record.completed.length;
-    return `<section class="walkthrough deep-review"><p class="eyebrow">DEEP FILE REVIEW · FILE ${fileNumber} OF ${files.length} · SECTION ${fileIndex} OF ${fileSections.length}</p><h3>${esc(section.path)}</h3><p>${complete} of ${record.sections.length} sections visited. This progress does not mark any file reviewed or approved.</p>
-      <label class="deep-file-picker">Changed file <select id="deep-file">${files.map(id=>{const first=record.sections.findIndex(s=>s.fileId===id),item=record.sections[first];return `<option value="${first}" ${id===section.fileId?'selected':''}>${esc(item.path)}</option>`;}).join('')}</select></label>
-      ${section.kind==='summary'?`<div class="deep-notice"><strong>Coverage notice</strong><p>${esc(section.summary)}</p></div>`:`<div class="deep-location"><p>${sourceReady?`Lines ${section.startLine}–${section.endLine} are highlighted in the main reader, including unchanged lines.`:`Lines ${section.startLine}–${section.endLine} will appear in the main reader when captured source is available on this device.`}</p><button class="secondary-button" data-deep="show-code">${sourceReady?'View highlighted code':'View file'}</button></div>
-      ${explanation?`<div class="deep-explanation">${explanation.explanations.map((item,index)=>`<div class="deep-explanation-item"><button class="agent-step-link" data-deep-range="${index}">Lines ${item.startLine}–${item.endLine}</button><p>${esc(item.text)}</p></div>`).join('')}</div><div class="deep-pointers"><strong>Things to double-check</strong>${explanation.pointers.length?`<ul>${explanation.pointers.map((pointer,index)=>`<li>${esc(pointer.text)} <button class="agent-step-link" data-deep-pointer="${index}">${esc(pointer.citation.path)} · ${pointer.citation.startLine}–${pointer.citation.endLine}</button></li>`).join('')}</ul>`:'<p>No specific concern identified from captured context. This does not verify the change.</p>'}</div><button class="secondary-button" data-deep="play" ${audioLoading?'disabled':''}>${audioLoading?'Preparing audio…':audio&&audioIndex===record.position&&!audio.paused?'Pause':audioReady?'Play ready audio':'Play section'}</button>${audioReady?'<p role="status">Audio is ready. Tap Play ready audio to start it in this browser.</p>':''}`:`<p role="status">${w.pending?.index===record.position?'Explaining this section…':enabled()?'Explanation ready to request.':getState().online?'Connect Codex or Claude Code on the laptop to generate this section.':'Previously generated sections remain available offline.'}</p>${enabled()&&!w.pending?'<button class="secondary-button" data-deep="explain">Explain this section</button>':''}`}`}
-      ${error?`<p class="guide-error" role="alert">${esc(error)}</p>`:''}${w.pending?'<button class="secondary-button" data-deep="stop">Stop explanation</button>':''}
-      <div class="walk-controls"><button class="secondary-button" data-deep="previous" ${record.position===0?'disabled':''}>Back</button><button class="primary-button" data-deep="next" ${record.position===record.sections.length-1?'disabled':''}>Next section</button></div><button class="secondary-button" data-deep="new">New review</button></section>`;
+    const cards=fileSections.flatMap(s=>s.kind==='summary'?[{index:s.index,group:0,summary:true}]: (record.explanations[s.index]?.explanations||[]).map((range,g)=>({index:s.index,group:g,...range})));
+    const ordinal=cards.findIndex(c=>c.index===record.position&&c.group===group())+1;
+    const complete=fileSections.every(s=>s.kind==='summary'||record.explanations[s.index]);
+    const atEnd=record.position===record.sections.length-1&&group()>=(explanation?.explanations.length||1)-1;
+    const nextRange=explanation?.explanations[group()+1]||record.explanations[record.position+1]?.explanations[0];
+    return `<section class="walkthrough deep-review"><p class="eyebrow">DEEP FILE REVIEW · FILE ${fileNumber} OF ${files.length}${ordinal?` · SECTION ${ordinal} OF ${cards.length}${complete?'':' SO FAR'}`:''}</p>
+      ${section.kind==='summary'?`<div class="deep-notice"><strong>Coverage notice</strong><p>${esc(section.summary)}</p></div><div class="walk-controls"><button class="secondary-button" data-deep="previous" ${record.position===0?'disabled':''}>Back</button><button class="primary-button" data-deep="next" ${atEnd?'disabled':''}>Next file</button></div>`:range?`<section class="audio-lesson deep-card" id="deep-card" tabindex="0" aria-label="Deep review section" aria-keyshortcuts="ArrowLeft ArrowRight Space">${range.title?`<button class="agent-step-link deep-range" data-deep="show-code">Lines ${range.startLine}–${range.endLine}</button><h4>${esc(range.title)}</h4>`:`<h4><button class="agent-step-link" data-deep="show-code">Lines ${range.startLine}–${range.endLine}</button></h4>`}${player.html(range.text,getState().online)}<p class="deep-up-next">${nextRange?`Up next · Lines ${nextRange.startLine}–${nextRange.endLine}`:record.sections[record.position+1]?.fileId===section.fileId?'Preparing the next sections…':'End of file · Review when you’re ready'}</p></section>`:`<p role="status">${w.pending?.index===record.position?'Preparing the next sections…':enabled()?'Preparing this file…':getState().online?'Connect Codex or Claude Code to continue.':'This section has not been saved on this device.'}</p><div class="walk-controls"><button class="secondary-button" data-deep="previous" ${record.position===0?'disabled':''}>Back</button><button class="secondary-button" data-deep="next" ${atEnd?'disabled':''}>Next</button></div>`}
+      ${explanation?.pointers.length&&group()===explanation.explanations.length-1?`<details class="deep-pointers"><summary>Things to double-check · ${explanation.pointers.length}</summary><ul>${explanation.pointers.map((pointer,index)=>`<li>${esc(pointer.text)} <button class="agent-step-link" data-deep-pointer="${index}">Lines ${pointer.citation.startLine}–${pointer.citation.endLine}</button></li>`).join('')}</ul></details>`:''}
+      ${cards.length>1?`<details class="deep-section-list" ${sectionsOpen?'open':''}><summary>Sections in this file</summary>${cards.map(c=>`<button class="agent-step-link" data-deep-section="${c.index}" data-deep-group="${c.group}" aria-current="${c.index===record.position&&c.group===group()}">${c.summary?'Coverage notice':`Lines ${c.startLine}–${c.endLine}`}</button>`).join('')}${!complete?'<p>More sections appear as they are prepared.</p>':''}</details>`:''}
+      ${error?`<p class="guide-error" role="alert">${esc(error)}</p>${!w.pending&&!explanation?'<button class="secondary-button" data-deep="explain">Retry explanation</button>':''}`:''}${w.pending&&!w.pending.prefetch?'<button class="secondary-button" data-deep="stop">Stop explanation</button>':''}
+      <button class="agent-step-link" data-deep="new">Back to walkthroughs</button></section>`;
   }
   async function start(){if(!getState().online)return;const id=randomId(),snapshotId=getState().snapshot.snapshotId;error='';try{const {conversation}=await request('start',{requestId:id,snapshotId});const w=workspace();w.records[id]=conversation;w.activeId=id;w.mode='deep';await save();render(false);queueMicrotask(()=>ensureSection(0));}catch(e){error=errorMessage(e.message);render();}}
   async function poll(){const w=workspace(),pending=w?.pending;if(!pending||polling||!getState().online)return;polling=true;clearTimeout(retryTimer);try{
-    if(!pending.acknowledged){const model=getState().aiProvider==='codex'?getData().preferences.model||undefined:undefined,effort=getState().aiProvider==='codex'?getData().preferences.effort||undefined:undefined;const result=await request('section',{requestId:pending.requestId,conversationId:pending.recordId,index:pending.index,prefetch:pending.prefetch,model,effort});pending.acknowledged=true;if(result.cached){w.records[pending.recordId]=result.conversation;w.pending=null;await save();render();return;}await save();}
+    if(!pending.acknowledged){const model=getState().aiProvider==='codex'?getData().preferences.model||undefined:undefined,effort=getState().aiProvider==='codex'?getData().preferences.effort||undefined:undefined;const result=await request('section',{requestId:pending.requestId,conversationId:pending.recordId,index:pending.index,prefetch:pending.prefetch,model,effort});pending.acknowledged=true;if(result.cached){w.records[pending.recordId]={...result.conversation,position:w.records[pending.recordId].position,group:w.records[pending.recordId].group||0};w.pending=null;await save();render();return;}await save();}
     const response=await apiFetch(`/api/guide/run?id=${encodeURIComponent(pending.requestId)}`);const {run}=await response.json();if(!response.ok||!run)throw new Error('The section run is unavailable.');
-    if(!['running','stopping'].includes(run.status)){const response=await apiFetch(`/api/guide/conversation?id=${encodeURIComponent(pending.recordId)}`);const {conversation}=await response.json();if(response.ok&&conversation?.mode==='deep'){const local=w.records[pending.recordId];w.records[pending.recordId]={...conversation,position:local.position,completed:local.completed,scroll:local.scroll};}w.pending=null;error=run.status==='completed'?'':run.error||'Section explanation stopped.';await save();render();if(run.status==='completed')schedulePrefetch();}
+    if(!['running','stopping'].includes(run.status)){const response=await apiFetch(`/api/guide/conversation?id=${encodeURIComponent(pending.recordId)}`);const {conversation}=await response.json();if(response.ok&&conversation?.mode==='deep'){const local=w.records[pending.recordId];w.records[pending.recordId]={...conversation,position:local.position,completed:local.completed,scroll:local.scroll,group:local.group||0};}w.pending=null;error=run.status==='completed'?'':run.error||'Section explanation stopped.';await save();render();if(run.status==='completed')schedulePrefetch();}
     else render();
   }catch(e){if(e.status>=400&&e.status<500&&e.status!==429){w.pending=null;error=errorMessage(e.message);}else error=`${errorMessage(e.message)} Reconnecting will resume this section.`;render();}finally{polling=false;if(w.pending)retryTimer=setTimeout(poll,error?5000:1000);}}
   function ensureSection(index,prefetch=false){const w=workspace(),record=current();if(!record||!enabled()||w.pending||record.explanations[index]||record.sections[index]?.kind!=='code')return;w.pending={requestId:randomId(),recordId:record.id,index,prefetch,acknowledged:false};error='';save();render();poll();}
@@ -59,11 +85,50 @@ export function createDeepReviewUI({getState,getData,save,render,apiFetch,showSe
     if(pending.acknowledged&&getState().online){await apiFetch('/api/guide/stop',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({requestId:pending.requestId})}).catch(()=>{});for(let attempt=0;attempt<30;attempt++){const response=await apiFetch(`/api/guide/run?id=${encodeURIComponent(pending.requestId)}`).catch(()=>null);const run=response?.ok?(await response.json()).run:null;if(!run||!['running','stopping'].includes(run.status))break;await new Promise(resolve=>setTimeout(resolve,100));}}
     if(w.pending===pending){w.pending=null;clearTimeout(retryTimer);retryTimer=null;await save();render();}
   }
-  async function move(index){clearTimeout(prefetchTimer);const r=current();if(!r||index<0||index>=r.sections.length)return;if(workspace().pending?.prefetch&&workspace().pending.index!==index)await cancelPrefetch();stopAudio();if(index>r.position&&!r.completed.includes(r.position))r.completed.push(r.position);r.position=index;r.scroll=0;error='';await save();render(false);if(getState().online)request('advance',{conversationId:r.id,position:index,completed:r.completed}).catch(()=>{});ensureSection(index);}
-  async function playChunk(r,index,chunk){stopAudio();const generation=audioGeneration;audioLoading=true;error='';render();try{const response=await apiFetch('/api/guide/deep/speech',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({conversationId:r.id,index,chunk,voice:'af_heart'}),signal:AbortSignal.timeout(660000)});if(!response.ok){const body=await response.json();throw new Error(errorMessage(body));}const blob=await response.blob();if(generation!==audioGeneration||current()?.id!==r.id||current()?.position!==index)return;const total=Math.max(1,Number(response.headers.get('x-patchwork-audio-chunks'))||1);audioUrl=URL.createObjectURL(blob);audio=new Audio(audioUrl);audioIndex=index;audio.onended=()=>{if(generation!==audioGeneration)return;if(chunk+1<total)playChunk(r,index,chunk+1);else{stopAudio();render();}};audio.onerror=()=>{if(generation!==audioGeneration)return;stopAudio();error='Audio could not play on this device. Try Play again.';render();};try{await audio.play();}catch(playbackError){if(playbackError?.name!=='NotAllowedError')throw playbackError;audioReady=true;}}catch(e){if(generation===audioGeneration)error=e?.name==='NotSupportedError'?'Audio could not play on this device.':errorMessage(e.message);}finally{if(generation===audioGeneration){audioLoading=false;render();}}}
-  async function play(){const r=current(),index=r?.position;if(!r?.explanations[index])return;if(audio&&audioIndex===index){if(audio.paused){try{await audio.play();audioReady=false;error='';}catch(e){if(e?.name==='NotAllowedError'){audioReady=true;error='Browser playback is still blocked. Tap Play again after allowing audio for this page.';}else error='Audio could not play on this device. Try Play again.';}}else audio.pause();render();return;}await playChunk(r,index,0);}
-  function bind(root){const w=workspace(),r=current();root.querySelector('#deep-file')?.addEventListener('change',e=>move(Number(e.target.value)));root.querySelectorAll('[data-deep-range]').forEach(el=>el.addEventListener('click',()=>{const item=current().explanations[current().position].explanations[Number(el.dataset.deepRange)],section=current().sections[current().position];showSection({...section,startLine:item.startLine,endLine:item.endLine},{reveal:true});}));root.querySelectorAll('[data-deep-pointer]').forEach(el=>el.addEventListener('click',()=>showSection({kind:'code',...current().explanations[current().position].pointers[Number(el.dataset.deepPointer)].citation},{reveal:true})));
-    root.querySelectorAll('[data-deep]').forEach(el=>el.addEventListener('click',async()=>{switch(el.dataset.deep){case 'previous':await move(current().position-1);break;case 'next':await move(current().position+1);break;case 'show-code':focusCurrent(true);break;case 'explain':ensureSection(current().position);break;case 'play':await play();break;case 'stop':if(workspace().pending){await apiFetch('/api/guide/stop',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({requestId:workspace().pending.requestId})}).catch(()=>{});poll();}break;case 'new':await cancelPrefetch();stopAudio();focusedSection='';workspace().mode='overview';await save();render();break;}}));
-    if(w?.pending&&!polling&&!retryTimer)queueMicrotask(poll);if(r&&!r.explanations[r.position]&&enabled()&&!w.pending)queueMicrotask(()=>ensureSection(r.position));focusCurrent();}
-  return {html,bind,start,current,workspace,stopAudio,cancelPrefetch,focusCurrent};
+  async function move(index,g=0,autoplay=false){
+    clearTimeout(prefetchTimer);const r=current();if(!r||index<0||index>=r.sections.length)return;
+    const own=++navigation;stopAudio();
+    if(index!==r.position&&workspace().pending?.prefetch&&workspace().pending.index!==index)await cancelPrefetch();
+    if(own!==navigation||current()?.id!==r.id)return;
+    if(autoplay)player.requestAutoplay();if(index>r.position&&!r.completed.includes(r.position))r.completed.push(r.position);
+    r.position=index;r.group=Math.max(0,Math.min((r.explanations[index]?.explanations.length||1)-1,g));r.scroll=0;error='';
+    await save();if(own!==navigation)return;render(false);
+    document.getElementById('deep-card')?.focus({preventScroll:true});
+    if(getState().online)request('advance',{conversationId:r.id,position:index,completed:r.completed,group:r.group}).catch(()=>{});
+    ensureSection(index);schedulePrefetch();
+  }
+  function navigate(direction,autoplay=false){const r=current(),count=r.explanations[r.position]?.explanations.length||1;
+    if(direction>0&&group()+1<count)return move(r.position,group()+1,autoplay);
+    if(direction<0&&group()>0)return move(r.position,group()-1);
+    const index=r.position+direction;return move(index,direction<0?(r.explanations[index]?.explanations.length||1)-1:0,autoplay);
+  }
+  function selectFile(fileId){if(!active()||!current())return false;const r=current();if(r.sections[r.position].fileId===fileId)return false;const index=r.sections.findIndex(s=>s.fileId===fileId);if(index<0)return false;move(index);return true;}
+  function bind(root){
+    const w=workspace(),r=current();if(!r)return;
+    root.querySelector('#deep-file')?.addEventListener('change',e=>move(Number(e.target.value)));
+    root.querySelectorAll('[data-deep-section]').forEach(el=>el.addEventListener('click',()=>move(Number(el.dataset.deepSection),Number(el.dataset.deepGroup))));
+    root.querySelectorAll('[data-deep-pointer]').forEach(el=>el.addEventListener('click',()=>{stopAudio();showSection({kind:'code',...current().explanations[current().position].pointers[Number(el.dataset.deepPointer)].citation},{reveal:true});}));
+    root.querySelector('.deep-section-list')?.addEventListener('toggle',e=>{sectionsOpen=e.target.open;});
+    const card=root.querySelector('#deep-card');
+    if(card){card.querySelector('[data-deep="previous"]').disabled=r.position===0&&group()===0;card.querySelector('[data-deep="next"]').disabled=r.position===r.sections.length-1&&group()===(r.explanations[r.position]?.explanations.length||1)-1;}
+    root.querySelectorAll('[data-deep]').forEach(el=>el.addEventListener('click',async()=>{switch(el.dataset.deep){
+      case 'explain':error='';ensureSection(r.position);break;
+      case 'previous':await navigate(-1);break;
+      case 'next':await navigate(1);break;
+      case 'show-code':focusCurrent(true);break;
+      case 'play':focusCurrent(true,false);if(el.textContent==='Retry audio')await player.retry(audioItem(),followingAudio());else await player.play();break;
+      case 'stop':if(w.pending){await apiFetch('/api/guide/stop',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({requestId:w.pending.requestId})}).catch(()=>{});poll();}break;
+      case 'new':await cancelPrefetch();stopAudio();focusedSection='';w.mode='overview';await save();render();break;
+    }}));
+    card?.addEventListener('keydown',e=>{if(e.defaultPrevented||e.altKey||e.ctrlKey||e.metaKey||e.shiftKey||e.target.closest('input,select,summary'))return;
+      if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();e.stopPropagation();if(!e.repeat)navigate(e.key==='ArrowLeft'?-1:1);}
+      else if(e.code==='Space'&&!e.target.closest('button,a')){e.preventDefault();e.stopPropagation();if(!e.repeat)player.play();}
+    });
+    player.bind(root,audioItem(),followingAudio(),getState().online);
+    if(w?.pending&&!polling&&!retryTimer)queueMicrotask(poll);
+    if(!error&&!r.explanations[r.position]&&enabled()&&!w.pending)queueMicrotask(()=>ensureSection(r.position));
+    if(r.explanations[r.position]&&!w.pending)schedulePrefetch();
+    focusCurrent();
+  }
+  return {html,bind,start,current,workspace,stopAudio,cancelPrefetch,focusCurrent,filePicker,selectFile};
 }

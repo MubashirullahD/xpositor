@@ -141,5 +141,5 @@ export function createAgentGuideUI({getState,getData,save,render,apiFetch,jump})
     if(pending&&!polling&&!retryTimer)queueMicrotask(poll);
     if(!pending&&root.querySelector('#chat-panel:not([inert]) .agent-walkthrough')&&!error)queueMicrotask(ensureLesson);
   }
-  return {html,bind};
+  return {html,bind,pause:player.pause};
 }

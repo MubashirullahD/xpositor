@@ -130,13 +130,16 @@ const handleRequest = async (request, response) => {
     }
     if(url.pathname==='/api/guide/deep/speech'&&request.method==='POST'){
       const input=JSON.parse(await readBody(request,4096));
+      if(!input||typeof input!=='object'||Array.isArray(input))throw new GuideError('Invalid audio request.',400,'DEEP_AUDIO');
       const record=agentGuide.conversation(input.conversationId);
       if(record.mode!=='deep'||!Number.isSafeInteger(input.index)||!record.explanations?.[input.index])throw new GuideError('Generate this deep review section before playing it.',404,'DEEP_AUDIO');
-      const chunks=deepSpeechChunks(record.explanations[input.index].narration);
+      const explanation=record.explanations[input.index];
+      if(input.group!==undefined&&(!Number.isSafeInteger(input.group)||!explanation.explanations[input.group]))throw new GuideError('Choose a line group in this section.',400,'DEEP_AUDIO_GROUP');
+      const chunks=deepSpeechChunks(input.group===undefined?explanation.narration:explanation.explanations[input.group].text);
       const chunk=input.chunk??0;
       if(!Number.isSafeInteger(chunk)||chunk<0||chunk>=chunks.length)throw new GuideError('Choose an audio part in this section.',400,'DEEP_AUDIO_CHUNK');
       const audio=await speech.synthesize(chunks[chunk],input.voice);
-      response.writeHead(200,{'content-type':'audio/wav','cache-control':'no-store','x-patchwork-audio-chunks':String(chunks.length),'x-patchwork-speech-timing':JSON.stringify(audio.timings||[])});response.end(audio);return;
+      response.writeHead(200,{'content-type':'audio/wav','cache-control':'no-store','x-patchwork-audio-chunks':String(chunks.length),'x-patchwork-speech-text':encodeURIComponent(chunks[chunk]),'x-patchwork-speech-offset':String(chunks.slice(0,chunk).reduce((n,text)=>n+text.length+1,0)),'x-patchwork-speech-timing':JSON.stringify(audio.timings||[])});response.end(audio);return;
     }
     if (url.pathname === '/api/guide/run'  && request.method === 'GET') return sendJson(response, 200, { run: agentGuide.runs.get(url.searchParams.get('id'), url.searchParams.has('after') ? Number(url.searchParams.get('after')) : undefined) });
     if (url.pathname === '/api/guide/conversation' && request.method === 'GET') return sendJson(response, 200, { conversation: agentGuide.conversation(url.searchParams.get('id')) });

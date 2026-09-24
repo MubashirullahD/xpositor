@@ -16,7 +16,7 @@ assert(code.every(item=>item.endLine-item.startLine+1<=30));
 assert.equal(manifest.at(-2).kind,'summary');
 assert.match(manifest.at(-2).summary,/Generated or lockfile/);
 assert.match(manifest.at(-1).summary,/Binary/);
-const response=section=>({explanations:[{startLine:section.startLine,endLine:section.endLine,text:'These lines define the values used by this file.'}],pointers:[{text:'Check how these values are consumed.',citation:{path:'src/change.js',side:'new',startLine:section.startLine,endLine:section.startLine}}]});
+const response=section=>({explanations:[{startLine:section.startLine,endLine:section.startLine,text:'These lines define the values used by this file.'},{startLine:section.startLine+1,endLine:section.endLine,text:'The remaining lines provide the values.'}],pointers:[{text:'Check how these values are consumed.',citation:{path:'src/change.js',side:'new',startLine:section.startLine,endLine:section.startLine}}]});
 assert.equal(validateDeepSection(response(code[0]),repository,code[0]).pointers[0].citation.fileId,'code');
 assert.throws(()=>validateDeepSection({...response(code[0]),explanations:[{...response(code[0]).explanations[0],startLine:2}]},repository,code[0]),/without gaps/);
 assert.throws(()=>validateDeepSection({...response(code[0]),pointers:[{text:'Bad',citation:{path:'src/change.js',side:'new',startLine:999,endLine:999}}]},repository,code[0]),/must cite/);
@@ -35,6 +35,12 @@ for(const provider of ['codex','claude']){
  const first=service.deepSection({requestId:`section-${provider}-request-01`,conversationId:id,index:0});
  assert(first.run);assert.equal((await service.runs.wait(first.run.id)).status,'completed');assert.equal(calls,1);
  assert.equal(Object.keys(service.conversation(id).explanations).length,1,'Later sections must not block the first');
+ service.advanceDeep({conversationId:id,position:0,group:1});
+ assert.equal(service.conversation(id).group,1,'The exact line group should be saved');
+ assert.throws(()=>service.advanceDeep({conversationId:id,position:0,group:2}),/line group/);
+ const restoredGroup=sanitizeDeepWorkspace({activeId:id,records:{[id]:service.conversation(id)}});
+ assert.equal(restoredGroup.records[id].group,1);
+ assert.equal(sanitizeDeepWorkspace({activeId:id,records:{[id]:{...service.conversation(id),group:99}}}).records[id].group,1,'Invalid saved positions are clamped');
  service.advanceDeep({conversationId:id,position:1});
  assert.deepEqual(service.conversation(id).completed,[0]);
  const restored=createAgentGuideService(snapshots,ai,{storage});
@@ -44,7 +50,7 @@ for(const provider of ['codex','claude']){
  assert.equal(local.records[id].completed[0],0);
  const device={deepReviews:{[JSON.stringify(['repo','snapshot-1'])]:{...local,records:{[id]:{...local.records[id],position:0}}}}};
  const ui=createDeepReviewUI({getState:()=>({snapshot:{repoId:'repo',snapshotId:'snapshot-1',files:[{...files[0],source}]},online:false,aiEnabled:false,demo:false}),getData:()=>device,save:()=>{},render:()=>{},apiFetch:()=>{throw Error('Offline reading must not call the laptop');},jump:()=>{}});
- assert.match(ui.html(),/These lines define the values used by this file/);
+ assert.match(ui.html().replace(/<[^>]*>/g,''),/These lines define the values used by this file/);
  service.close();restored.close();
 }
 const slow=createAgentGuideService(snapshots,{generate(_prompt,{signal}){return new Promise(resolve=>{signal.addEventListener('abort',()=>resolve({status:499,body:{error:'Stopped.'}}));});}});

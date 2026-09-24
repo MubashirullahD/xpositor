@@ -868,3 +868,19 @@ html.modal-open,body.modal-open { overflow:hidden!important; overscroll-behavior
 .deep-explanation-item p,.deep-pointers p,.deep-notice p {margin:6px 0 0;line-height:1.5;}
 .deep-pointers ul,.lesson-check ul,.review-question ul {padding-left:20px;}
 @media(max-width:520px) {.deep-location {align-items:stretch;flex-direction:column;}}
+
+/* Deep review shares the walkthrough lesson card and transcript treatment. */
+.deep-file-select { display:block; width:calc(100% - 40px); min-width:0; max-width:100%; color:var(--ink); background:var(--panel); }
+.deep-card { margin-top:12px; }
+.deep-card h4 .agent-step-link { font:inherit; text-decoration:none; }
+.deep-card .lesson-controls { position:sticky; top:0; padding-block:8px; background:var(--panel); z-index:1; }
+.deep-card .lesson-controls button { flex:1; min-width:0; }
+.deep-audio-meta { display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px; color:var(--muted); font-size:12px; }
+.deep-audio-meta label { display:flex; flex-direction:row; align-items:center; gap:6px; margin:0; }
+.deep-up-next { border-top:1px solid var(--line); padding-top:14px; color:var(--muted); font-size:12px; }
+.deep-section-list { margin:16px 0; }
+.deep-section-list button { display:block; padding:8px 0; }
+.deep-section-list button[aria-current="true"] { color:var(--ink); font-weight:700; }
+.deep-section-list p { font-size:12px; color:var(--muted); }
+
+.deep-review > .eyebrow { font-size:11px; line-height:1.7; }
