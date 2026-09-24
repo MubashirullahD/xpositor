@@ -1,11 +1,14 @@
 async page => {
- const base=page.url();let version='v1';
+ const base=page.url();
+ const context=await page.context().browser().newContext({serviceWorkers:'block'});
+ page=await context.newPage();
+ let version='v1';
  const source=Array.from({length:120},(_,i)=>`export const value${i} = ${i};`).join('\n');
  const files=['one.js','two.js','three.js'].map((path,i)=>({id:String(i),path,label:path,version:'v1',source,sourceAvailable:true,lines:[['normal','1','// unchanged'],...source.split('\n').map((s,n)=>['added',String(n+2),s])],added:120,removed:0}));
  await page.route('**/api/**',route=>route.fulfill({contentType:'application/json',body:JSON.stringify(route.request().url().includes('/snapshot')?{repoId:'completion',base:'head',head:'head',branch:'main',snapshotId:version,generatedAt:new Date().toISOString(),workspaceName:'Keyboard review',files:files.map((f,i)=>i===0?{...f,version}:f)}:{aiEnabled:false,provider:'none'})}));
  await page.setViewportSize({width:1440,height:900});await page.goto(base);
  await page.getByRole('heading',{name:'one.js',exact:true}).waitFor();
- if(!await page.locator('.wrap-code').count()||!await page.locator('.unchanged-context:not([open])').count())throw Error('Reading defaults off');
+ if(!await page.locator('.unchanged-context:not([open])').count())throw Error('Unchanged context should start folded');
  if(await page.locator('.file-review-status').count())throw Error('Status clutter remains');
  await page.keyboard.press('ArrowDown');
  await page.waitForFunction(()=>document.querySelector('.code-viewer').scrollTop>0);
@@ -24,7 +27,13 @@ async page => {
  await page.keyboard.press('ArrowRight');await page.getByRole('heading',{name:'two.js',exact:true}).waitFor();
  await page.keyboard.press('ArrowRight');await page.getByRole('heading',{name:'three.js',exact:true}).waitFor();
  await page.keyboard.press('ArrowRight');await page.getByRole('heading',{name:'three.js',exact:true}).waitFor();
- await page.getByRole('button',{name:'Question',exact:true}).click();await page.locator('#note-text').fill('Keep this question');await page.keyboard.press('ArrowLeft');await page.keyboard.press('Enter');await page.getByRole('heading',{name:'three.js',exact:true}).waitFor();
+ await page.getByRole('tab',{name:'Diff',exact:true}).click();
+ await page.keyboard.press('ArrowRight');
+ if(await page.getByRole('tab',{name:'Source',exact:true}).getAttribute('aria-selected')==='true')throw Error('ArrowRight switched tabs');
+ await page.getByRole('heading',{name:'three.js',exact:true}).waitFor();
+ await page.keyboard.press('Tab');
+ if(!await page.getByRole('tab',{name:'Source',exact:true}).evaluate(el=>el===document.activeElement))throw Error('Source tab is unreachable with Tab');
+ await page.getByRole('tab',{name:'Notes (0)',exact:true}).click();await page.locator('#note-text').fill('Keep this question');await page.keyboard.press('ArrowLeft');await page.keyboard.press('Enter');await page.getByRole('heading',{name:'three.js',exact:true}).waitFor();
  await page.getByRole('button',{name:'Save question',exact:true}).click();
  await page.locator('#review-content').focus();
  await page.keyboard.down('Enter');await page.getByRole('heading',{name:'one.js',exact:true}).waitFor();

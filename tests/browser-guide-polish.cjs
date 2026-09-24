@@ -1,0 +1,43 @@
+async page => {
+ const base=page.url();
+ const context=await page.context().browser().newContext({serviceWorkers:'block'});
+ page=await context.newPage();
+ const snapshot={repoId:'guide-polish',snapshotId:'guide-polish-snapshot',scope:'unstaged',base:'head',head:'head',branch:'main',generatedAt:new Date().toISOString(),workspaceName:'Guide polish',files:[{id:'a',path:'src/example.js',version:'v1',source:'export const answer = 42;',sourceAvailable:true,lines:[['added','1','export const answer = 42;']],added:1,removed:0}]};
+ await page.route('**/api/**',route=>{
+  const path=route.request().url().split('/api/')[1].split('?')[0];
+  const body=path==='snapshot'?snapshot:path==='config'?{aiEnabled:false,provider:'none',capabilities:{repositoryGuide:false}}:{models:[]};
+  return route.fulfill({contentType:'application/json',body:JSON.stringify(body)});
+ });
+ await page.setViewportSize({width:1440,height:900});
+ await page.goto(base);
+ await page.getByRole('heading',{name:'example.js',exact:true}).waitFor();
+ const footer=page.locator('.review-footer');
+ if(await footer.getByRole('button').count()!==1||await footer.getByRole('button',{name:'Reviewed & next',exact:false}).count()!==1)throw Error('The review footer has extra actions');
+ const tabs=page.locator('.view-toolbar .review-tab');
+ const gaps=await tabs.evaluateAll(elements=>elements.slice(1).map((element,index)=>element.getBoundingClientRect().left-elements[index].getBoundingClientRect().right));
+ if(gaps.some(gap=>gap<0||gap>8)||Math.max(...gaps)-Math.min(...gaps)>1)throw Error(`File tab spacing is inconsistent: ${gaps.join(', ')}`);
+ await page.getByRole('tab',{name:'Diff',exact:true}).click();
+ await page.keyboard.press('ArrowLeft');
+ if(await page.getByRole('tab',{name:'Diff',exact:true}).getAttribute('aria-selected')!=='true')throw Error('ArrowLeft switched tabs');
+ await page.keyboard.press('Tab');
+ if(!await page.getByRole('tab',{name:'Source',exact:true}).evaluate(element=>element===document.activeElement))throw Error('File tabs are not reachable with Tab');
+ await page.getByRole('tab',{name:'Notes (0)',exact:true}).click();
+ await page.locator('#note-text').fill('A private question');
+ await page.getByRole('button',{name:'Save question',exact:true}).click();
+ await page.getByRole('button',{name:'Code guide',exact:true}).click();
+ const modes=page.locator('.guide-modes button');
+ const metrics=await modes.evaluateAll(elements=>elements.map(element=>({width:element.getBoundingClientRect().width,height:element.getBoundingClientRect().height,bg:getComputedStyle(element).backgroundColor})));
+ if(metrics.some(value=>value.height<48)||Math.abs(metrics[0].width-metrics[1].width)>2||metrics[0].bg===metrics[1].bg)throw Error('Guide mode buttons lost their segmented design');
+ await page.getByRole('button',{name:'Conversation',exact:true}).click();
+ if(await page.getByRole('button',{name:'Conversation',exact:true}).getAttribute('aria-pressed')!=='true')throw Error('Conversation mode did not select');
+ await page.setViewportSize({width:390,height:844});
+ await page.locator('#chat-panel[role="dialog"]').waitFor();
+ if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Phone layout overflows');
+ await page.screenshot({path:'/tmp/patchwork-guide-polish-phone.png'});
+ await page.setViewportSize({width:1440,height:900});
+ await page.screenshot({path:'/tmp/patchwork-guide-polish-desktop.png'});
+ await page.emulateMedia({colorScheme:'dark'});
+ const dark=await modes.evaluateAll(elements=>elements.map(element=>getComputedStyle(element).backgroundColor));
+ if(dark[0]===dark[1])throw Error('Guide mode selection is unclear in dark mode');
+ return 'PASS guide mode design, consistent tab spacing, Tab navigation without arrow switching, single review action, Notes, and phone layout';
+}

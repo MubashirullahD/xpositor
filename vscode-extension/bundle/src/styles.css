@@ -525,9 +525,9 @@ progress::-webkit-progress-value { background:var(--lime-deep); border-radius:12
 @media (prefers-reduced-motion:reduce) { *,*::before,*::after {animation:none!important;transition:none!important;scroll-behavior:auto!important;} }
 
 /* Guided review shares the same reachable panel at every viewport width. */
-.guide-modes { display:flex; gap:8px; padding:10px 16px; border-bottom:1px solid var(--border,#e1e5de); }
-.guide-modes button { flex:1; min-height:44px; }
-.guide-modes [aria-pressed="true"] { background:#d9efb9; color:#23391b; }
+.guide-modes { display:flex; gap:10px; padding:14px 16px; border-bottom:1px solid var(--line); }
+.guide-modes button { flex:1; min-width:0; min-height:52px; padding:0 12px; border:1px solid var(--line-strong); border-radius:10px; background:var(--panel-muted); color:var(--ink); box-shadow:none; font-size:14px; font-weight:700; }
+.guide-modes [aria-pressed="true"] { background:#dceabf; border-color:#c7daa4; color:#334325; }
 .walkthrough-scroll { flex:1; min-height:0; overflow:auto; overscroll-behavior:contain; padding:18px; }
 .walkthrough { font-size:14px; line-height:1.65; overflow-wrap:anywhere; }
 .walkthrough h3 { font-size:20px; line-height:1.35; margin:0 0 12px; }
@@ -599,7 +599,8 @@ html.modal-open,body.modal-open { overflow:hidden!important; overscroll-behavior
 :root[data-theme="dark"] textarea, :root[data-theme="dark"] input, :root[data-theme="dark"] select {color:var(--ink);background:var(--panel);}
 :root[data-theme="dark"] .message-bubble, :root[data-theme="dark"] .assistant .message-bubble {background:var(--panel);color:var(--ink);}
 :root[data-theme="dark"] .user .message-bubble {background:#c7e697;color:#202c1c;}
-:root[data-theme="dark"] .guide-modes [aria-pressed=true] {background:#415332;color:#e4f3d1;}
+:root[data-theme="dark"] .guide-modes button {background:var(--panel);color:var(--ink);border-color:var(--line-strong);}
+:root[data-theme="dark"] .guide-modes [aria-pressed=true] {background:#415332;border-color:#5a6b43;color:#e4f3d1;}
 :root[data-theme="dark"] .reviewed-pill {background:#344b2a;color:#d6f1b2;}
 :root[data-theme="dark"] .needs-review-pill, :root[data-theme="dark"] .connection-error, :root[data-theme="dark"] #storage-alert, :root[data-theme="dark"] .demo-banner, :root[data-theme="dark"] .guide-error {background:#473722;color:#f3d2a1;}
 :root[data-theme="dark"] .review-footer {background:var(--bg);}
@@ -653,8 +654,8 @@ html.modal-open,body.modal-open { overflow:hidden!important; overscroll-behavior
 .file-review-status {color:var(--muted);font-size:12px;}
 .rename-detail {flex-basis:100%;color:var(--muted);overflow-wrap:anywhere;}
 .view-toolbar {display:flex;align-items:center;gap:12px;justify-content:space-between;padding:0 18px;border-bottom:1px solid var(--line);flex-shrink:0;min-width:0;}
-.view-toolbar .review-tabs {border:0;margin:0;min-width:0;gap:20px;}
-.view-toolbar .review-tab {font-size:13px;min-height:44px;padding:10px 0;}
+.view-toolbar .review-tabs {border:0;margin:0;min-width:0;gap:4px;}
+.view-toolbar .review-tab {font-size:13px;min-width:44px;min-height:44px;padding:10px 8px;}
 .next-hunk-button {background:transparent;color:var(--muted);font-size:12px;min-height:44px;white-space:nowrap;}
 .next-hunk-button:hover {color:var(--ink);}
 .review-panel .code-card {margin:0;border:0;border-radius:0;box-shadow:none;}
@@ -693,7 +694,7 @@ html.modal-open,body.modal-open { overflow:hidden!important; overscroll-behavior
  .review-panel {padding:0 0 calc(88px + env(safe-area-inset-bottom));}
  .file-heading {padding:12px 14px;gap:6px 12px;}
  .view-toolbar {padding:0 14px;gap:8px;}
- .view-toolbar .review-tabs {gap:14px;flex-wrap:wrap;}
+ .view-toolbar .review-tabs {gap:4px;flex-wrap:nowrap;}
  .next-hunk-button {font-size:11px;}
  .utility-menu {inset:72px 14px auto auto;}
  .utility-menu select {font-size:16px;}
