@@ -861,14 +861,10 @@ html.modal-open,body.modal-open { overflow:hidden!important; overscroll-behavior
 .deep-mode-choice button {margin:0 8px 4px 0;}
 .deep-review .deep-file-picker {display:grid;gap:6px;margin:14px 0;}
 .deep-review .deep-file-picker select {max-width:100%;}
-.deep-range {color:var(--muted);font-size:12px;}
-.deep-code {max-height:360px;overflow:auto;margin:12px 0;padding:10px 0;border:1px solid var(--border);border-radius:10px;background:var(--panel-muted);font-size:12px;}
-.deep-code-line {display:grid;grid-template-columns:42px minmax(0,1fr);gap:10px;line-height:1.5;}
-.deep-code-line span {color:var(--muted);text-align:right;user-select:none;}
-.deep-code-line code {white-space:pre;overflow-wrap:normal;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;}
+.deep-location {display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0;padding:10px 12px;border-radius:10px;background:var(--panel-muted);}
+.deep-location p {margin:0;color:var(--muted);font-size:12px;line-height:1.5;}
+.deep-location button {flex:none;}
 .deep-explanation-item,.deep-pointers,.deep-notice {margin:12px 0;padding:12px;border:1px solid var(--border);border-radius:10px;}
 .deep-explanation-item p,.deep-pointers p,.deep-notice p {margin:6px 0 0;line-height:1.5;}
 .deep-pointers ul,.lesson-check ul,.review-question ul {padding-left:20px;}
-.deep-review {container-type:inline-size;}
-.deep-explanation-item .deep-code {margin:0;max-height:300px;}
-@container (min-width:500px) {.deep-explanation-item {display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:14px;}}
+@media(max-width:520px) {.deep-location {align-items:stretch;flex-direction:column;}}

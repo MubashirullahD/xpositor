@@ -16,9 +16,9 @@ export function sanitizeWalkthrough(value) {
   return { scroll:Number.isFinite(value.scroll)&&value.scroll>=0?value.scroll:0, selectedId:value.selectedId, fileIds:Array.isArray(value.fileIds)?value.fileIds.filter((id)=>typeof id==='string').slice(0,12):undefined, guide:{title:text(value.guide.title,140),summary:text(value.guide.summary,1600),assumptions:(Array.isArray(value.guide.assumptions)?value.guide.assumptions:[]).filter((s)=>typeof s==='string').slice(0,12),steps}, scope:{includedPaths:(Array.isArray(value.scope?.includedPaths)?value.scope.includedPaths:[]).filter((s)=>typeof s==='string'),excludedCount:Math.max(0,Number(value.scope?.excludedCount)||0)}, step:Math.min(steps.length-1,Math.max(0,Number.isInteger(value.step)?value.step:0)), understood:Array.isArray(value.understood)?value.understood.filter((i)=>Number.isInteger(i)&&i>=0&&i<steps.length):[],draft:text(value.draft,1600),chats };
 }
 
-export function createWalkthroughUI({getState,getData,save,render,apiFetch,jump}) {
+export function createWalkthroughUI({getState,getData,save,render,apiFetch,jump,showSection}) {
   const agent = createAgentGuideUI({getState,getData,save,render,apiFetch,jump});
-  const deep = createDeepReviewUI({getState,getData,save,render,apiFetch,jump});
+  const deep = createDeepReviewUI({getState,getData,save,render,apiFetch,jump,showSection});
   const useAgent = () => getState().repositoryGuide || Boolean(getState().snapshot && getData().agentGuides?.[walkthroughKey(getState().snapshot)]);
   let controller, pending=false, preparingWalk=false, error='', setup={depth:'standard',timeMinutes:15,scope:'auto'};
   const current=()=>{const s=getState();return s.snapshot?getData().walkthroughs[walkthroughKey(s.snapshot)]:null;};
@@ -65,7 +65,7 @@ export function createWalkthroughUI({getState,getData,save,render,apiFetch,jump}
   function bind(root) {
     if(deep.workspace()?.mode==='deep'&&deep.current()){deep.bind(root);return;}
     root.querySelectorAll('[data-walk-mode]').forEach(el=>el.addEventListener('click',async()=>{
-      if(el.dataset.walkMode==='resume-deep'){deep.workspace().mode='deep';await save();render();return;}
+      if(el.dataset.walkMode==='resume-deep'){deep.workspace().mode='deep';await save();render();deep.focusCurrent(true,false);return;}
       await deep.start();
     }));
     if(useAgent()){agent.bind(root);return;}

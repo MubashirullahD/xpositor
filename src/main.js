@@ -15,7 +15,7 @@ export const state = { snapshot:null, selectedFile:'', activeTab:'diff', online:
 let storage, saveTimer, scrollTimer, toastTimer, refreshSequence = 0, dialogReturnFocus, mindfulnessSession, mindfulnessReturnAction, mindfulnessTickTimer, mindfulnessMode='breathing', mindfulnessWaiting=false, mindfulnessSettingsOpen=false, queueScroll=0;
 const sourceRequests = new Map();
 let chatController, citation, supportingSource;
-const walkthrough = createWalkthroughUI({getState:()=>state,getData:()=>data,save:saveState,render,apiFetch,jump:jumpCitation});
+const walkthrough = createWalkthroughUI({getState:()=>state,getData:()=>data,save:saveState,render,apiFetch,jump:jumpCitation,showSection:showDeepSection});
 export const selectedFile = () => state.snapshot?.files.find((f) => f.id === state.selectedFile);
 export const currentSession = () => selectedFile() ? sessionFor(data,state.snapshot,selectedFile()) : null;
 const reviewed = (file) => Boolean(data.reviews[reviewKey(state.snapshot,file)]);
@@ -39,6 +39,8 @@ async function saveSnapshot(snapshot) { if (!storage || state.demo) return; try 
 function currentWalkRecord() {
   if(!state.snapshot)return null;
   const key=JSON.stringify([state.snapshot.repoId,state.snapshot.snapshotId]), workspace=data.agentGuides?.[key];
+  const deep=data.deepReviews?.[key];
+  if(state.guideMode==='walkthrough'&&deep?.mode==='deep'&&deep.records?.[deep.activeId])return deep.records[deep.activeId];
   return workspace?.records?.[workspace.activeId] || data.walkthroughs[key];
 }
 function capturePosition() {
@@ -484,6 +486,14 @@ async function jumpCitation(target,{reveal=true}={}) {
   render();
   const line=root.querySelector('.citation-focus,.citation-highlight');
   if(line){line.closest('details')?.setAttribute('open','');line.scrollIntoView({block:'center',behavior:'smooth'});}
+}
+function showDeepSection(section,{reveal=false}={}) {
+  const file=state.snapshot?.files.find(item=>item.id===section.fileId||item.path===section.path);
+  if(!file)return;
+  if(section.kind==='code')return jumpCitation({path:file.path,fileId:file.id,side:section.side==='old'?'old':'new',startLine:section.startLine,endLine:section.endLine,focusLine:section.startLine},{reveal:reveal&&overlayGuide()});
+  citation=null;
+  if(reveal&&overlayGuide()){if(history.state?.patchworkPanel)history.back();state.chatOpen=false;state.filesOpen=false;}
+  state.activeTab='overview';selectFile(file.id);
 }
 function highlightCitation() {
   if(!citation||citation.snapshotId!==state.snapshot?.snapshotId)return;
