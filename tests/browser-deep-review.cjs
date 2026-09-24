@@ -5,7 +5,7 @@ async page => {
  const snapshot={repoId:'deep-browser',snapshotId:'deep-browser-snapshot',scope:'unstaged',base:'head',head:'head',branch:'main',generatedAt:new Date().toISOString(),workspaceName:'Deep review pilot',files:[{id:'code',path:'src/change.js',version:'v1',source:'const answer = 42;\nexport { answer };\n',sourceAvailable:true,lines:[['added','1','const answer = 42;']],added:1,removed:0},{id:'lock',path:'package-lock.json',version:'v2',source:'{"lockfileVersion":3}',sourceAvailable:true,lines:[['added','1','{"lockfileVersion":3}']],added:1,removed:0}]};
  const sections=[{id:'0',fileId:'code',path:'src/change.js',kind:'code',side:'new',startLine:1,endLine:2,summary:null},{id:'1',fileId:'lock',path:'package-lock.json',kind:'summary',side:'new',startLine:null,endLine:null,summary:'Changed file; 1 added and 0 removed lines in the captured diff. Generated or lockfile content is summarized; line-by-line explanation is skipped.'}];
  let record,run,sectionRequests=0,speechRequests=0;
- await page.addInitScript(()=>{window.Audio=class{constructor(src){this.src=src;this.paused=true;}async play(){this.paused=false;}pause(){this.paused=true;}};});
+ await page.addInitScript(()=>{window.Audio=class{constructor(src){this.src=src;this.paused=true;this.allowed=false;}async play(){if(!this.allowed){this.allowed=true;const error=new Error('The request is not allowed by the user agent or the platform.');error.name='NotAllowedError';throw error;}this.paused=false;}pause(){this.paused=true;}};});
  await page.route('**/api/**',async route=>{
   const path='/api/'+route.request().url().split('/api/')[1].split('?')[0];
   const input=route.request().method()==='POST'?route.request().postDataJSON():{};
@@ -27,11 +27,18 @@ async page => {
  await page.getByRole('button',{name:'Code guide',exact:true}).click();
  await page.getByRole('button',{name:'Start Deep file review'}).click();
  await page.getByText('This section explains both captured lines.').waitFor();
+ await page.setViewportSize({width:390,height:844});
  if(sectionRequests!==1||speechRequests!==0)throw Error('Deep mode should generate one section and no audio until Play');
  await page.getByRole('button',{name:'Play section'}).click();
+ await page.getByRole('button',{name:'Play ready audio'}).waitFor();
+ if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Deep review overflows the phone viewport');
+ if(await page.getByText('The request is not allowed by the user agent',{exact:false}).count())throw Error('Raw browser audio error leaked into the guide');
+ await page.getByRole('button',{name:'Play ready audio'}).click();
+ await page.getByRole('button',{name:'Pause',exact:true}).waitFor();
  if(speechRequests!==1)throw Error('Play did not request section audio');
  await page.getByRole('button',{name:'Next section'}).click();
  await page.getByText('Generated or lockfile content is summarized').waitFor();
+ await page.setViewportSize({width:1440,height:900});
  await page.reload();await page.getByRole('button',{name:'Code guide',exact:true}).click();
  await page.getByText('Generated or lockfile content is summarized').waitFor();
  await page.context().setOffline(true);await page.evaluate(()=>dispatchEvent(new Event('offline')));
