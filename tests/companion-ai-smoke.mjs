@@ -53,7 +53,7 @@ const provider = createServer((request, response) => {
       const fileId = prompt.includes('requested depth is brief') ? 'invented-file-id' : context.files[0].id;
       text = JSON.stringify({
         title: 'Captured walkthrough', summary: 'A plan grounded in the supplied immutable snapshot.', assumptions: [],
-        steps: ['Intent', 'Trace', 'Verify'].map((title) => ({ title, explanation: `Review ${context.files[0].path}.`, reviewQuestion: 'What behavior should this preserve?', citations: [{ fileId, startLine: 1, endLine: 1, side: 'new' }] })),
+        steps: ['Intent', 'Trace', 'Verify'].map((title) => ({ title, explanation: `Review ${context.files[0].path}.`, reviewPointers:[], citations: [{ fileId, startLine: 1, endLine: 1, side: 'new' }] })),
       });
     } else if (prompt.includes('Continue the validated walkthrough')) {
       text = 'Stub walkthrough follow-up.';

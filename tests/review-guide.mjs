@@ -48,9 +48,9 @@ const validGuide = {
   summary: 'The entry point delegates work to a changed helper and test.',
   assumptions: ['The changed files are intended to work together.'],
   steps: [
-    { title: 'Intent', explanation: 'The entry point imports the helper.', reviewQuestion: 'Does this dependency belong here?', citations: [{ fileId: 'main', startLine: 1, endLine: 1, side: 'new' }] },
-    { title: 'Trace', explanation: 'The entry point calls the helper.', reviewQuestion: 'Does the return value match the caller?', citations: [{ fileId: 'main', startLine: 2, endLine: 2, side: 'new' }, { fileId: 'util', startLine: 1, endLine: 1, side: 'new' }] },
-    { title: 'Verify', explanation: 'The changed test imports the entry point.', reviewQuestion: 'Does this cover the intended path?', citations: [{ fileId: 'test', startLine: 1, endLine: 2, side: 'new' }] },
+    { title: 'Intent', explanation: 'The entry point imports the helper.', reviewPointers:[{text:'Check whether this dependency belongs here.',citation:{fileId:'main',startLine:1,endLine:1,side:'new'}}], citations: [{ fileId: 'main', startLine: 1, endLine: 1, side: 'new' }] },
+    { title: 'Trace', explanation: 'The entry point calls the helper.', reviewPointers:[], citations: [{ fileId: 'main', startLine: 2, endLine: 2, side: 'new' }, { fileId: 'util', startLine: 1, endLine: 1, side: 'new' }] },
+    { title: 'Verify', explanation: 'The changed test imports the entry point.', reviewPointers:[], citations: [{ fileId: 'test', startLine: 1, endLine: 2, side: 'new' }] },
   ],
 };
 assert.deepEqual(validateGuide(validGuide, context), validGuide);
@@ -63,12 +63,13 @@ assert.match(callerPrompt, /illustrative example/);
 
 assert.throws(() => validateGuide({ ...validGuide, steps: [{ ...validGuide.steps[0], citations: [{ fileId: 'made-up', startLine: 1, endLine: 1, side: 'new' }] }, ...validGuide.steps.slice(1)] }, context), (error) => error.status === 422 && /outside/.test(error.message));
 assert.throws(() => validateGuide({ ...validGuide, steps: [{ ...validGuide.steps[0], citations: [{ fileId: 'main', startLine: 99, endLine: 99, side: 'new' }] }, ...validGuide.steps.slice(1)] }, context), (error) => error.status === 422 && /unavailable/.test(error.message));
+assert.throws(() => validateGuide({ ...validGuide, steps: [{ ...validGuide.steps[0], reviewPointers:[{text:'Bad pointer',citation:{fileId:'main',startLine:999,endLine:999,side:'new'}}] }, ...validGuide.steps.slice(1)] }, context), /unavailable/);
 
 const deletedContext = buildGuideContext(store, 'snapshot-1', 'deleted', ['deleted']);
-const oldGuide = { ...validGuide, steps: validGuide.steps.map((step) => ({ ...step, citations: [{ fileId: 'deleted', startLine: 7, endLine: 7, side: 'old' }] })) };
+const oldGuide = { ...validGuide, steps: validGuide.steps.map((step) => ({ ...step, reviewPointers:[],citations: [{ fileId: 'deleted', startLine: 7, endLine: 7, side: 'old' }] })) };
 assert.equal(validateGuide(oldGuide, deletedContext).steps[0].citations[0].side, 'old');
 const linkContext = buildGuideContext(store, 'snapshot-1', 'link', ['link']);
-const linkGuide = { ...validGuide, steps: validGuide.steps.map((step) => ({ ...step, citations: [{ fileId: 'link', startLine: 1, endLine: 1, side: 'new' }] })) };
+const linkGuide = { ...validGuide, steps: validGuide.steps.map((step) => ({ ...step, reviewPointers:[],citations: [{ fileId: 'link', startLine: 1, endLine: 1, side: 'new' }] })) };
 assert.equal(validateGuide(linkGuide, linkContext).steps[0].citations[0].fileId, 'link');
 assert.match(buildStepPrompt(linkContext, linkGuide, 0, 'Show callers.'), /No caller is included in this immutable context/);
 

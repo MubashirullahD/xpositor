@@ -22,9 +22,9 @@ const guide = {
   summary: 'The entry point delegates to the helper and a test imports it.',
   assumptions: [],
   steps: [
-    { title: 'Intent', explanation: 'The entry imports the helper.', reviewQuestion: 'Is the dependency intended?', citations: [{ fileId: 'entry', startLine: 1, endLine: 1, side: 'new' }] },
-    { title: 'Trace', explanation: 'The entry calls the helper.', reviewQuestion: 'Does the return value fit?', citations: [{ fileId: 'entry', startLine: 2, endLine: 2, side: 'new' }, { fileId: 'helper', startLine: 1, endLine: 1, side: 'new' }] },
-    { title: 'Verify', explanation: 'The helper returns the traced value.', reviewQuestion: 'Does the helper output fit the caller?', citations: [{ fileId: 'helper', startLine: 1, endLine: 1, side: 'new' }] },
+    { title: 'Intent', explanation: 'The entry imports the helper.', reviewPointers:[], citations: [{ fileId: 'entry', startLine: 1, endLine: 1, side: 'new' }] },
+    { title: 'Trace', explanation: 'The entry calls the helper.', reviewPointers:[], citations: [{ fileId: 'entry', startLine: 2, endLine: 2, side: 'new' }, { fileId: 'helper', startLine: 1, endLine: 1, side: 'new' }] },
+    { title: 'Verify', explanation: 'The helper returns the traced value.', reviewPointers:[], citations: [{ fileId: 'helper', startLine: 1, endLine: 1, side: 'new' }] },
   ],
 };
 

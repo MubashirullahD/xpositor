@@ -4,6 +4,7 @@ import { buildRepositoryGuidePrompt, validateRepositoryGuide, REPOSITORY_GUIDE_S
 import { createGuideRuns } from './guide-runs.mjs';
 import { GuideError } from './review-guide.mjs';
 import { generateFileOverviews } from './file-overviews.mjs';
+import { buildDeepManifest, deepSectionPrompt, validateDeepSection, DEEP_SECTION_SCHEMA } from './deep-review.mjs';
 
 const MIN_WALKTHROUGH_TIMEOUT_MS = 5 * 60_000;
 const PER_CHANGED_FILE_TIMEOUT_MS = 30_000;
@@ -41,8 +42,55 @@ export function createAgentGuideService(snapshots, ai, { storage } = {}) {
     return record;
   }
   function view(record) {
+    if (record.mode === 'deep') return structuredClone({ id:record.id, mode:'deep', snapshotId:record.snapshotId, title:record.title, persistenceError:record.persistenceError||null, sections:record.sections, position:record.position, completed:record.completed, explanations:record.explanations, runId:record.runId });
     return structuredClone({ id: record.id, snapshotId: record.snapshotId, parentId: record.parentId,
       title: record.title, persistenceError:record.persistenceError||null, step: record.step, guide: record.guide, fileOverviews:record.fileOverviews||{}, overviewStatus:record.overviewStatus||{}, lessons:record.lessons||{}, messages: record.messages, runId: record.runId });
+  }
+  function startDeep(input) {
+    requireStorage();requireInput(input,['requestId','snapshotId']);
+    if(typeof input.snapshotId!=='string')throw new GuideError('A captured snapshot is required.',400,'DEEP_SNAPSHOT');
+    const existing=conversations.get(input.requestId);
+    if(existing){if(existing.mode!=='deep'||existing.snapshotId!==input.snapshotId)throw new GuideError('This request ID belongs to another review.',409,'DEEP_CONFLICT');return view(existing);}
+    if(conversations.size>=128)throw new GuideError('The companion conversation limit has been reached.',413,'GUIDE_CONVERSATION_LIMIT');
+    const repository=snapshots.getRepository(input.snapshotId);
+    const sections=buildDeepManifest(repository);
+    storage?.saveSnapshot(input.snapshotId,snapshots.exportRecord(input.snapshotId));
+    const record={id:input.requestId,mode:'deep',snapshotId:input.snapshotId,title:'Deep file review',sections,position:0,completed:[],explanations:{},runId:null};
+    conversations.set(record.id,record);
+    try{persist();}catch(error){conversations.delete(record.id);throw error;}
+    return view(record);
+  }
+  function deepSection(input) {
+    requireStorage();requireInput(input,['requestId','conversationId','index','model','effort','prefetch']);
+    const record=find(input.conversationId);
+    if(record.mode!=='deep')throw new GuideError('Choose a deep review session.',400,'DEEP_SESSION');
+    if(!Number.isSafeInteger(input.index)||input.index<0||input.index>=record.sections.length)throw new GuideError('Choose a section in this review.',400,'DEEP_INDEX');
+    const section=record.sections[input.index];
+    if(section.kind!=='code')throw new GuideError('This file has a coverage notice instead of a generated explanation.',400,'DEEP_NOTICE');
+    if(record.explanations[input.index])return {cached:true,conversation:view(record)};
+    const repository=snapshots.getRepository(record.snapshotId);
+    const run=runs.start(input.requestId,{...input,snapshotId:record.snapshotId},async(_,options)=>{
+      let prompt=deepSectionPrompt(repository,section);
+      for(let attempt=0;attempt<2;attempt++){
+        const result=await ai.generate(prompt,{...options,jsonSchema:DEEP_SECTION_SCHEMA,model:input.model,effort:input.effort,turnTimeoutMs:5*60_000});
+        if(result.status!==200)throw new GuideError(result.body?.error||'Section explanation failed.',result.status,'DEEP_GENERATION_FAILED');
+        if(options.signal.aborted)throw new Error('Stopped.');
+        try{
+          const explanation=validateDeepSection(JSON.parse(result.body.text),repository,section);
+          record.explanations[input.index]=explanation;persist();return {index:input.index,explanation,conversationId:record.id};
+        }catch(error){if(attempt)throw error;prompt=`${deepSectionPrompt(repository,section)}\nYour previous response failed validation: ${error.message}. Return the full corrected JSON.`;}
+      }
+    });
+    record.runId=run.id;track(record,run);return {run};
+  }
+  function advanceDeep(input) {
+    requireStorage();
+    if(!input||Object.keys(input).some(key=>!['conversationId','position','completed'].includes(key)))throw new GuideError('Invalid deep review navigation.',400,'DEEP_NAVIGATION');
+    const record=find(input.conversationId);
+    if(record.mode!=='deep'||!Number.isSafeInteger(input.position)||input.position<0||input.position>=record.sections.length)throw new GuideError('Choose a section in this review.',400,'DEEP_POSITION');
+    if(input.completed!==undefined){if(!Array.isArray(input.completed)||input.completed.length>record.sections.length||input.completed.some(index=>!Number.isSafeInteger(index)||index<0||index>=record.sections.length))throw new GuideError('Invalid completed section list.',400,'DEEP_COMPLETED');record.completed=[...new Set([...record.completed,...input.completed])].sort((a,b)=>a-b);}
+    if(input.position>record.position&&!record.completed.includes(record.position))record.completed.push(record.position);
+    record.position=input.position;persist();return view(record);
   }
   async function generate(record, prompt, options, schema, parent) {
     const tools = createRepositoryTools(snapshots, record.snapshotId);
@@ -146,9 +194,9 @@ export function createAgentGuideService(snapshots, ai, { storage } = {}) {
     if (!Number.isSafeInteger(step) || step < 0 || step >= (record.guide?.steps.length || 0)) throw new GuideError('Choose an existing walkthrough step.', 400, 'GUIDE_STEP');
     record.step = step; persist();return view(record);
   }
-  return { start, question, lesson, selectStep, runs,
+  return { start, question, lesson, selectStep, startDeep, deepSection, advanceDeep, runs,
     conversation: id => view(find(id)),
-    list: snapshotId => [...conversations.values()].filter(record => record.snapshotId === snapshotId).map(record => ({ id: record.id, snapshotId: record.snapshotId, parentId: record.parentId, title: record.title, persistenceError:record.persistenceError||null, step: record.step, runId: record.runId })),
+    list: snapshotId => [...conversations.values()].filter(record => record.snapshotId === snapshotId).map(record => ({ id: record.id, mode:record.mode||'overview', snapshotId: record.snapshotId, parentId: record.parentId, title: record.title, persistenceError:record.persistenceError||null, step: record.step, position:record.position, runId: record.runId })),
     close: () => runs.close(),
   };
 }

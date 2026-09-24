@@ -9,8 +9,9 @@ import { sanitizeLessons } from '../src/audio-lesson.js';
 import { createAgentGuideService } from '../agent-guide-service.mjs';
 const snapshot={snapshotId:'snapshot',files:[{id:'a',path:'a.js',lines:[['removed','1','before']]}]};
 const repository={snapshot,manifest:[{path:'a.js',fileId:'a',available:true,changed:true}],read(path){assert.equal(path,'a.js');return {source:'const value = 42;\nreturn value;'};}};
-const lesson={title:'Follow the value',checkQuestion:'What is returned?',segments:Array.from({length:4},(_,i)=>({title:'Part '+i,narration:'We return forty two.',citation:{path:'a.js',side:'new',startLine:1,endLine:2},focusLine:2}))};
+const lesson={title:'Follow the value',reviewPointers:[{text:'Check what happens when the value is missing.',citation:{path:'a.js',side:'new',startLine:1,endLine:1}}],segments:Array.from({length:4},(_,i)=>({title:'Part '+i,narration:'We return forty two.',citation:{path:'a.js',side:'new',startLine:1,endLine:2},focusLine:2}))};
 const valid=validateLesson(lesson,repository,0);assert.equal(valid.segments[0].code[1].text,'return value;');
+const longEnding=structuredClone(lesson);longEnding.segments.at(-1).narration='x'.repeat(990);assert.throws(()=>validateLesson(longEnding,repository,0),/spoken chapter ending/);
 for(const patch of [{endLine:13},{endLine:3},{startLine:0}]){const longer=structuredClone(lesson);longer.segments[0].citation.endLine=20;assert.equal(validateLesson(longer,{...repository,read:()=>({source:Array(30).fill('real code').join('\n')})},0).segments[0].citation.endLine,20);
 const bad=structuredClone(lesson);Object.assign(bad.segments[0].citation,patch);assert.throws(()=>validateLesson(bad,repository,0));}
 const bad=structuredClone(lesson);bad.segments[0].focusLine=3;assert.throws(()=>validateLesson(bad,repository,0),/Highlighted/);

@@ -10,6 +10,7 @@ import { closeProviders } from './providers.mjs';
 import { createAiService } from './ai-service.mjs';
 import { createGuideStorage } from './guide-storage.mjs';
 import { createAgentGuideService } from './agent-guide-service.mjs';
+import { deepSpeechChunks } from './deep-review.mjs';
 import { GuideError } from './review-guide.mjs';
 import { createWalkthroughService } from './walkthrough-service.mjs';
 import { createSnapshotStore, SnapshotError } from './snapshot.mjs';
@@ -121,10 +122,21 @@ const handleRequest = async (request, response) => {
       if(!input||typeof input!=='object'||Array.isArray(input))throw new GuideError('Invalid audio request.',400,'VOICE_INPUT');
       const record=agentGuide.conversation(input.conversationId);
       if(!Number.isSafeInteger(input.step)||!Number.isSafeInteger(input.segment))throw new GuideError('Choose a lesson segment.',400,'VOICE_SEGMENT');
-      const segment=record.lessons?.[input.step]?.segments[input.segment];
+      const lesson=record.lessons?.[input.step],segment=lesson?.segments[input.segment];
       if(!segment)throw new GuideError('This lesson segment is unavailable.',404,'VOICE_SEGMENT');
-      const audio=await speech.synthesize(segment.narration,input.voice);
+      const closing=input.segment===lesson.segments.length-1&&Array.isArray(lesson.reviewPointers)?` Things to double-check: ${lesson.reviewPointers.length?lesson.reviewPointers.map(pointer=>pointer.text).join(' '):'No specific concern was identified from the captured context. That does not verify the change.'}`:'';
+      const audio=await speech.synthesize(segment.narration+closing,input.voice);
       response.writeHead(200,{'content-type':'audio/wav','cache-control':'no-store','x-patchwork-speech-timing':JSON.stringify(audio.timings||[])});response.end(audio);return;
+    }
+    if(url.pathname==='/api/guide/deep/speech'&&request.method==='POST'){
+      const input=JSON.parse(await readBody(request,4096));
+      const record=agentGuide.conversation(input.conversationId);
+      if(record.mode!=='deep'||!Number.isSafeInteger(input.index)||!record.explanations?.[input.index])throw new GuideError('Generate this deep review section before playing it.',404,'DEEP_AUDIO');
+      const chunks=deepSpeechChunks(record.explanations[input.index].narration);
+      const chunk=input.chunk??0;
+      if(!Number.isSafeInteger(chunk)||chunk<0||chunk>=chunks.length)throw new GuideError('Choose an audio part in this section.',400,'DEEP_AUDIO_CHUNK');
+      const audio=await speech.synthesize(chunks[chunk],input.voice);
+      response.writeHead(200,{'content-type':'audio/wav','cache-control':'no-store','x-patchwork-audio-chunks':String(chunks.length),'x-patchwork-speech-timing':JSON.stringify(audio.timings||[])});response.end(audio);return;
     }
     if (url.pathname === '/api/guide/run'  && request.method === 'GET') return sendJson(response, 200, { run: agentGuide.runs.get(url.searchParams.get('id'), url.searchParams.has('after') ? Number(url.searchParams.get('after')) : undefined) });
     if (url.pathname === '/api/guide/conversation' && request.method === 'GET') return sendJson(response, 200, { conversation: agentGuide.conversation(url.searchParams.get('id')) });
@@ -133,12 +145,15 @@ const handleRequest = async (request, response) => {
       const repository = snapshots.getRepository(url.searchParams.get('snapshotId'));
       return sendJson(response, 200, { path: url.searchParams.get('path'), ...repository.read(url.searchParams.get('path')) });
     }
-    if (['/api/guide/lesson', '/api/guide/start', '/api/guide/question', '/api/guide/stop', '/api/guide/step'].includes(url.pathname) && request.method === 'POST') {
+    if (['/api/guide/lesson', '/api/guide/start', '/api/guide/question', '/api/guide/stop', '/api/guide/step', '/api/guide/deep/start', '/api/guide/deep/section', '/api/guide/deep/advance'].includes(url.pathname) && request.method === 'POST') {
       let input;
       try { input = JSON.parse(await readBody(request, 64 * 1024)); } catch (error) { if (error instanceof SnapshotError) throw error; throw new SnapshotError('Invalid guide JSON.', 400, 'GUIDE_INPUT'); }
       if (!input || typeof input !== 'object' || Array.isArray(input)) throw new SnapshotError('Invalid guide request.', 400, 'GUIDE_INPUT');
       if (url.pathname === '/api/guide/stop') return sendJson(response, 200, { run: agentGuide.runs.cancel(input.requestId) });
       if (url.pathname === '/api/guide/step') return sendJson(response, 200, { conversation: agentGuide.selectStep(input.conversationId, input.step) });
+      if (url.pathname === '/api/guide/deep/start') return sendJson(response, 200, { conversation:agentGuide.startDeep(input) });
+      if (url.pathname === '/api/guide/deep/advance') return sendJson(response, 200, { conversation:agentGuide.advanceDeep(input) });
+      if (url.pathname === '/api/guide/deep/section') {const value=agentGuide.deepSection(input);return sendJson(response,value.cached?200:202,value);}
       const run = url.pathname === '/api/guide/start' ? agentGuide.start(input) : url.pathname==='/api/guide/lesson'?agentGuide.lesson(input):agentGuide.question(input);
       return sendJson(response, 202, { run });
     }

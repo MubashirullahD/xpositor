@@ -28,11 +28,11 @@ export const GUIDE_SCHEMA = Object.freeze({
       type: 'array', minItems: 3, maxItems: 6,
       items: {
         type: 'object', additionalProperties: false,
-        required: ['title', 'explanation', 'reviewQuestion', 'citations'],
+        required: ['title', 'explanation', 'reviewPointers', 'citations'],
         properties: {
           title: { type: 'string', minLength: 1, maxLength: 180 },
           explanation: { type: 'string', minLength: 1, maxLength: 3200 },
-          reviewQuestion: { type: 'string', minLength: 1, maxLength: 700 },
+          reviewPointers: { type: 'array', maxItems: 4, items: { type: 'object', additionalProperties: false, required: ['text', 'citation'], properties: { text: { type: 'string', minLength: 1, maxLength: 500 }, citation: { type: 'object', additionalProperties: false, required: ['fileId', 'startLine', 'endLine', 'side'], properties: { fileId: { type: 'string', minLength: 1, maxLength: 180 }, startLine: { type: 'integer', minimum: 1 }, endLine: { type: 'integer', minimum: 1 }, side: { enum: ['new', 'old'] } } } } } },
           citations: {
             type: 'array', minItems: 1, maxItems: 8,
             items: {
@@ -121,6 +121,7 @@ export function buildGuidePrompt(context, { depth = 'standard', timeMinutes = 15
     `The requested depth is ${depth}; the reviewer has about ${timeMinutes} minute(s).`,
     'Return JSON only, matching GUIDE_SCHEMA exactly. Create 3–6 grounded steps in this order where evidence permits: intent, trace, failure or edge case, and verification.',
     'Every step must have one or more citations. A citation may name only an included fileId and a real line on its stated side. side "new" cites captured new source when available; side "old" cites removed diff lines. Do not invent files, callers, symbols, line numbers, behavior, or missing source. State uncertainty in assumptions.',
+    'For each step, add 0–4 Things to double-check: a concrete risk, missing test, edge case, or uncertainty supported by captured evidence. Each pointer must cite a real captured line. Use an empty array when no specific pointer is supported; never imply that the change is verified.',
     'Only the supplied snapshot is available. Do not request tools, edits, commands, permissions, credentials, or network access. Notes and private review annotations are not part of this context.',
     `GUIDE_SCHEMA:\n${JSON.stringify(GUIDE_SCHEMA)}`,
     `SNAPSHOT_CONTEXT:\n${JSON.stringify(context)}`,
@@ -205,14 +206,23 @@ function validateSteps(value, context) {
   if (!Array.isArray(value) || value.length < 3 || value.length > 6) throw new GuideError('Guide must contain 3 to 6 steps.');
   return value.map((step, index) => {
     requireObject(step, `Step ${index + 1}`);
-    rejectUnknownKeys(step, ['title', 'explanation', 'reviewQuestion', 'citations'], `Step ${index + 1}`);
+    rejectUnknownKeys(step, ['title', 'explanation', 'reviewPointers', 'citations'], `Step ${index + 1}`);
     if (!Array.isArray(step.citations) || !step.citations.length || step.citations.length > 8) throw new GuideError(`Step ${index + 1} needs 1 to 8 citations.`);
     return {
       title: stringField(step.title, `Step ${index + 1} title`, 180),
       explanation: stringField(step.explanation, `Step ${index + 1} explanation`, 3200),
-      reviewQuestion: stringField(step.reviewQuestion, `Step ${index + 1} reviewQuestion`, 700),
+      reviewPointers: Array.isArray(step.reviewPointers) ? validatePointers(step.reviewPointers, context, index + 1) : (()=>{throw new GuideError(`Step ${index + 1} needs reviewPointers.`);})(),
       citations: step.citations.map((citation, citationIndex) => validateCitation(citation, context, index + 1, citationIndex + 1)),
     };
+  });
+}
+
+function validatePointers(value, context, stepNumber) {
+  if(value.length>4)throw new GuideError(`Step ${stepNumber} has too many review pointers.`);
+  return value.map((pointer,index)=>{
+    requireObject(pointer,`Step ${stepNumber} pointer ${index+1}`);
+    rejectUnknownKeys(pointer,['text','citation'],`Step ${stepNumber} pointer ${index+1}`);
+    return {text:stringField(pointer.text,`Step ${stepNumber} pointer ${index+1}`,500),citation:validateCitation(pointer.citation,context,stepNumber,index+1)};
   });
 }
 

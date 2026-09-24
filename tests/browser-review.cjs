@@ -4,7 +4,7 @@ async page => {
  const file={id:'a',path:'src/calc.js',version:'v1',status:'modified',label:'calc.js',folder:'src',type:'JS',tone:'lime',added:1,removed:1,sourceAvailable:true,lines:[['removed','1','export const double = x => x;'],['added','1','export const double = x => x * 2;']]};
  const second={...file,id:'b',path:'src/calc.test.js',label:'calc.test.js',version:'t1'};
  const snapshot=()=>({repoId:'ui-test',base:'head-a',head:'head-a',branch:'main',snapshotId:'snapshot-'+version,generatedAt:new Date().toISOString(),workspaceName:'Mobile fixture',files:[{...file,version},second]});
- const guide={title:'Trace the doubling change',summary:'Review the behavior and the boundary.',assumptions:['Only two changed files are included.'],steps:['Intent','Trace','Verify'].map((title)=>({title,explanation:'The function returns its input multiplied by two.',reviewQuestion:'What happens for zero?',citations:[{fileId:'a',side:'new',startLine:1,endLine:1}]}))};
+ const guide={title:'Trace the doubling change',summary:'Review the behavior and the boundary.',assumptions:['Only two changed files are included.'],steps:['Intent','Trace','Verify'].map((title)=>({title,explanation:'The function returns its input multiplied by two.',reviewPointers:[{text:'Check the zero input edge case.',citation:{fileId:'a',side:'new',startLine:1,endLine:1}}],citations:[{fileId:'a',side:'new',startLine:1,endLine:1}]}))};
  const scope={includedPaths:['src/calc.js','src/calc.test.js'],excludedCount:0};
  await page.route('**/api/**',async route=>{
   const raw=route.request().url(),path='/api/'+raw.split('/api/')[1].split('?')[0]; const param=(name)=>decodeURIComponent((raw.match(new RegExp('[?&]'+name+'=([^&]+)'))||[])[1]||'');

@@ -1,4 +1,5 @@
 import { sanitizeAgentWorkspace } from './agent-guide.js';
+import { sanitizeDeepWorkspace } from './deep-review.js';
 import { newTimer, sanitizeTimer } from './focus-timer.js';
 import { sanitizeWalkthrough } from './walkthrough.js';
 /** Device-private, revision-scoped review state. No credentials enter this module. */
@@ -9,7 +10,7 @@ export const comparisonKey = (snapshot) => JSON.stringify([snapshot.repoId, snap
 // comparison, path, and exact file revision are all unchanged.
 export const reviewKey = (snapshot, file) => JSON.stringify([snapshot.repoId, snapshot.base, snapshot.branch, file.path, file.version]);
 export const sessionKey = (snapshot, file) => JSON.stringify([snapshot.repoId, snapshot.snapshotId, file.path, file.version]);
-export const emptyState = () => ({ schema: SCHEMA, pomodoro:newTimer(), reviews: {}, sessions: {}, walkthroughs: {}, agentGuides: {}, notes: [], selections: {}, preferences: { scope:'unstaged', guideWidth:310, theme:'system', model:'', effort:'', codeSize: 14, wrap: false, compactContext: true, mindfulnessDuration:1, mindfulnessRate:6 }, historicalNotes: [] });
+export const emptyState = () => ({ schema: SCHEMA, pomodoro:newTimer(), reviews: {}, sessions: {}, walkthroughs: {}, agentGuides: {}, deepReviews:{}, notes: [], selections: {}, preferences: { scope:'unstaged', guideWidth:310, theme:'system', model:'', effort:'', codeSize: 14, wrap: false, compactContext: true, mindfulnessDuration:1, mindfulnessRate:6 }, historicalNotes: [] });
 export function sessionFor(data, snapshot, file) {
   const key = sessionKey(snapshot, file);
   if (!own(data.sessions, key)) data.sessions[key] = { draft: '', chat: [], archives: [], scroll: {}, noteDraft: '', noteStart: '', noteEnd: '', noteSide: 'new' };
@@ -49,6 +50,7 @@ export function sanitizeState(value) {
   }
   for (const [key, record] of Object.entries(value.walkthroughs || {})) { if(validKey(key,2)) { const walk=sanitizeWalkthrough(record); if(walk)data.walkthroughs[key]=walk; } }
   for (const [key,record] of Object.entries(value.agentGuides||{})) if(validKey(key,2)) data.agentGuides[key]=sanitizeAgentWorkspace(record);
+  for (const [key,record] of Object.entries(value.deepReviews||{})) if(validKey(key,2)) data.deepReviews[key]=sanitizeDeepWorkspace(record);
   data.notes = (Array.isArray(value.notes) ? value.notes : []).filter((n) => n && ['id','repoId','base','branch','path','version','snapshotId','text','createdAt'].every((key) => typeof n[key] === 'string')).map((n) => ({ id:n.id, repoId:n.repoId, base:n.base, branch:n.branch, path:n.path, version:n.version, snapshotId:n.snapshotId, text:n.text, createdAt:n.createdAt, status:n.status === 'resolved' ? 'resolved' : 'open', start: Number.isInteger(n.start) && n.start > 0 ? n.start : null, end: Number.isInteger(n.end) && n.end > 0 ? n.end : null, side:n.side === 'old' ? 'old' : 'new' }));
   data.historicalNotes = (Array.isArray(value.historicalNotes) ? value.historicalNotes : []).filter((n) => n && typeof n.text === 'string').map((n) => ({ id:String(n.id || ''), path:String(n.path || ''), text:n.text, label:'Legacy note — repository and revision unverified', createdAt:String(n.createdAt || '') }));
   for (const [key, path] of Object.entries(value.selections || {})) if (validKey(key,3) && typeof path === 'string') data.selections[key] = path;
@@ -66,10 +68,11 @@ export function parseBackup(text) {
   const data=sanitizeState(value.state);
   // Imported backups never submit a saved request automatically.
   for(const workspace of Object.values(data.agentGuides))workspace.pending=null;
+  for(const workspace of Object.values(data.deepReviews))workspace.pending=null;
   return { data, snapshot:value.snapshot ? cleanSnapshot(value.snapshot) : null };
 }
 export function mergeState(current, incoming) {
-  return sanitizeState({ ...current, reviews:{...incoming.reviews,...current.reviews}, sessions:{...incoming.sessions,...current.sessions}, walkthroughs:{...incoming.walkthroughs,...current.walkthroughs}, agentGuides:{...incoming.agentGuides,...current.agentGuides}, selections:{...incoming.selections,...current.selections}, notes:[...new Map([...incoming.notes,...current.notes].map((n) => [n.id,n])).values()], historicalNotes:[...new Map([...incoming.historicalNotes,...current.historicalNotes].map((n) => [n.id,n])).values()] });
+  return sanitizeState({ ...current, reviews:{...incoming.reviews,...current.reviews}, sessions:{...incoming.sessions,...current.sessions}, walkthroughs:{...incoming.walkthroughs,...current.walkthroughs}, agentGuides:{...incoming.agentGuides,...current.agentGuides}, deepReviews:{...incoming.deepReviews,...current.deepReviews}, selections:{...incoming.selections,...current.selections}, notes:[...new Map([...incoming.notes,...current.notes].map((n) => [n.id,n])).values()], historicalNotes:[...new Map([...incoming.historicalNotes,...current.historicalNotes].map((n) => [n.id,n])).values()] });
 }
 export function notesFor(data, snapshot, file) { return data.notes.filter((n) => n.repoId === snapshot.repoId && n.path === file.path); }
 export function noteIsCurrent(note, snapshot, file) { return note.base === snapshot.base && note.branch === snapshot.branch && note.version === file.version; }

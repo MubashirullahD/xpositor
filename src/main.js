@@ -456,6 +456,7 @@ export async function requestAi({ message, history=[], file, snapshotId, session
 async function sendChat() {
   const file=selectedFile(), snapshot=state.snapshot, session=currentSession();
   const question=session?.draft.trim();if(!file||!question||!state.aiEnabled||!state.online||state.demo||chatController)return;
+  await walkthrough.cancelPrefetch();
   const history=session.chat.filter((m)=>!m.pending&&!m.error).map((m)=>({role:m.role,text:m.text}));
   session.conversationId ||= randomId();
   session.draft='';session.chat.push({role:'user',text:question});const pending={role:'assistant',text:'',pending:true};session.chat.push(pending);

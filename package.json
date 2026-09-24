@@ -10,7 +10,7 @@
     "test:providers": "node tests/cli-provider-smoke.mjs",
     "test:extension": "npm --prefix vscode-extension test",
     "extension:bundle": "node vscode-extension/prepare-bundle.mjs",
-    "test": "node tests/snapshot-regression.mjs && node tests/snapshot-scopes.mjs && node tests/repository-tools.mjs && node tests/file-overviews.mjs && node tests/guide-runs.mjs && node tests/agent-guide-service.mjs && node tests/guide-persistence.mjs && node tests/audio-lesson.mjs && node tests/focus-timer.mjs && node tests/mindfulness.mjs && node tests/preparation.mjs && node tests/companion-ai-smoke.mjs && node tests/cli-provider-smoke.mjs && node tests/codex-server.mjs && node tests/codex-retrieval.mjs && node tests/review-guide.mjs && node tests/walkthrough-service.mjs && node tests/frontend-state.mjs && node tests/frontend-guide.mjs && npm --prefix vscode-extension test",
+    "test": "node tests/snapshot-regression.mjs && node tests/snapshot-scopes.mjs && node tests/repository-tools.mjs && node tests/file-overviews.mjs && node tests/guide-runs.mjs && node tests/agent-guide-service.mjs && node tests/deep-review.mjs && node tests/guide-persistence.mjs && node tests/audio-lesson.mjs && node tests/focus-timer.mjs && node tests/mindfulness.mjs && node tests/preparation.mjs && node tests/companion-ai-smoke.mjs && node tests/cli-provider-smoke.mjs && node tests/codex-server.mjs && node tests/codex-retrieval.mjs && node tests/review-guide.mjs && node tests/walkthrough-service.mjs && node tests/frontend-state.mjs && node tests/frontend-guide.mjs && npm --prefix vscode-extension test",
     "setup:voice": "node setup-voice.mjs"
   }
 }
