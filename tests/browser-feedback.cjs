@@ -35,11 +35,11 @@ async page => {
  if(await page.locator('#chat-panel').getAttribute('inert')===null)throw Error('Guide should start collapsed');
  if(await page.locator('.offline-card,.connection-details').count())throw Error('Successful connection status should be quiet');
  await page.getByRole('button',{name:'Code guide',exact:true}).click();
- await page.getByRole('button',{name:'Conversation',exact:true}).click();
+ await page.getByRole('tab',{name:'Conversation',exact:true}).click();
  await page.locator('.model-settings summary').click();
  await page.locator('#guide-model').selectOption('future-small');
  await page.locator('#guide-effort').selectOption('xhigh');
- await page.getByRole('button',{name:'Conversation',exact:true}).click();
+ await page.getByRole('tab',{name:'Conversation',exact:true}).click();
  await page.locator('#chat-draft').fill('Explain');
  await page.getByRole('button',{name:'Send question',exact:true}).click();
  await page.getByText(/Update Codex on the laptop, restart Patchwork/).waitFor();

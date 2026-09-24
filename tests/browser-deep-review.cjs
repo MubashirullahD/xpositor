@@ -33,6 +33,8 @@ async page => {
  if(await page.locator('.source-line.citation-highlight').count()!==1)throw Error('Only the current line group should be highlighted');
  if(await page.locator('#tab-source').getAttribute('aria-selected')!=='true')throw Error('Deep review did not switch to source');
  if(await page.locator('#deep-file').count()!==1||await page.locator('.deep-review h3,.deep-location').count())throw Error('Duplicate file/location chrome');
+ const filePadding=await page.locator('#deep-file').evaluate(element=>({left:parseFloat(getComputedStyle(element).paddingLeft),right:parseFloat(getComputedStyle(element).paddingRight),height:element.getBoundingClientRect().height}));
+ if(filePadding.left<12||filePadding.right<32||filePadding.height<42)throw Error(`Deep review file picker lacks internal spacing: ${JSON.stringify(filePadding)}`);
  if(sectionRequests<1||speechRequests<1)throw Error('Audio did not prepare automatically');
  await page.getByRole('button',{name:'Play',exact:true}).click();
  await page.getByText('Tap Play again to allow audio playback.').waitFor();

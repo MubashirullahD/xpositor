@@ -51,10 +51,11 @@ const state = emptyState();
 const first = sessionFor(state, snapshot, snapshot.files[0]);
 first.draft = 'Why did this change?';
 first.chat.push({ role: 'user', text: 'Question' });
-first.scroll = { diff: 43, chat: 12 };
+first.scroll = { diff: 43, diffX: 187, chat: 12 };
 const second = sessionFor(state, { ...snapshot, snapshotId: 'capture-b' }, snapshot.files[0]);
 assert.notStrictEqual(first, second, 'drafts, chat, and scroll state are capture scoped');
 assert.equal(first.draft, 'Why did this change?');
+assert.equal(parseBackup(JSON.stringify(createBackup(state, snapshot))).data.sessions[Object.keys(state.sessions)[0]].scroll.diffX, 187, 'horizontal reader position survives state sanitization');
 
 state.notes.push({ id: 'note-1', repoId: 'repo', base: 'empty-tree', branch: 'main', path: file.path, version: 'revision-a', snapshotId: 'capture-a', text: 'Check escaping', createdAt: '2026-09-18T00:00:00.000Z', status: 'open', start: 7, end: 9, side: 'new' });
 assert.ok(noteIsCurrent(state.notes[0], snapshot, snapshot.files[0]));

@@ -36,7 +36,7 @@ async page => {
  await page.locator('.citation-highlight').first().waitFor();
  if(!await page.getByRole('tab',{name:'Source',exact:true}).getAttribute('aria-selected').then(v=>v==='true'))throw Error('Citation did not show source');
  await page.getByRole('button',{name:'Open code guide',exact:true}).click();
- await page.getByRole('button',{name:'Conversation',exact:true}).click();
+ await page.getByRole('tab',{name:'Conversation',exact:true}).click();
  await page.locator('#chat-draft').fill('Keep my draft');
  await page.getByRole('button',{name:'Close code guide',exact:true}).click();
  await page.getByRole('tab',{name:'Notes (0)',exact:true}).click();
@@ -47,7 +47,7 @@ async page => {
  await page.getByRole('button',{name:'Open code guide',exact:true}).click();
  await page.getByRole('heading',{name:'Trace',exact:true}).waitFor();
  if(await page.evaluate(async()=>{const m=await import('/src/main.js');return m.data.notes.length;})!==1)throw Error('Saved note lost on reload');
- await page.getByRole('button',{name:'Conversation',exact:true}).click();
+ await page.getByRole('tab',{name:'Conversation',exact:true}).click();
  if(await page.locator('#chat-draft').inputValue()!=='Keep my draft')throw Error('Chat draft lost on reload');
  await page.getByRole('button',{name:'Send question',exact:true}).click();
  await page.getByText('For zero, the result is zero.',{exact:true}).waitFor();
@@ -62,7 +62,7 @@ async page => {
  await page.screenshot({path:'/tmp/patchwork-review-phone.png'});
  await page.setViewportSize({width:900,height:900});
  await page.getByRole('button',{name:'Code guide',exact:true}).click();
- await page.getByRole('button',{name:'Walkthrough',exact:true}).click();
+ await page.getByRole('tab',{name:'Walkthrough',exact:true}).click();
  await page.getByRole('button',{name:'Start walkthrough',exact:true}).waitFor();
  await page.screenshot({path:'/tmp/patchwork-review-tablet.png'});
  return ('PASS phone walkthrough/citation/followup; understood != reviewed; reload progress/draft; changed revision reset; tablet guide.');

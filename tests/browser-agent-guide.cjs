@@ -1,6 +1,8 @@
 async page => {
- const base=page.url(),conversations={},runs={};let starts=0,rootId,rootReady=false,branchReady=false,branchId,rejectQuestion=false;
- const file={id:'a',path:'a.js',label:'a.js',version:'v1',source:'export const a=1;',sourceAvailable:true,lines:[['added','1','export const a=1;']],added:1,removed:0};
+ const base=page.url(),context=await page.context().browser().newContext({serviceWorkers:'block'});page=await context.newPage();
+ const conversations={},runs={};let starts=0,rootId,rootReady=false,branchReady=false,branchId,rejectQuestion=false;
+ const source=Array.from({length:140},(_,index)=>`export const value${index} = "${'wide source text '.repeat(18)}";`).join('\n');
+ const file={id:'a',path:'a.js',label:'a.js',version:'v1',source,sourceAvailable:true,lines:source.split('\n').map((line,index)=>['added',String(index+1),line]),added:140,removed:0};
  const snapshot={repoId:'agent-browser',scope:'unstaged',base:'unstaged:head',head:'head',branch:'main',snapshotId:'agent-snapshot',generatedAt:new Date().toISOString(),workspaceName:'Agent guide',files:[file]};
  const guide={title:'Understand the change',summary:'Start with intent, then trace the caller.',assumptions:[],fileOverviews:{'a.js':'This file exports the changed constant used by its caller.'},totalChangedFiles:1,coverage:[{path:'a.js',sourceRead:true,diffExamined:true}],steps:[{title:'Intent',explanation:'The changed constant is one.',files:[{path:'a.js',fileId:'a'}],citations:[{path:'a.js',fileId:'a',side:'new',startLine:1,endLine:1}]},{title:'Caller',explanation:'The unchanged caller uses the constant.',files:[{path:'a.js',fileId:'a'}],citations:[{path:'caller.js',fileId:null,side:'new',startLine:1,endLine:1}]}]};
  await page.route('**/api/**',async route=>{
@@ -28,8 +30,21 @@ async page => {
   await route.fulfill({contentType:'application/json',body:JSON.stringify(body)});
  });
  await page.setViewportSize({width:1440,height:900});await page.goto(base);await page.getByRole('heading',{name:'a.js',exact:true}).waitFor();
- await page.getByRole('button',{name:'Code guide',exact:true}).click();await page.getByRole('button',{name:'Start walkthrough',exact:true}).click();
- await page.getByRole('button',{name:'Stop',exact:true}).waitFor();await page.reload();await page.getByRole('heading',{name:'a.js',exact:true}).waitFor();await page.getByRole('button',{name:'Code guide',exact:true}).click();
+ await page.waitForFunction(()=>import('/src/main.js').then(module=>module.state.repositoryGuide));
+ await page.getByRole('tab',{name:'Source',exact:true}).click();
+ const reader=page.locator('.code-viewer');
+ await reader.evaluate(element=>{element.scrollTop=420;element.scrollLeft=360;});
+ const readerPosition=await reader.evaluate(element=>({top:element.scrollTop,left:element.scrollLeft}));
+ if(readerPosition.top<300||readerPosition.left<250)throw Error(`Fixture did not create two-axis reader overflow: ${JSON.stringify(readerPosition)}`);
+ await page.getByRole('button',{name:'Code guide',exact:true}).click();await page.locator('[data-agent="start"]').first().click();
+ await page.getByRole('button',{name:'Stop',exact:true}).waitFor();
+ await page.waitForTimeout(1200);
+ const afterGenerationRender=await page.locator('.code-viewer').evaluate(element=>({top:element.scrollTop,left:element.scrollLeft}));
+ if(Math.abs(afterGenerationRender.top-readerPosition.top)>2||Math.abs(afterGenerationRender.left-readerPosition.left)>2)throw Error(`Walkthrough generation reset reader position: ${JSON.stringify(readerPosition)} vs ${JSON.stringify(afterGenerationRender)}`);
+ await page.reload();await page.getByRole('heading',{name:'a.js',exact:true}).waitFor();await page.getByRole('tab',{name:'Source',exact:true}).click();
+ const afterReload=await page.locator('.code-viewer').evaluate(element=>({top:element.scrollTop,left:element.scrollLeft}));
+ if(Math.abs(afterReload.top-readerPosition.top)>2||Math.abs(afterReload.left-readerPosition.left)>2)throw Error(`Reload did not restore reader position: ${JSON.stringify(readerPosition)} vs ${JSON.stringify(afterReload)}`);
+ await page.getByRole('button',{name:'Code guide',exact:true}).click();
  await page.getByRole('tab',{name:'Overview'}).click();await page.getByText('This file exports the changed constant used by its caller.',{exact:true}).waitFor();
  if(starts!==1)throw Error('Reload duplicated guide generation');rootReady=true;
  await page.getByRole('heading',{name:'Intent',exact:true}).waitFor();await page.getByRole('button',{name:'Next',exact:true}).click();

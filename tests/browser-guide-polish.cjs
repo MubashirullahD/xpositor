@@ -25,11 +25,11 @@ async page => {
  await page.locator('#note-text').fill('A private question');
  await page.getByRole('button',{name:'Save question',exact:true}).click();
  await page.getByRole('button',{name:'Code guide',exact:true}).click();
- const modes=page.locator('.guide-modes button');
- const metrics=await modes.evaluateAll(elements=>elements.map(element=>({width:element.getBoundingClientRect().width,height:element.getBoundingClientRect().height,bg:getComputedStyle(element).backgroundColor})));
- if(metrics.some(value=>value.height<48)||Math.abs(metrics[0].width-metrics[1].width)>2||metrics[0].bg===metrics[1].bg)throw Error('Guide mode buttons lost their segmented design');
- await page.getByRole('button',{name:'Conversation',exact:true}).click();
- if(await page.getByRole('button',{name:'Conversation',exact:true}).getAttribute('aria-pressed')!=='true')throw Error('Conversation mode did not select');
+ const modes=page.locator('.guide-modes [role="tab"]');
+ const metrics=await modes.evaluateAll(elements=>elements.map(element=>({width:element.getBoundingClientRect().width,height:element.getBoundingClientRect().height,bg:getComputedStyle(element).backgroundColor,underline:getComputedStyle(element,'::after').height})));
+ if(metrics.some(value=>value.height<40)||Math.abs(metrics[0].width-metrics[1].width)>2||metrics[0].bg!==metrics[1].bg||metrics[0].underline==='0px')throw Error('Guide views do not use the quiet underlined tab design');
+ await page.getByRole('tab',{name:'Conversation',exact:true}).click();
+ if(await page.getByRole('tab',{name:'Conversation',exact:true}).getAttribute('aria-selected')!=='true')throw Error('Conversation mode did not select');
  await page.setViewportSize({width:390,height:844});
  await page.locator('#chat-panel[role="dialog"]').waitFor();
  if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Phone layout overflows');
@@ -37,7 +37,7 @@ async page => {
  await page.setViewportSize({width:1440,height:900});
  await page.screenshot({path:'/tmp/patchwork-guide-polish-desktop.png'});
  await page.emulateMedia({colorScheme:'dark'});
- const dark=await modes.evaluateAll(elements=>elements.map(element=>getComputedStyle(element).backgroundColor));
- if(dark[0]===dark[1])throw Error('Guide mode selection is unclear in dark mode');
+ const dark=await modes.evaluateAll(elements=>elements.map(element=>({color:getComputedStyle(element).color,underline:getComputedStyle(element,'::after').height})));
+ if(dark[1].underline==='0px'||dark[0].color===dark[1].color)throw Error('Guide tab selection is unclear in dark mode');
  return 'PASS guide mode design, consistent tab spacing, Tab navigation without arrow switching, single review action, Notes, and phone layout';
 }

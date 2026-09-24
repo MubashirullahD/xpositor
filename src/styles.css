@@ -525,9 +525,11 @@ progress::-webkit-progress-value { background:var(--lime-deep); border-radius:12
 @media (prefers-reduced-motion:reduce) { *,*::before,*::after {animation:none!important;transition:none!important;scroll-behavior:auto!important;} }
 
 /* Guided review shares the same reachable panel at every viewport width. */
-.guide-modes { display:flex; gap:10px; padding:14px 16px; border-bottom:1px solid var(--line); }
-.guide-modes button { flex:1; min-width:0; min-height:52px; padding:0 12px; border:1px solid var(--line-strong); border-radius:10px; background:var(--panel-muted); color:var(--ink); box-shadow:none; font-size:14px; font-weight:700; }
-.guide-modes [aria-pressed="true"] { background:#dceabf; border-color:#c7daa4; color:#334325; }
+.guide-modes { display:flex; gap:0; padding:8px 16px 0; border-bottom:1px solid var(--line); }
+.guide-modes button { position:relative; flex:1; min-width:0; min-height:44px; padding:10px 8px 12px; border:0; border-radius:0; background:transparent; color:var(--muted); box-shadow:none; font-size:14px; font-weight:600; }
+.guide-modes button:hover { background:transparent; color:var(--ink); }
+.guide-modes [aria-selected="true"] { background:transparent; color:var(--ink); }
+.guide-modes [aria-selected="true"]::after { position:absolute; right:8px; bottom:-1px; left:8px; height:2px; border-radius:2px 2px 0 0; background:var(--lime-deep); content:''; }
 .walkthrough-scroll { flex:1; min-height:0; overflow:auto; overscroll-behavior:contain; padding:18px; }
 .walkthrough { font-size:14px; line-height:1.65; overflow-wrap:anywhere; }
 .walkthrough h3 { font-size:20px; line-height:1.35; margin:0 0 12px; }
@@ -599,8 +601,9 @@ html.modal-open,body.modal-open { overflow:hidden!important; overscroll-behavior
 :root[data-theme="dark"] textarea, :root[data-theme="dark"] input, :root[data-theme="dark"] select {color:var(--ink);background:var(--panel);}
 :root[data-theme="dark"] .message-bubble, :root[data-theme="dark"] .assistant .message-bubble {background:var(--panel);color:var(--ink);}
 :root[data-theme="dark"] .user .message-bubble {background:#c7e697;color:#202c1c;}
-:root[data-theme="dark"] .guide-modes button {background:var(--panel);color:var(--ink);border-color:var(--line-strong);}
-:root[data-theme="dark"] .guide-modes [aria-pressed=true] {background:#415332;border-color:#5a6b43;color:#e4f3d1;}
+:root[data-theme="dark"] .guide-modes button {background:transparent;color:var(--muted);}
+:root[data-theme="dark"] .guide-modes button:hover,
+:root[data-theme="dark"] .guide-modes [aria-selected=true] {background:transparent;color:var(--ink);}
 :root[data-theme="dark"] .reviewed-pill {background:#344b2a;color:#d6f1b2;}
 :root[data-theme="dark"] .needs-review-pill, :root[data-theme="dark"] .connection-error, :root[data-theme="dark"] #storage-alert, :root[data-theme="dark"] .demo-banner, :root[data-theme="dark"] .guide-error {background:#473722;color:#f3d2a1;}
 :root[data-theme="dark"] .review-footer {background:var(--bg);}
@@ -871,7 +874,7 @@ html.modal-open,body.modal-open { overflow:hidden!important; overscroll-behavior
 @media(max-width:520px) {.deep-location {align-items:stretch;flex-direction:column;}}
 
 /* Deep review shares the walkthrough lesson card and transcript treatment. */
-.deep-file-select { display:block; width:calc(100% - 40px); min-width:0; max-width:100%; color:var(--ink); background:var(--panel); }
+.deep-file-select.context-chip { display:block; box-sizing:border-box; width:calc(100% - 32px); min-width:0; max-width:100%; min-height:44px; margin:16px 16px 0; padding:10px 38px 10px 14px; color:var(--ink); background-color:var(--panel); font-size:12px; line-height:1.4; }
 .deep-card { margin-top:12px; }
 .deep-card h4 .agent-step-link { font:inherit; text-decoration:none; }
 .deep-card .lesson-controls { position:sticky; top:0; padding-block:8px; background:var(--panel); z-index:1; }
