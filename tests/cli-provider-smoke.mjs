@@ -15,6 +15,10 @@ else {
  let prompt='';process.stdin.on('data',s=>prompt+=s);process.stdin.on('end',()=>{
  const args=process.argv;
  if (args[args.indexOf('--tools')+1]!=='' || !args.includes('--strict-mcp-config') || process.env.ANTHROPIC_API_KEY) process.exit(1);
+ if (args.includes('--json-schema')) {
+  if (Number(args[args.indexOf('--max-turns')+1])<2) { console.log(JSON.stringify({subtype:'error_max_turns',is_error:true,errors:['Reached maximum number of turns (1)']})); process.exit(1); }
+  console.log(JSON.stringify({result:'',structured_output:{summary:'structured'}})); return;
+ }
  console.log(JSON.stringify({result:'Claude answer: '+prompt.includes('Explain this file.')}));
  });
 }
@@ -38,6 +42,8 @@ try {
  const fakeSpawn=process.platform==='win32' ? (_command,args,options)=>spawn(process.execPath,[fakeCli,...args],options) : undefined;
  const answer=await answerWithCli(info,{question:'Explain this file.',file:{path:'demo.js'},source:'const x=1;'}, {env,spawn:fakeSpawn});
  assert.equal(answer.status,200);assert.equal(answer.body.text,'Claude answer: true');
+ const structured=await answerWithCli(info,{prompt:'Plan this.'},{env,spawn:fakeSpawn,jsonSchema:{type:'object'}});
+ assert.equal(structured.status,200);assert.deepEqual(JSON.parse(structured.body.text),{summary:'structured'});
  assert.equal((await inspectAiProvider(info,{env:{...env,TEST_API:'yes'},spawn:fakeSpawn})).available,false);
  const aborted=new AbortController();aborted.abort();
  assert.equal((await runCommand(process.execPath,['-e','setTimeout(()=>{},5000)'],{signal:aborted.signal})).reason,'aborted');

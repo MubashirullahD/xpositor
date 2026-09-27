@@ -156,6 +156,15 @@ function parseClaudeOutput(stdout) {
   }
 }
 
+function claudeFailure(result) {
+  const fallback = 'Claude Code could not finish. Check its login and subscription allowance on the laptop.';
+  try {
+    const payload = JSON.parse(result.stdout);
+    const reason = Array.isArray(payload.errors) && payload.errors.length ? payload.errors.join(' ') : payload.subtype;
+    return reason ? `Claude Code could not finish: ${reason}` : fallback;
+  } catch { return fallback; }
+}
+
 function cliPrompt(input) {
   const file = input.file && typeof input.file === 'object' ? input.file : {};
   const filePath = String(file.path || 'selected file').slice(0, 240);
@@ -234,9 +243,10 @@ export async function answerWithCli(providerInfo, input, options = {}) {
     if (!status.available) return { status: 503, body: { error: status.message } };
     const cwd = await mkdtemp(join(tmpdir(), 'patchwork-claude-'));
     try {
-      const args = ['-p', '--output-format', 'json', '--permission-mode', 'plan', '--max-turns', '1', '--no-session-persistence', '--tools', '', '--disable-slash-commands', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--setting-sources', '', '--settings', '{"disableAllHooks":true}', ...(options.jsonSchema ? ['--json-schema', JSON.stringify(options.jsonSchema)] : [])];
+      // Structured output arrives through a tool call, which needs a second turn.
+      const args = ['-p', '--output-format', 'json', '--permission-mode', 'plan', '--max-turns', options.jsonSchema ? '2' : '1','--no-session-persistence', '--tools', '', '--disable-slash-commands', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--setting-sources', '', '--settings', '{"disableAllHooks":true}', ...(options.jsonSchema ? ['--json-schema', JSON.stringify(options.jsonSchema)] : [])];
       const result = await runCommand(command, args, { cwd, env: childEnvironment(provider, options.env || process.env), input: input.prompt && input.history?.length ? `Previous conversation:\n${JSON.stringify(input.history)}\n\n${prompt}` : prompt, timeoutMs: options.turnTimeoutMs || options.timeoutMs, signal: options.signal, spawn: options.spawn });
-      if (!result.ok) return { status: result.reason === 'timeout' ? 504 : 502, body: { error: result.reason === 'aborted' ? 'Stopped.' : 'Claude Code could not finish. Check its login and subscription allowance on the laptop.' } };
+      if (!result.ok) return { status: result.reason === 'timeout' ? 504 : 502, body: { error: result.reason === 'aborted' ? 'Stopped.' : claudeFailure(result) } };
       const payload = JSON.parse(result.stdout);
       const text = options.jsonSchema && payload.structured_output ? JSON.stringify(payload.structured_output) : parseClaudeOutput(result.stdout);
       if (payload.is_error || !text) return { status: 502, body: { error: 'Claude Code did not return an explanation. Check the provider on the laptop.' } };
