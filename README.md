@@ -139,3 +139,7 @@ Opt-in validation: `node tests/live-audio-lesson.mjs` generates a real lesson ab
 During walkthrough, teaching-chapter and audio preparation, **Try a breathing exercise** offers a quiet minute without interrupting generation. Choose gentle paced breathing or noticing your surroundings. Time and pace settings stay tucked away, and the Pomodoro remains independent. A ready message lets you return when you choose; audio never starts over the exercise. The first audio segment prepares automatically after a teaching chapter is generated. If preparation takes longer than the exercise, the interface says so rather than promising a completion time. Preparation errors and cancellation remain visible through the return control.
 
 The pause is optional: thoughts do not need to disappear, and there is no expected emotional outcome. Breathing copy emphasizes comfort rather than forcing a rhythm, consistent with the [NHS breathing guidance](https://www.nhs.uk/mental-health/self-help/guides-tools-and-activities/breathing-exercises-for-stress/). The surroundings option uses normal breathing. These controls are a brief rest aid, not an assessment or treatment feature; no mindfulness session history or health data is collected.
+
+## License
+
+Xpositor is licensed under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for attribution, including the bundled Prism highlighter (MIT).

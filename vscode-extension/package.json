@@ -4,7 +4,7 @@
   "description": "Review code from your phone using local LAN or an HTTPS tunnel.",
   "version": "0.1.0",
   "publisher": "xpositor-dev",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "type": "commonjs",
   "dependencies": {
     "qrcode": "^1.5.4"

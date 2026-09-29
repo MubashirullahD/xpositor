@@ -16,6 +16,7 @@ function copy(relativePath) {
 try {
   execFileSync(process.execPath, ['prepare-bundle.mjs'], { cwd: extensionRoot, stdio: 'inherit' });
   ['extension.js', 'qr.js', 'README.md', 'resources', 'bundle'].forEach(copy);
+  ['LICENSE', 'NOTICE'].forEach((name) => cpSync(join(extensionRoot, '..', name), join(stageRoot, name)));
 
   const packageForInstall = { ...manifest };
   delete packageForInstall.scripts;
@@ -45,7 +46,6 @@ try {
     vsce,
     'package',
     '--allow-missing-repository',
-    '--skip-license',
     '--out',
     outputPath,
   ], { cwd: stageRoot, stdio: 'inherit' });

@@ -85,3 +85,7 @@ The `--force` flag replaces an installed build with the same version number. Aft
 With Codex selected, starting a walkthrough automatically prepares its first spoken chapter and audio. Each chapter uses the main code reader for references. Playback stops after each section; Left/Right navigate sections and Space plays or pauses while the walkthrough has focus. Transcript highlighting estimates word positions within measured speech phrases. Three local voices and playback speed controls are included. Questions pause playback; listening never marks code reviewed.
 
 Voice generation runs locally through Kokoro. Click **Install local voice** in the Xpositor pairing sidebar for one-time setup. This requires Node.js 20+ and npm on the laptop; the button downloads the runtime and model into `~/.xpositor/voice` and reports success or failure in the sidebar. It does not use a paid TTS API. Refresh an open phone page after setup. From a source checkout, `npm run setup:voice` is also available. Transcript and references remain usable if audio is unavailable. Audio currently requires the laptop for new audio and uses typed follow-up questions.
+
+## License
+
+[Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0). The extension package includes the LICENSE and NOTICE files.
