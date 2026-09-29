@@ -26,6 +26,7 @@ try {
   assert.deepEqual([events[1].name, events[1].args.path, events[1].ok, events[1].bytes], ['review_read', 'a.js', true, Buffer.byteLength(JSON.stringify({ path: 'a.js', text: 'abc', nextOffset: null }))]);
   assert.deepEqual([events[2].ok, events[2].error], [false, 'denied']);
   assert.equal(events[3].text, 'Lesson');
-  assert.equal((await stat(log.file)).mode & 0o777, 0o600, 'Logs contain code and must be private.');
+  // Windows has no POSIX permission bits; its files report 0o666 regardless.
+  if (process.platform !== 'win32') assert.equal((await stat(log.file)).mode & 0o777, 0o600, 'Logs contain code and must be private.');
   console.log('AI log passed: off by default, private JSONL per request, prompt, tool calls, errors and answer.');
 } finally { await rm(dir, { recursive: true, force: true }); }
