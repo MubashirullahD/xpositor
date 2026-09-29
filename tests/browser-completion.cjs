@@ -44,7 +44,7 @@ async page => {
  await page.getByRole('heading',{name:'Nice work. Review complete!',exact:true}).waitFor();
  await page.getByText('1 open question remains in your notes.',{exact:true}).waitFor();
  if(await page.locator('.file-row.selected').count())throw Error('Completion circled to a file');
- await page.screenshot({path:'/tmp/patchwork-review-complete.png'});
+ await page.screenshot({path:'/tmp/xpositor-review-complete.png'});
  await page.reload();await page.getByRole('heading',{name:'Nice work. Review complete!',exact:true}).waitFor();
  version='v2';await page.getByRole('button',{name:'Check for new changes',exact:true}).click();await page.getByRole('heading',{name:'one.js',exact:true}).waitFor();
  await page.getByRole('button',{name:'Reviewed & next',exact:false}).click();await page.getByRole('heading',{name:'Nice work. Review complete!',exact:true}).waitFor();

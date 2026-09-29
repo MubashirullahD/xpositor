@@ -42,7 +42,7 @@ async page => {
  await page.getByRole('tab',{name:'Conversation',exact:true}).click();
  await page.locator('#chat-draft').fill('Explain');
  await page.getByRole('button',{name:'Send question',exact:true}).click();
- await page.getByText(/Update Codex on the laptop, restart Patchwork/).waitFor();
+ await page.getByText(/Update Codex on the laptop, restart Xpositor/).waitFor();
  if(sent.model!=='future-small'||sent.effort!=='xhigh')throw Error('Model choice not sent');
  await page.emulateMedia({colorScheme:'dark'});
  await page.waitForFunction(()=>document.documentElement.dataset.theme==='dark');
@@ -55,7 +55,7 @@ async page => {
  await page.locator('#theme-preference').selectOption('system');
  await page.getByRole('button',{name:'Close menu',exact:true}).click();
  await page.locator('.model-settings summary').click();
- await page.screenshot({path:'/tmp/patchwork-feedback-desktop-dark.png'});
+ await page.screenshot({path:'/tmp/xpositor-feedback-desktop-dark.png'});
  await page.getByRole('button',{name:'Close code guide',exact:true}).click();
  await page.setViewportSize({width:900,height:900});
  if((await page.locator('.rail').evaluate(el=>({width:el.getBoundingClientRect().width}))).width!==54)throw Error('Tablet rail missing');
@@ -74,7 +74,7 @@ async page => {
  await page.getByText('Stopped.',{exact:true}).waitFor();
  releaseReply?.();
  await page.getByRole('button',{name:'Send question',exact:true}).waitFor();
- await page.screenshot({path:'/tmp/patchwork-feedback-mobile-dark.png'});
+ await page.screenshot({path:'/tmp/xpositor-feedback-mobile-dark.png'});
  await page.getByRole('button',{name:'Close code guide',exact:true}).click();
  await page.getByRole('tab',{name:'Source',exact:true}).click();
  if(!await page.locator('.code-viewer').evaluate(el=>el.scrollWidth<=el.clientWidth+1))throw Error('Mobile source wrap overflows');
@@ -92,7 +92,7 @@ async page => {
  if(menu.x<0||menu.x+menu.width>320)throw Error('Preferences overflows narrow phone');
  await page.getByRole('button',{name:'Close menu',exact:true}).click();
  if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Phone reader overflows');
- await page.screenshot({path:'/tmp/patchwork-rail-phone-reader.png'});
+ await page.screenshot({path:'/tmp/xpositor-rail-phone-reader.png'});
  await page.reload();
  await page.getByRole('button',{name:'Preferences',exact:true}).click();
  if(await page.locator('#code-size').inputValue()!=='16')throw Error('Preferences not saved');

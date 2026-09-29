@@ -7,14 +7,14 @@ import { join, resolve } from 'node:path';
 // Run against the actual package staging tree, outside the checkout's ESM scope.
 const extension=resolve(process.argv[2]);
 assert.notEqual(JSON.parse(readFileSync(join(extension,'package.json'))).type,'module');
-const home=mkdtempSync(join(tmpdir(),'patchwork-bundle-voice-'));
+const home=mkdtempSync(join(tmpdir(),'xpositor-bundle-voice-'));
 let worker;
 try {
  const runtime=join(home,'node_modules','kokoro-js');mkdirSync(runtime,{recursive:true});
  writeFileSync(join(home,'package.json'),'{}');
  writeFileSync(join(runtime,'package.json'),JSON.stringify({type:'module',main:'index.js'}));
  writeFileSync(join(runtime,'index.js'),`export const env={};export const KokoroTTS={async from_pretrained(){return {async generate(){return {audio:new Float32Array(2400),sampling_rate:24000};}};}};`);
- worker=fork(join(extension,'bundle','speech-worker.mjs'),[],{execArgv:[],env:{...process.env,PATCHWORK_VOICE_HOME:home},stdio:['ignore','ignore','pipe','ipc']});
+ worker=fork(join(extension,'bundle','speech-worker.mjs'),[],{execArgv:[],env:{...process.env,XPOSITOR_VOICE_HOME:home},stdio:['ignore','ignore','pipe','ipc']});
  let diagnostic='';worker.stderr.on('data',chunk=>diagnostic+=chunk);
  const message=await new Promise((resolve,reject)=>{
   const timer=setTimeout(()=>reject(new Error('Packaged speech worker timed out. '+diagnostic)),10000);

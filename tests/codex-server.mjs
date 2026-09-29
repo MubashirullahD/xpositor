@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CodexReviewClient } from '../codex-server.mjs';
 
-const root = await mkdtemp(join(tmpdir(), 'patchwork-rpc-test-'));
+const root = await mkdtemp(join(tmpdir(), 'xpositor-rpc-test-'));
 const binary = join(root, 'fake-codex');
 await writeFile(binary, `#!/usr/bin/env node
 const readline = require('node:readline');

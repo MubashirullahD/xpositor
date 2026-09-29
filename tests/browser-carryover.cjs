@@ -28,7 +28,7 @@ async page => {
  version=2;await openGuide();
  await page.getByText('Continue your earlier walkthrough?').waitFor();
  if(!await page.getByText(/1 of the files you’re reviewing changed \(queue\.js\)/).count())throw Error('The offer must name the changed files');
- await page.screenshot({path:'/tmp/patchwork-carryover.png'});
+ await page.screenshot({path:'/tmp/xpositor-carryover.png'});
  await page.getByRole('button',{name:'Continue it',exact:true}).click();
  await page.getByRole('heading',{name:'Request identity',exact:true}).waitFor();
  await openGuide();await page.getByRole('heading',{name:'Request identity',exact:true}).waitFor();

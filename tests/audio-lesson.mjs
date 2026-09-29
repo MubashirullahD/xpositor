@@ -25,7 +25,7 @@ inMemory.lesson({requestId:'lesson-test-build-01',conversationId:'lesson-test-ma
 assert.equal(inMemory.conversation('lesson-test-main-01').lessons[0].segments.length,4);
 const count=calls;inMemory.lesson({requestId:'lesson-test-build-01',conversationId:'lesson-test-main-01',step:0});assert.equal(calls,count);
 assert.throws(()=>inMemory.lesson({requestId:'lesson-test-bad-001',conversationId:'lesson-test-main-01',step:-1}));
-const home=mkdtempSync(join(tmpdir(),'patchwork-voice-test-'));
+const home=mkdtempSync(join(tmpdir(),'xpositor-voice-test-'));
 try{
  const absent=createSpeechService({home});await assert.rejects(absent.synthesize('hello'),/one-time setup/);
  mkdirSync(join(home,'node_modules','kokoro-js'),{recursive:true});writeFileSync(join(home,'node_modules','kokoro-js','package.json'),'{}');

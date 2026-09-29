@@ -4,14 +4,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { aiLogEnabled, loggedTools, startAiLog } from '../ai-log.mjs';
 
-const dir = await mkdtemp(join(tmpdir(), 'patchwork-ai-log-'));
+const dir = await mkdtemp(join(tmpdir(), 'xpositor-ai-log-'));
 try {
   assert.equal(aiLogEnabled({}), false, 'AI logging must be off by default.');
-  assert.equal(aiLogEnabled({ PATCHWORK_AI_LOG: 'false' }), false);
-  assert.equal(startAiLog({ purpose: 'x' }, { PATCHWORK_AI_LOG_DIR: dir }), null);
+  assert.equal(aiLogEnabled({ XPOSITOR_AI_LOG: 'false' }), false);
+  assert.equal(startAiLog({ purpose: 'x' }, { XPOSITOR_AI_LOG_DIR: dir }), null);
   assert.deepEqual(await readdir(dir), [], 'Nothing is written while logging is off.');
 
-  const env = { PATCHWORK_AI_LOG: '1', PATCHWORK_AI_LOG_DIR: dir };
+  const env = { XPOSITOR_AI_LOG: '1', XPOSITOR_AI_LOG_DIR: dir };
   const log = startAiLog({ purpose: 'Lesson chapter 1', provider: 'claude', prompt: 'Teach this.' }, env);
   assert.match(log.file, /lesson-chapter-1-[0-9a-f]{6}\.jsonl$/);
   const tools = loggedTools({ definitions: [], coverage: () => 'shared', call(name, args) { if (name === 'bad') throw new Error('denied'); return { path: args.path, text: 'abc', nextOffset: null }; } }, log);

@@ -91,7 +91,7 @@ export function buildGuideContext(store, snapshotId, selectedId, fileIds) {
   };
   const bytes = Buffer.byteLength(JSON.stringify(context));
   if (bytes > GUIDE_LIMITS.maxContextBytes) {
-    throw new GuideError(`The selected walkthrough context is ${bytes} bytes, above the ${GUIDE_LIMITS.maxContextBytes}-byte limit. Choose fewer or smaller changed files; Patchwork did not trim captured source.`, 413, 'GUIDE_CONTEXT_LIMIT');
+    throw new GuideError(`The selected walkthrough context is ${bytes} bytes, above the ${GUIDE_LIMITS.maxContextBytes}-byte limit. Choose fewer or smaller changed files; Xpositor did not trim captured source.`, 413, 'GUIDE_CONTEXT_LIMIT');
   }
   if (!included.has(selectedId)) throw new GuideError('The selected file was omitted from the walkthrough context.', 500, 'GUIDE_CONTEXT');
   return freeze(context);

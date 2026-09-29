@@ -4,7 +4,7 @@ import { mkdtemp, writeFile, chmod, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CodexReviewClient } from '../codex-server.mjs';
-const root = await mkdtemp(join(tmpdir(), 'patchwork-retrieval-rpc-'));
+const root = await mkdtemp(join(tmpdir(), 'xpositor-retrieval-rpc-'));
 const binary = join(root, 'codex');
 await writeFile(binary, `#!/usr/bin/env node
 const output = value => process.stdout.write(JSON.stringify(value)+'\\n');

@@ -92,7 +92,7 @@ test('quick tunnel becomes ready once and stale callbacks cannot alter a restart
   h.extension.setStatus = (status) => { if (status === 'ready') readyTransitions += 1; setStatus(status); };
   await h.extension.start();
   const firstCompanion = h.spawns[0].child;
-  firstCompanion.stdout.emit('data', Buffer.from('Patchwork companion: http://127.0.0.1:4311\n'));
+  firstCompanion.stdout.emit('data', Buffer.from('Xpositor companion: http://127.0.0.1:4311\n'));
   const firstTunnel = h.spawns[1].child;
   firstTunnel.stderr.emit('data', Buffer.from('https://first.trycloudflare.com\nhttps://first.trycloudflare.com\n'));
   assert.equal(h.extension.status, 'ready');
@@ -102,7 +102,7 @@ test('quick tunnel becomes ready once and stale callbacks cannot alter a restart
   await h.extension.stop(false);
   await h.extension.start();
   const secondCompanion = h.spawns[2].child;
-  secondCompanion.stdout.emit('data', Buffer.from('Patchwork companion: http://127.0.0.1:4312\n'));
+  secondCompanion.stdout.emit('data', Buffer.from('Xpositor companion: http://127.0.0.1:4312\n'));
   h.spawns[3].child.stderr.emit('data', Buffer.from('https://second.trycloudflare.com\n'));
   firstTunnel.stderr.emit('data', Buffer.from('https://stale.trycloudflare.com\n'));
   firstCompanion.emit('error', new Error('late process error'));
@@ -116,12 +116,12 @@ test('quick tunnel becomes ready once and stale callbacks cannot alter a restart
 test('ready companion verifies AI login over loopback with its pairing token', async () => {
   const h = makeHarness({configuration:{transport:'lan'}});
   await h.extension.start();
-  h.spawns[0].child.stdout.emit('data', Buffer.from('Patchwork companion: http://127.0.0.1:4311\n'));
+  h.spawns[0].child.stdout.emit('data', Buffer.from('Xpositor companion: http://127.0.0.1:4311\n'));
   await settle();
   assert.equal(h.extension.aiStatus.state,'connected');
   assert.equal(h.extension.aiStatus.provider,'claude');
   assert.equal(h.providerChecks[0].url,'http://127.0.0.1:4311/api/config?refresh=true');
-  assert.equal(h.providerChecks[0].options.headers['x-patchwork-token'],h.extension.session.token);
+  assert.equal(h.providerChecks[0].options.headers['x-xpositor-token'],h.extension.session.token);
 });
 
 test('startup deadline preserves a useful failure after cleanup', async () => {
@@ -139,13 +139,13 @@ test('startup deadline preserves a useful failure after cleanup', async () => {
 test('named tunnels use argv-safe arguments and keep a repository token', async () => {
   const h = makeHarness({ configuration: { tunnelName: 'review-tunnel', publicUrl: 'https://review.example.test', port: 4311 } });
   await h.extension.start();
-  h.spawns[0].child.stdout.emit('data', Buffer.from('Patchwork companion: http://127.0.0.1:4311\n'));
+  h.spawns[0].child.stdout.emit('data', Buffer.from('Xpositor companion: http://127.0.0.1:4311\n'));
   assert.deepEqual(h.spawns[1].args, ['tunnel', 'run', 'review-tunnel']);
   h.spawns[1].child.stderr.emit('data', Buffer.from('INF Registered tunnel connection\n'));
   const firstUrl = h.extension.session.pairingUrl;
   await h.extension.stop(false);
   await h.extension.start();
-  h.spawns[2].child.stdout.emit('data', Buffer.from('Patchwork companion: http://127.0.0.1:4311\n'));
+  h.spawns[2].child.stdout.emit('data', Buffer.from('Xpositor companion: http://127.0.0.1:4311\n'));
   h.spawns[3].child.stderr.emit('data', Buffer.from('INF Registered tunnel connection\n'));
   assert.equal(h.extension.session.pairingUrl, firstUrl);
   assert.match(firstUrl, /^https:\/\/review\.example\.test\/\?token=/);
@@ -169,8 +169,8 @@ test('development hosts prefer the sibling companion while deployed extensions p
 test('LAN is ready immediately without cloudflared and can switch to a tunnel', async()=>{
  const h=makeHarness({configuration:{transport:'lan'}});
  await h.extension.start();
- assert.equal(h.spawns[0].options.env.PATCHWORK_HOST,'0.0.0.0');
- h.spawns[0].child.stdout.emit('data',Buffer.from('Patchwork companion: http://0.0.0.0:4311\n'));
+ assert.equal(h.spawns[0].options.env.XPOSITOR_HOST,'0.0.0.0');
+ h.spawns[0].child.stdout.emit('data',Buffer.from('Xpositor companion: http://0.0.0.0:4311\n'));
  assert.equal(h.spawns.length,1);assert.equal(h.extension.status,'ready');
  assert.match(h.extension.session.pairingUrl,/^http:\/\/192\.168\.1\.10:4311\/\?token=/);
  await h.extension.handlePairingMessage({type:'tunnel'});
@@ -182,7 +182,7 @@ test('LAN is ready immediately without cloudflared and can switch to a tunnel', 
 test('LAN and tunnel switches preserve the companion, token, and tunnel URL', async () => {
   const h=makeHarness({configuration:{transport:'lan'}});
   await h.extension.start();
-  h.spawns[0].child.stdout.emit('data',Buffer.from('Patchwork companion: http://0.0.0.0:4311\n'));
+  h.spawns[0].child.stdout.emit('data',Buffer.from('Xpositor companion: http://0.0.0.0:4311\n'));
   const lanUrl=h.extension.session.pairingUrl;
   await h.extension.handlePairingMessage({type:'tunnel'});
   assert.equal(h.spawns.length,2);

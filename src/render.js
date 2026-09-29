@@ -15,7 +15,7 @@ export function icon(name, size = 20) {
     stop: '<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>',
     moon: '<path d="M20 15A9 9 0 0 1 9 4a9 9 0 1 0 11 11Z"/>',
     monitor: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M12 17v4M8 21h8"/>',
-    logo: '<path d="M4 4h9.5c4 0 6.8 2.5 6.8 6 0 2.4-1.3 4.2-3.5 5.1l3.9 5.1h-4.5l-3.3-4.5H8.2v4.5H4V4Zm4.2 3.4v4.8h4.5c1.7 0 2.7-.8 2.7-2.4s-1-2.4-2.7-2.4H8.2Z"/><circle cx="20" cy="4.5" r="2.5"/>',
+    logo: '<path d="M4 4h5l11 16h-5L4 4Z"/><path d="M20 4l-4.54 4.54M8.54 15.46 4 20"/>',
     grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
     branch: '<path d="M6 4v12a3 3 0 0 0 3 3h9"/><circle cx="6" cy="4" r="2.3"/><circle cx="18" cy="19" r="2.3"/><path d="M18 7V5a3 3 0 0 0-3-3H9"/><circle cx="18" cy="7" r="2.3"/>',
     spark: '<path d="m12 2 1.7 6.3L20 10l-6.3 1.7L12 18l-1.7-6.3L4 10l6.3-1.7L12 2Z"/><path d="m19 16 .7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7L19 16Z"/>',

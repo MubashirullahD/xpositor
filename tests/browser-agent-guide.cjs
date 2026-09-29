@@ -61,10 +61,10 @@ async page => {
  if(await page.getByText('The caller imports a.js.',{exact:true}).count())throw Error('Branch leaked into main conversation');
  await page.reload();await page.getByRole('heading',{name:'a.js',exact:true}).waitFor();await page.getByRole('button',{name:'Code guide',exact:true}).click();await page.getByRole('heading',{name:'Caller',exact:true}).waitFor();
  await page.locator('#agent-conversation').selectOption(branchId);await page.getByText('The caller imports a.js.',{exact:true}).waitFor();
- await page.setViewportSize({width:1440,height:900});await page.emulateMedia({colorScheme:'dark'});await page.screenshot({path:'/tmp/patchwork-agent-desktop-dark.png'});
+ await page.setViewportSize({width:1440,height:900});await page.emulateMedia({colorScheme:'dark'});await page.screenshot({path:'/tmp/xpositor-agent-desktop-dark.png'});
  await page.setViewportSize({width:390,height:844});await page.getByRole('dialog',{name:'Code guide',exact:true}).waitFor();
  if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Mobile guide overflows');
- await page.screenshot({path:'/tmp/patchwork-agent-mobile.png'});
+ await page.screenshot({path:'/tmp/xpositor-agent-mobile.png'});
  await page.locator('#agent-draft').fill('Stop this reply');branchReady=false;await page.getByRole('button',{name:'Explore in a separate conversation',exact:true}).click();await page.getByRole('button',{name:'Stop response',exact:true}).click();await page.getByText('Stopped.',{exact:true}).waitFor();
  rejectQuestion=true;await page.locator('#agent-draft').fill('Try a rejected request');await page.getByRole('button',{name:'Send question',exact:true}).click();await page.getByRole('alert').filter({hasText:'Update Codex on the laptop'}).waitFor();await page.getByRole('button',{name:'Send question',exact:true}).waitFor();
  await page.setViewportSize({width:320,height:740});if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Small phone guide overflows');

@@ -17,11 +17,11 @@ assert.match(quickTunnelSvg, /^<svg /);
 assert.doesNotThrow(() => qrSvg('x'.repeat(140)));
 
 const manifest = JSON.parse(fs.readFileSync(require('node:path').join(__dirname, '..', 'package.json'), 'utf8'));
-assert.ok(manifest.activationEvents.includes('onView:patchwork.pairing'));
-assert.ok(manifest.contributes.viewsContainers.activitybar.some((container) => container.id === 'patchwork'));
-assert.ok(manifest.contributes.views.patchwork.some((view) => view.id === 'patchwork.pairing' && view.type === 'webview'));
-assert.equal(manifest.contributes.configuration.properties['patchwork.autoStart'].default, false);
-assert.equal(manifest.contributes.configuration.properties['patchwork.cloudflaredPath'].default, 'cloudflared');
-assert.ok(fs.existsSync(require('node:path').join(__dirname, '..', 'resources', 'patchwork-activity.svg')));
+assert.ok(manifest.activationEvents.includes('onView:xpositor.pairing'));
+assert.ok(manifest.contributes.viewsContainers.activitybar.some((container) => container.id === 'xpositor'));
+assert.ok(manifest.contributes.views.xpositor.some((view) => view.id === 'xpositor.pairing' && view.type === 'webview'));
+assert.equal(manifest.contributes.configuration.properties['xpositor.autoStart'].default, false);
+assert.equal(manifest.contributes.configuration.properties['xpositor.cloudflaredPath'].default, 'cloudflared');
+assert.ok(fs.existsSync(require('node:path').join(__dirname, '..', 'resources', 'xpositor-activity.svg')));
 
 console.log(JSON.stringify({ qr: 'ok', activityBar: 'ok', quickTunnel: 'ok', modules: 33, payload: url.length }));

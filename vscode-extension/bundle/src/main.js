@@ -62,7 +62,7 @@ function capturePosition() {
 }
 export function apiFetch(path, options={}) {
   const headers = new Headers(options.headers || {});
-  if(state.apiToken) headers.set('x-patchwork-token',state.apiToken);
+  if(state.apiToken) headers.set('x-xpositor-token',state.apiToken);
   return fetch(path,{...options,headers,cache:'no-store',signal:options.signal || AbortSignal.timeout(path.startsWith('/api/ai') || path.startsWith('/api/walkthrough') ? 120000 : ['/api/config','/api/models'].some(p=>path.startsWith(p))?45000:60000)});
 }
 function toast(text) { state.toast=text; clearTimeout(toastTimer); render(); toastTimer=setTimeout(() => {state.toast=''; render();},4500); }
@@ -71,7 +71,7 @@ export function selectFile(id) {
   const next=files().find((f)=>f.id===id); if(!next) return;
   supportingSource=null;
   capturePosition();
-  if(state.filesOpen && history.state?.patchworkPanel) history.back();
+  if(state.filesOpen && history.state?.xpositorPanel) history.back();
   state.selectedFile=id; state.filesOpen=false;
   data.selections[comparisonKey(state.snapshot)]=next.path;
   if(state.activeTab==='preview' && !isPreviewable(next)) state.activeTab='diff';
@@ -311,8 +311,8 @@ export function render(preservePosition=true) {
   const unresolved=data.notes.filter((n)=>n.repoId===state.snapshot?.repoId&&n.status==='open').length;
   const controls=`<div class="backup-actions"><button class="secondary-button" data-action="export-backup">Export backup</button><button class="secondary-button" data-action="import-backup">Import backup</button><button class="secondary-button" data-action="export-summary">Export summary</button><button class="secondary-button" data-action="clear-cache">Clear cached source</button></div>`;
   root.innerHTML=`<div class="app-shell ${state.queueCollapsed?'queue-is-collapsed':''} ${state.filesOpen?'files-is-open':''} ${state.chatOpen?'chat-is-open':''} ${guideHidden?'guide-is-collapsed':''}" style="--code-size:${data.preferences.codeSize}px;--guide-width:${guideWidth()}px">
-    <header class="mobile-topbar" ${modal?'inert':''}><button class="icon-button" data-action="toggle-files" aria-label="Open files">${icon('menu')}</button><div class="mobile-wordmark"><span class="wordmark-mark">${icon('logo')}</span>patchwork</div><button class="icon-button" data-action="mindfulness-open" data-location="mobile" aria-label="Mindful breathing" title="Mindful breathing">${icon('breathe')}</button><button class="icon-button" data-action="preferences" aria-label="Preferences" title="Preferences">${icon('sliders')}</button><button class="icon-button" data-action="toggle-chat" aria-label="Open code guide">${icon('message')}</button></header>
-    <nav class="sidebar rail" aria-label="Workspace navigation" ${modal?'inert':''}><div class="rail-brand" title="Patchwork" aria-label="Patchwork">${icon('logo',24)}</div><button class="icon-button" data-action="toggle-files" aria-label="Review queue" aria-controls="file-panel" aria-expanded="${!drawerHidden}" title="Review queue">${icon('panel')}</button><button class="icon-button" data-action="toggle-chat" aria-label="Code guide" aria-controls="chat-panel" aria-expanded="${!guideHidden}" title="Code guide">${icon('message')}</button><div class="rail-bottom"><button class="icon-button" data-action="mindfulness-open" data-location="rail" aria-label="Mindful breathing" title="Mindful breathing">${icon('breathe')}</button><button class="icon-button rail-timer" data-action="focus" aria-label="Focus timer" title="Focus timer">${icon('clock')}<span class="rail-timer-label" ${data.pomodoro.endsAt===null?'hidden':''}>${timerLabel(data.pomodoro)}</span></button><button class="icon-button" data-action="backups" aria-label="Backup & handoff" aria-expanded="${state.utilityMenu==='backups'}" title="Backup & handoff">${icon('archive')}</button><button class="icon-button" data-action="preferences" aria-label="Preferences" aria-expanded="${state.utilityMenu==='preferences'}" title="Preferences">${icon('sliders')}</button></div></nav>
+    <header class="mobile-topbar" ${modal?'inert':''}><button class="icon-button" data-action="toggle-files" aria-label="Open files">${icon('menu')}</button><div class="mobile-wordmark"><span class="wordmark-mark">${icon('logo')}</span>xpositor</div><button class="icon-button" data-action="mindfulness-open" data-location="mobile" aria-label="Mindful breathing" title="Mindful breathing">${icon('breathe')}</button><button class="icon-button" data-action="preferences" aria-label="Preferences" title="Preferences">${icon('sliders')}</button><button class="icon-button" data-action="toggle-chat" aria-label="Open code guide">${icon('message')}</button></header>
+    <nav class="sidebar rail" aria-label="Workspace navigation" ${modal?'inert':''}><div class="rail-brand" title="Xpositor" aria-label="Xpositor">${icon('logo',24)}</div><button class="icon-button" data-action="toggle-files" aria-label="Review queue" aria-controls="file-panel" aria-expanded="${!drawerHidden}" title="Review queue">${icon('panel')}</button><button class="icon-button" data-action="toggle-chat" aria-label="Code guide" aria-controls="chat-panel" aria-expanded="${!guideHidden}" title="Code guide">${icon('message')}</button><div class="rail-bottom"><button class="icon-button" data-action="mindfulness-open" data-location="rail" aria-label="Mindful breathing" title="Mindful breathing">${icon('breathe')}</button><button class="icon-button rail-timer" data-action="focus" aria-label="Focus timer" title="Focus timer">${icon('clock')}<span class="rail-timer-label" ${data.pomodoro.endsAt===null?'hidden':''}>${timerLabel(data.pomodoro)}</span></button><button class="icon-button" data-action="backups" aria-label="Backup & handoff" aria-expanded="${state.utilityMenu==='backups'}" title="Backup & handoff">${icon('archive')}</button><button class="icon-button" data-action="preferences" aria-label="Preferences" aria-expanded="${state.utilityMenu==='preferences'}" title="Preferences">${icon('sliders')}</button></div></nav>
     ${modal?'<button class="file-drawer-scrim" data-action="close-panels" tabindex="-1" aria-label="Close panel"></button>':''}
     <aside class="file-panel" id="file-panel" ${drawerHidden?'inert aria-hidden="true"':''} ${modal==='chat'?'inert':''} ${modal==='files'?'role="dialog" aria-modal="true" aria-label="Review files"':''}><div class="file-panel-header"><div><h1>${esc(state.snapshot?.workspaceName||'Review queue')}</h1></div><button class="close-files icon-button" data-action="close-queue" aria-label="Close files">${icon('close')}</button></div><div class="branch-row"><span class="branch-name">${icon('branch',14)}${esc(state.snapshot?.branch||'No branch loaded')}</span></div><label class="scope-control">Review <select id="review-scope" aria-label="Review scope">${['unstaged','staged','all'].map(scope=>`<option value="${scope}" ${(state.snapshot?.scope||data.preferences.scope)===scope?'selected':''}>${scope==='all'?'All changes':scope[0].toUpperCase()+scope.slice(1)}</option>`).join('')}</select></label><div class="queue-progress"><div class="progress-copy"><span>${count} of ${files().length} reviewed</span><b>${unresolved} open questions</b></div><progress max="${files().length||1}" value="${count}" aria-label="Files reviewed"></progress></div><div class="queue-heading"><span>CHANGED FILES ${files().length}</span><button data-action="refresh-snapshot" title="${esc(age())}">Refresh ${icon('wifi',14)}</button></div><div class="file-list">${files().map(renderFileRow).join('')}</div><details class="mobile-backups"><summary>Backup & handoff</summary><p>Backups contain private notes, chats, and code. Share only when you choose.</p>${controls}</details></aside>
     <main class="review-panel" ${modal?'inert':''}>${state.connection!=='connected'&&!state.connectionError?`<p class="connection-details" role="status">${esc(statusText())}</p>`:''}${state.connectionError?`<p class="connection-error">${esc(state.connectionError)}</p>`:''}<div id="storage-alert" role="alert" ${state.storageError?'':'hidden'}>${esc(state.storageError)}</div>${state.demo?'<p class="demo-banner">Demo workspace — sample files, no live repository.</p>':''}
@@ -355,8 +355,8 @@ function openPanel(which) {
   const active=document.activeElement;
   dialogReturnFocus=active?.dataset.action||null;
   if((which==='files'&&small())||(which==='chat'&&overlayGuide())) {
-    const method=history.state?.patchworkPanel?'replaceState':'pushState';
-    history[method]({patchworkPanel:which},'',location.href);
+    const method=history.state?.xpositorPanel?'replaceState':'pushState';
+    history[method]({xpositorPanel:which},'',location.href);
   }
   state.filesOpen=which==='files'; state.chatOpen=which==='chat'; if(which==='chat') state.guideCollapsed=false;
   render();
@@ -364,7 +364,7 @@ function openPanel(which) {
   panel?.querySelector('button,textarea')?.focus({preventScroll:true});
 }
 function closePanels(fromHistory=false) {
-  if(!fromHistory&&history.state?.patchworkPanel)history.back();
+  if(!fromHistory&&history.state?.xpositorPanel)history.back();
   state.filesOpen=false; state.chatOpen=false; render();
   if(dialogReturnFocus) [...root.querySelectorAll('[data-action]')].find((el)=>el.dataset.action===dialogReturnFocus&&!el.closest('[inert]'))?.focus();
 }
@@ -436,9 +436,9 @@ function wireEvents() {
       case 'retry-source':hydrateFileSource(selectedFile());break;
       case 'load-demo':loadDemo();break;
       case 'next-hunk':{const viewer=root.querySelector('.code-viewer');if(!viewer)break;const hunks=[...viewer.querySelectorAll('[data-hunk]')];const next=hunks.find((h)=>h.offsetTop-viewer.offsetTop>viewer.scrollTop+8)||hunks[0];if(next)viewer.scrollTo({top:next.offsetTop-viewer.offsetTop,behavior:'smooth'});break;}
-      case 'export-backup':capturePosition();download('patchwork-private-backup.json',JSON.stringify(createBackup(data,state.demo?null:state.snapshot),null,2));break;
+      case 'export-backup':capturePosition();download('xpositor-private-backup.json',JSON.stringify(createBackup(data,state.demo?null:state.snapshot),null,2));break;
       case 'import-backup':document.querySelector('#backup-file').click();break;
-      case 'export-summary':download('patchwork-review.md',reviewSummary(data,state.snapshot),'text/markdown');break;
+      case 'export-summary':download('xpositor-review.md',reviewSummary(data,state.snapshot),'text/markdown');break;
       case 'clear-cache':if(state.snapshot){for(const f of files())delete f.source;await saveSnapshot(state.snapshot);toast('Cached source cleared. Notes and review decisions are retained.');}break;
     }
   }));
@@ -481,7 +481,7 @@ function supportingContent(){
 async function jumpCitation(target,{reveal=true}={}) {
   const snapshot=state.snapshot,file=snapshot?.files.find((f)=>f.id===target.fileId);if(!snapshot)return;
   const reference=citation={...target,snapshotId:snapshot.snapshotId};
-  if(reveal){if(history.state?.patchworkPanel)history.back();state.chatOpen=false;state.filesOpen=false;}
+  if(reveal){if(history.state?.xpositorPanel)history.back();state.chatOpen=false;state.filesOpen=false;}
   if(file){
     state.activeTab=target.side==='old'?'diff':'source';selectFile(file.id);
     if(target.side==='new')await hydrateFileSource(file);
@@ -499,7 +499,7 @@ function showDeepSection(section,{reveal=false}={}) {
   if(!file)return;
   if(section.kind==='code')return jumpCitation({path:file.path,fileId:file.id,side:section.side==='old'?'old':'new',startLine:section.startLine,endLine:section.endLine,focusLine:section.startLine},{reveal:reveal&&overlayGuide()});
   citation=null;
-  if(reveal&&overlayGuide()){if(history.state?.patchworkPanel)history.back();state.chatOpen=false;state.filesOpen=false;}
+  if(reveal&&overlayGuide()){if(history.state?.xpositorPanel)history.back();state.chatOpen=false;state.filesOpen=false;}
   state.activeTab=section.kind==='pending'?'source':'overview';selectFile(file.id);
 }
 function highlightCitation() {
@@ -531,13 +531,13 @@ async function hydrateAiConfig() {
   catch {state.aiEnabled=false;state.aiProvider='';state.aiMessage='AI status is unavailable while the laptop cannot be reached.';}
   render();
 }
-function loadDemo(){capturePosition();state.demo=true;state.snapshot=validateSnapshot({repoId:'patchwork-demo',base:'demo-base',head:'demo-head',branch:'demo',snapshotId:'demo-v2',generatedAt:new Date().toISOString(),workspaceName:'Sample workspace',files:demoFiles.map((f)=>({...f,version:`demo-${f.id}-v2`,status:'modified',sourceAvailable:true,source:f.lines.filter(([kind])=>kind!=='removed').map(([, ,text])=>text).join('\n')}))});state.selectedFile=files()[0].id;state.connectionError='';render(false);}
+function loadDemo(){capturePosition();state.demo=true;state.snapshot=validateSnapshot({repoId:'xpositor-demo',base:'demo-base',head:'demo-head',branch:'demo',snapshotId:'demo-v2',generatedAt:new Date().toISOString(),workspaceName:'Sample workspace',files:demoFiles.map((f)=>({...f,version:`demo-${f.id}-v2`,status:'modified',sourceAvailable:true,source:f.lines.filter(([kind])=>kind!=='removed').map(([, ,text])=>text).join('\n')}))});state.selectedFile=files()[0].id;state.connectionError='';render(false);}
 async function initialize() {
   let legacy={}, legacySnapshot=null;
-  try {legacy=JSON.parse(localStorage.getItem('patchwork-state-v1')||'{}');legacySnapshot=JSON.parse(localStorage.getItem('patchwork-snapshot-v1')||'null');state.apiToken=new URLSearchParams(location.search).get('token')||localStorage.getItem('patchwork-api-token')||legacy.apiToken||'';if(state.apiToken)localStorage.setItem('patchwork-api-token',state.apiToken);}
+  try {legacy=JSON.parse(localStorage.getItem('patchwork-state-v1')||'{}');legacySnapshot=JSON.parse(localStorage.getItem('patchwork-snapshot-v1')||'null');state.apiToken=new URLSearchParams(location.search).get('token')||localStorage.getItem('xpositor-api-token')||localStorage.getItem('patchwork-api-token')||legacy.apiToken||'';if(state.apiToken)localStorage.setItem('xpositor-api-token',state.apiToken);}
   catch(error){storageFailure(error);state.apiToken=new URLSearchParams(location.search).get('token')||'';}
   if(new URLSearchParams(location.search).has('token')){const url=new URL(location.href);url.searchParams.delete('token');history.replaceState(null,'',url.pathname+url.search+url.hash);}
-  try {storage=await openStorage();const saved=await storage.get('state');data=saved?sanitizeState(saved):migrateLegacy(legacy,legacySnapshot);const snapshot=await storage.get('snapshot');if(snapshot){state.snapshot=validateSnapshot(snapshot);state.snapshotSaved=true;state.connection='cached';state.selectedFile=restoredSelection(state.snapshot);}await storage.put('state',data);try{localStorage.removeItem('patchwork-state-v1');localStorage.removeItem('patchwork-snapshot-v1');}catch{}}
+  try {storage=await openStorage();const saved=await storage.get('state');data=saved?sanitizeState(saved):migrateLegacy(legacy,legacySnapshot);const snapshot=await storage.get('snapshot');if(snapshot){state.snapshot=validateSnapshot(snapshot);state.snapshotSaved=true;state.connection='cached';state.selectedFile=restoredSelection(state.snapshot);}await storage.put('state',data);try{localStorage.removeItem('patchwork-state-v1');localStorage.removeItem('patchwork-snapshot-v1');localStorage.removeItem('patchwork-api-token');}catch{}}
   catch(error){storageFailure(error);data=migrateLegacy(legacy,legacySnapshot);}
   render(false);await Promise.allSettled([hydrateFromCompanion(),hydrateAiConfig()]);
 }

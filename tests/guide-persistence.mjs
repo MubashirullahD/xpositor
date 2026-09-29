@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { createSnapshotStore } from '../snapshot.mjs';
 import { createGuideStorage } from '../guide-storage.mjs';
 import { createAgentGuideService } from '../agent-guide-service.mjs';
-const root=mkdtempSync(join(tmpdir(),'patchwork-guide-persist-'));
+const root=mkdtempSync(join(tmpdir(),'xpositor-guide-persist-'));
 const git=(...args)=>execFileSync('git',args,{cwd:root,stdio:'pipe'});
 try{
  git('init','-q');git('config','user.name','Test');git('config','user.email','test@example.invalid');

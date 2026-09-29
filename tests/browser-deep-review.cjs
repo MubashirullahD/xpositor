@@ -18,7 +18,7 @@ async page => {
   else if(path==='/api/guide/deep/advance'){record.position=input.position;record.completed=input.completed;record.group=input.group;body={conversation:record};}
   else if(path==='/api/guide/run')body={run};
   else if(path==='/api/guide/conversation')body={conversation:record};
-  else if(path==='/api/guide/deep/speech'){speechRequests++;await route.fulfill({contentType:'audio/wav',headers:{'x-patchwork-audio-chunks':'1','x-patchwork-speech-text':encodeURIComponent(input.group===0?'This line defines the answer.':'This line exports the answer.'),'x-patchwork-speech-timing':JSON.stringify([{start:0,end:28,time:0,duration:3}])},body:'RIFF audio'});return;}
+  else if(path==='/api/guide/deep/speech'){speechRequests++;await route.fulfill({contentType:'audio/wav',headers:{'x-xpositor-audio-chunks':'1','x-xpositor-speech-text':encodeURIComponent(input.group===0?'This line defines the answer.':'This line exports the answer.'),'x-xpositor-speech-timing':JSON.stringify([{start:0,end:28,time:0,duration:3}])},body:'RIFF audio'});return;}
   else if(path==='/api/file')body={source:snapshot.files[0].source};
   else {await route.continue();return;}
   await route.fulfill({contentType:'application/json',body:JSON.stringify(body)});

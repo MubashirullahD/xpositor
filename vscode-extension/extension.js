@@ -10,6 +10,13 @@ const MAX_LOG_CHARS = 4000;
 let launcher;
 let pairingView;
 
+// Mirrors state-home.mjs: installs from before the rename kept state in ~/.patchwork.
+function stateHome() {
+  const dir = path.join(homedir(), '.xpositor'), legacy = path.join(homedir(), '.patchwork');
+  if (!fs.existsSync(dir) && fs.existsSync(legacy)) try { fs.renameSync(legacy, dir); } catch {}
+  return dir;
+}
+
 function activate(context) {
   launcher = new Launcher({ vscode, context, extensionDir: __dirname });
   launcher.activate();
@@ -43,19 +50,19 @@ class Launcher {
   activate() {
     const api = this.vscode;
     this.statusBar = api.window.createStatusBarItem(api.StatusBarAlignment.Left, 100);
-    this.statusBar.command = 'patchwork.start';
-    this.statusBar.text = '$(broadcast) Patchwork';
-    this.statusBar.tooltip = 'Start Patchwork and show the phone pairing QR';
+    this.statusBar.command = 'xpositor.start';
+    this.statusBar.text = '$(broadcast) Xpositor';
+    this.statusBar.tooltip = 'Start Xpositor and show the phone pairing QR';
     this.statusBar.show();
     this.context.subscriptions.push(this.statusBar);
-    this.context.subscriptions.push(api.window.registerWebviewViewProvider('patchwork.pairing', new PairingViewProvider(this), { retainContextWhenHidden: true }));
-    this.context.subscriptions.push(api.commands.registerCommand('patchwork.start', () => { void this.revealPairingView(); void this.start(); }));
-    this.context.subscriptions.push(api.commands.registerCommand('patchwork.stop', () => this.stop(true)));
+    this.context.subscriptions.push(api.window.registerWebviewViewProvider('xpositor.pairing', new PairingViewProvider(this), { retainContextWhenHidden: true }));
+    this.context.subscriptions.push(api.commands.registerCommand('xpositor.start', () => { void this.revealPairingView(); void this.start(); }));
+    this.context.subscriptions.push(api.commands.registerCommand('xpositor.stop', () => this.stop(true)));
     this.context.subscriptions.push({ dispose: () => this.stop(false) });
     if (api.workspace.onDidChangeConfiguration) this.context.subscriptions.push(api.workspace.onDidChangeConfiguration((event) => {
-      if (event.affectsConfiguration('patchwork.aiProvider') && this.session) void this.restartForProvider();
+      if (event.affectsConfiguration('xpositor.aiProvider') && this.session) void this.restartForProvider();
     }));
-    if (api.workspace.getConfiguration('patchwork').get('autoStart', false)) { void this.revealPairingView(); void this.start(); }
+    if (api.workspace.getConfiguration('xpositor').get('autoStart', false)) { void this.revealPairingView(); void this.start(); }
   }
 
   async start() {
@@ -69,18 +76,18 @@ class Launcher {
     if (this.session) await this.stop(false, { preserveError: true });
     this.aiStatus = { state: 'idle' };
     const root = await chooseRepositoryFolder(this.vscode, this.fs);
-    if (!root) return this.showFailure('Patchwork needs an open Git repository. In a multi-root workspace, choose the repository to review.');
-    const config = this.vscode.workspace.getConfiguration('patchwork', root.uri);
+    if (!root) return this.showFailure('Xpositor needs an open Git repository. In a multi-root workspace, choose the repository to review.');
+    const config = this.vscode.workspace.getConfiguration('xpositor', root.uri);
     const script = this.companionPath();
-    if (!this.fs.existsSync(script)) return this.showFailure(`Patchwork companion not found at ${script}. Set patchwork.companionPath in your settings.`);
+    if (!this.fs.existsSync(script)) return this.showFailure(`Xpositor companion not found at ${script}. Set xpositor.companionPath in your settings.`);
     const transport=this.transport||config.get('transport','lan');
     const tunnel = transport==='lan'?{mode:'lan'}:readTunnelConfiguration(config);
     if (tunnel.error) return this.showFailure(tunnel.error);
     const port = readPort(config.get('port', 0));
-    if (tunnel.mode === 'named' && port === 0) return this.showFailure('A named tunnel needs a fixed patchwork.port so its externally provisioned ingress can target http://127.0.0.1:<port>.');
+    if (tunnel.mode === 'named' && port === 0) return this.showFailure('A named tunnel needs a fixed xpositor.port so its externally provisioned ingress can target http://127.0.0.1:<port>.');
     let token;
     try { token = await this.pairingToken(root.uri.fsPath, readTunnelConfiguration(config).mode === 'named'); }
-    catch (error) { return this.showFailure(`Patchwork could not store the stable named-tunnel pairing token: ${error.message}`); }
+    catch (error) { return this.showFailure(`Xpositor could not store the stable named-tunnel pairing token: ${error.message}`); }
     const session = {
       id: this.randomBytes(12).toString('hex'), root: root.uri.fsPath, phase: 'starting', token, tunnel, mode:transport, config,
       companion: undefined, tunnelProcess: undefined, companionStderr: '', tunnelStderr: '', companionOutput: '', tunnelOutput: '',
@@ -90,15 +97,15 @@ class Launcher {
     this.lastError = '';
     this.setStatus('starting');
     const timeout = readStartupTimeout(config.get('startupTimeoutSeconds', 30));
-    session.startupTimer = this.setTimeout(() => void this.fail(session, `Patchwork did not become ready within ${timeout} seconds. ${diagnostics(session)}`), timeout * 1000);
+    session.startupTimer = this.setTimeout(() => void this.fail(session, `Xpositor did not become ready within ${timeout} seconds. ${diagnostics(session)}`), timeout * 1000);
     try {
       session.companion = this.spawn(process.execPath, [script, session.root], {
         cwd: session.root,
-        env: { ...process.env, ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {}), PATCHWORK_HOST: '0.0.0.0', PATCHWORK_PORT: String(port), PATCHWORK_TOKEN: token, PATCHWORK_AI_PROVIDER: String(config.get('aiProvider', 'auto')), ...(config.get('devAiLog', false) ? { PATCHWORK_AI_LOG: '1' } : {}) },
+        env: { ...process.env, ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {}), XPOSITOR_HOST: '0.0.0.0', XPOSITOR_PORT: String(port), XPOSITOR_TOKEN: token, XPOSITOR_AI_PROVIDER: String(config.get('aiProvider', 'auto')), ...(config.get('devAiLog', false) ? { XPOSITOR_AI_LOG: '1' } : {}) },
         stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
       });
       this.bindCompanion(session, this.cloudflaredPath(config));
-    } catch (error) { await this.fail(session, `Patchwork could not launch its companion: ${error.message}`); }
+    } catch (error) { await this.fail(session, `Xpositor could not launch its companion: ${error.message}`); }
   }
 
   bindCompanion(session, cloudflaredPath) {
@@ -107,7 +114,7 @@ class Launcher {
       if (!this.owns(session)) return;
       session.companionOutput = appendLog(session.companionOutput, chunk);
       for (const line of session.companionOutput.split(/\r?\n/)) {
-        const match = line.trim().match(/^Patchwork companion: http:\/\/(?:127\.0\.0\.1|0\.0\.0\.0|localhost):(\d+)$/);
+        const match = line.trim().match(/^Xpositor companion: http:\/\/(?:127\.0\.0\.1|0\.0\.0\.0|localhost):(\d+)$/);
         if (match && !session.tunnelProcess && session.phase === 'starting') {
           session.port=Number(match[1]);
           session.addresses=Object.values(this.networkInterfaces()).flatMap((entries)=>(entries||[]).filter((entry)=>!entry.internal&&(entry.family==='IPv4'||entry.family===4)).map((entry)=>entry.address));
@@ -119,11 +126,11 @@ class Launcher {
       }
     });
     child.stderr?.on('data', (chunk) => { if (this.owns(session)) session.companionStderr = appendLog(session.companionStderr, chunk); });
-    child.once('error', (error) => { if (this.owns(session) && !session.stopping) void this.fail(session, `Patchwork companion could not start: ${error.message}. ${diagnostics(session)}`); });
+    child.once('error', (error) => { if (this.owns(session) && !session.stopping) void this.fail(session, `Xpositor companion could not start: ${error.message}. ${diagnostics(session)}`); });
     child.once('exit', (code, signal) => {
       if (this.owns(session) && !session.stopping) {
         const state = session.tunnelProcess ? 'after the tunnel started' : 'before the secure tunnel was ready';
-        void this.fail(session, `Patchwork companion stopped ${state} (${exitDescription(code, signal)}). ${diagnostics(session)}`);
+        void this.fail(session, `Xpositor companion stopped ${state} (${exitDescription(code, signal)}). ${diagnostics(session)}`);
       }
     });
   }
@@ -171,7 +178,7 @@ class Launcher {
     this.renderPairingView();
     try {
       const response = await this.fetch(`http://127.0.0.1:${session.port}/api/config?refresh=true`, {
-        headers: { 'x-patchwork-token': session.token },
+        headers: { 'x-xpositor-token': session.token },
         signal: AbortSignal.timeout(12000),
       });
       if (!response.ok) throw new Error(`Provider check returned HTTP ${response.status}.`);
@@ -206,7 +213,7 @@ class Launcher {
   async stop(showMessage, { preserveError = false } = {}) {
     if (this.session) await this.closeSession(this.session, { preserveError });
     else if (!preserveError) { this.lastError = ''; this.setStatus('stopped'); }
-    if (showMessage) this.vscode.window.showInformationMessage('Patchwork companion stopped.');
+    if (showMessage) this.vscode.window.showInformationMessage('Xpositor companion stopped.');
   }
 
   async closeSession(session, { preserveError }) {
@@ -225,7 +232,7 @@ class Launcher {
   owns(session) { return this.session === session; }
   showFailure(message) { this.lastError = message; this.setStatus('error'); this.vscode.window.showErrorMessage(message); }
   companionPath() {
-    const configured = this.vscode.workspace.getConfiguration('patchwork').get('companionPath', '');
+    const configured = this.vscode.workspace.getConfiguration('xpositor').get('companionPath', '');
     if (configured) return configured;
     const sibling = path.resolve(this.extensionDir, '..', 'companion.mjs');
     const bundled = path.resolve(this.extensionDir, 'bundle', 'companion.mjs');
@@ -241,21 +248,21 @@ class Launcher {
   }
   async pairingToken(repositoryPath, stable) {
     if (!stable) return this.randomBytes(18).toString('base64url');
-    const key = `patchwork.pairingToken.${crypto.createHash('sha256').update(path.resolve(repositoryPath)).digest('hex')}`;
+    const key = `xpositor.pairingToken.${crypto.createHash('sha256').update(path.resolve(repositoryPath)).digest('hex')}`;
     const existing = await this.context.secrets.get(key);
     if (existing) return existing;
     const created = this.randomBytes(24).toString('base64url');
     await this.context.secrets.store(key, created);
     return created;
   }
-  async revealPairingView() { try { await this.vscode.commands.executeCommand('workbench.view.extension.patchwork'); } catch (error) { this.vscode.window.showErrorMessage(`Patchwork could not open its sidebar: ${error.message}`); } }
+  async revealPairingView() { try { await this.vscode.commands.executeCommand('workbench.view.extension.xpositor'); } catch (error) { this.vscode.window.showErrorMessage(`Xpositor could not open its sidebar: ${error.message}`); } }
   renderPairingView() {
     if (!pairingView) return;
-    try { pairingView.webview.html = pairingHtml({ status: this.status, url: this.session?.pairingUrl || '', root: this.session?.root || '', error: this.lastError, mode:this.session?.mode||(this.transport||this.vscode.workspace.getConfiguration('patchwork').get('transport','lan')), multipleAddresses:(this.session?.addresses?.length||0)>1, voiceStatus:this.voiceStatus === 'idle' && this.voiceInstalled() ? 'ready' : this.voiceStatus, voiceError:this.voiceError, aiStatus:this.aiStatus, aiChoice:this.vscode.workspace.getConfiguration('patchwork').get('aiProvider','auto') }); }
-    catch (error) { this.vscode.window.showErrorMessage(`Patchwork could not render its sidebar: ${error.message}`); }
+    try { pairingView.webview.html = pairingHtml({ status: this.status, url: this.session?.pairingUrl || '', root: this.session?.root || '', error: this.lastError, mode:this.session?.mode||(this.transport||this.vscode.workspace.getConfiguration('xpositor').get('transport','lan')), multipleAddresses:(this.session?.addresses?.length||0)>1, voiceStatus:this.voiceStatus === 'idle' && this.voiceInstalled() ? 'ready' : this.voiceStatus, voiceError:this.voiceError, aiStatus:this.aiStatus, aiChoice:this.vscode.workspace.getConfiguration('xpositor').get('aiProvider','auto') }); }
+    catch (error) { this.vscode.window.showErrorMessage(`Xpositor could not render its sidebar: ${error.message}`); }
   }
   voiceInstalled() {
-    const home = process.env.PATCHWORK_VOICE_HOME || path.join(homedir(), '.patchwork', 'voice');
+    const home = process.env.XPOSITOR_VOICE_HOME || path.join(stateHome(), 'voice');
     return this.fs.existsSync(path.join(home, 'node_modules', 'kokoro-js', 'package.json'));
   }
   installVoice() {
@@ -300,12 +307,12 @@ class Launcher {
   }
   setStatus(status) {
     this.status = status;
-    if (this.statusBar) this.statusBar.text = ({ starting: '$(sync~spin) Patchwork: starting', ready: '$(broadcast) Patchwork: ready', error: '$(warning) Patchwork: error', stopped: '$(broadcast) Patchwork' })[status] || '$(broadcast) Patchwork';
+    if (this.statusBar) this.statusBar.text = ({ starting: '$(sync~spin) Xpositor: starting', ready: '$(broadcast) Xpositor: ready', error: '$(warning) Xpositor: error', stopped: '$(broadcast) Xpositor' })[status] || '$(broadcast) Xpositor';
     this.renderPairingView();
   }
   async handlePairingMessage(message) {
     if (message.type === 'refresh-ai') { await this.refreshAiStatus(); return; }
-    if (message.type === 'ai-settings') { await this.vscode.commands.executeCommand('workbench.action.openSettings', 'patchwork.aiProvider'); return; }
+    if (message.type === 'ai-settings') { await this.vscode.commands.executeCommand('workbench.action.openSettings', 'xpositor.aiProvider'); return; }
     if (message.type === 'install-voice') { this.installVoice(); return; }
     if (message.type === 'cloudflared-help') { await this.vscode.env.openExternal(this.vscode.Uri.parse('https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/')); return; }
     if(['lan','tunnel'].includes(message.type)) {
@@ -316,7 +323,7 @@ class Launcher {
       if(session.mode===message.type) return;
       if(message.type==='tunnel'&&!session.tunnelOrigin&&!session.tunnelProcess) {
         const tunnel=readTunnelConfiguration(session.config);
-        const error=tunnel.error||(tunnel.mode==='named'&&readPort(session.config.get('port',0))===0?'A named tunnel needs a fixed patchwork.port.':'');
+        const error=tunnel.error||(tunnel.mode==='named'&&readPort(session.config.get('port',0))===0?'A named tunnel needs a fixed xpositor.port.':'');
         if(error){this.vscode.window.showErrorMessage(error);return;}
         session.tunnel=tunnel;
       }
@@ -332,7 +339,7 @@ class Launcher {
       return;
     }
     if(message.type==='address'&&this.session?.mode==='lan') {const session=this.session;const address=await this.vscode.window.showQuickPick(session.addresses,{title:'Choose the laptop address on your phone’s Wi-Fi network'});if(address&&this.owns(session)){session.lanOrigin=`http://${address}:${session.port}`;session.pairingUrl=`${session.lanOrigin}/?token=${encodeURIComponent(session.token)}`;this.renderPairingView();}return;}
-    if (message.type === 'copy' && this.session?.pairingUrl) { await this.vscode.env.clipboard.writeText(this.session.pairingUrl); this.vscode.window.showInformationMessage('Patchwork pairing link copied.'); }
+    if (message.type === 'copy' && this.session?.pairingUrl) { await this.vscode.env.clipboard.writeText(this.session.pairingUrl); this.vscode.window.showInformationMessage('Xpositor pairing link copied.'); }
     if (message.type === 'open' && this.session?.pairingUrl) await this.vscode.env.openExternal(this.vscode.Uri.parse(this.session.pairingUrl));
     if (message.type === 'retry') await this.start();
     if (message.type === 'stop') await this.stop(true);
@@ -355,7 +362,7 @@ async function chooseRepositoryFolder(api, fileSystem) {
   const folders = (api.workspace.workspaceFolders || []).filter((folder) => fileSystem.existsSync(path.join(folder.uri.fsPath, '.git')));
   if (folders.length === 1) return folders[0];
   if (!folders.length) return undefined;
-  const picked = await api.window.showQuickPick(folders.map((folder) => ({ label: folder.name, description: folder.uri.fsPath, folder })), { title: 'Choose the Git repository to review with Patchwork', placeHolder: 'Patchwork only reads the repository you choose' });
+  const picked = await api.window.showQuickPick(folders.map((folder) => ({ label: folder.name, description: folder.uri.fsPath, folder })), { title: 'Choose the Git repository to review with Xpositor', placeHolder: 'Xpositor only reads the repository you choose' });
   return picked?.folder;
 }
 
@@ -363,20 +370,20 @@ function readTunnelConfiguration(config) {
   const name = String(config.get('tunnelName', '')).trim();
   const configuredUrl = String(config.get('publicUrl', '')).trim();
   if (!name && !configuredUrl) return { mode: 'quick' };
-  if (!name || !configuredUrl) return { error: 'Set both patchwork.tunnelName and patchwork.publicUrl to use an existing named tunnel, or clear both to use a free Quick Tunnel.' };
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(name)) return { error: 'patchwork.tunnelName may contain letters, numbers, periods, underscores, and hyphens only.' };
+  if (!name || !configuredUrl) return { error: 'Set both xpositor.tunnelName and xpositor.publicUrl to use an existing named tunnel, or clear both to use a free Quick Tunnel.' };
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(name)) return { error: 'xpositor.tunnelName may contain letters, numbers, periods, underscores, and hyphens only.' };
   try {
     const url = new URL(configuredUrl);
     if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) throw new Error();
     return { mode: 'named', name, publicUrl: url.origin + (url.pathname.replace(/\/$/, '') || '') };
-  } catch { return { error: 'patchwork.publicUrl must be an HTTPS origin or path without credentials, query parameters, or fragments.' }; }
+  } catch { return { error: 'xpositor.publicUrl must be an HTTPS origin or path without credentials, query parameters, or fragments.' }; }
 }
 
 function readPort(value) { const port = Number(value); return port === 0 ? 0 : Math.max(1024, Math.min(65535, Number.isFinite(port) ? Math.floor(port) : 4321)); }
 function readStartupTimeout(value) { const valueNumber = Number(value); return Math.max(5, Math.min(300, Number.isFinite(valueNumber) ? Math.floor(valueNumber) : 30)); }
 function appendLog(previous, chunk) { const next = previous + String(chunk); return next.length > MAX_LOG_CHARS ? next.slice(-MAX_LOG_CHARS) : next; }
 function diagnostics(session) { const output = [session.tunnelStderr, session.companionStderr, session.tunnelOutput, session.companionOutput].join('\n').split(/\r?\n/).map((line) => line.trim()).filter(Boolean).at(-1); return output ? `Last diagnostic: ${output}` : 'No diagnostic output was captured.'; }
-function cloudflaredHelp(executable) { return executable.includes('/') || executable.includes('\\') ? `Check patchwork.cloudflaredPath (${executable}).` : process.platform === 'darwin' ? 'Install it once with "brew install cloudflared" or set patchwork.cloudflaredPath.' : 'Install cloudflared from https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/ or set patchwork.cloudflaredPath.'; }
+function cloudflaredHelp(executable) { return executable.includes('/') || executable.includes('\\') ? `Check xpositor.cloudflaredPath (${executable}).` : process.platform === 'darwin' ? 'Install it once with "brew install cloudflared" or set xpositor.cloudflaredPath.' : 'Install cloudflared from https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/ or set xpositor.cloudflaredPath.'; }
 function exitDescription(code, signal) { return signal ? `signal ${signal}` : `exit ${code ?? 0}`; }
 function stopProcess(child, schedule, cancel, timeout) {
   if (!child || child.exitCode !== null || child.killed) return Promise.resolve();
@@ -407,14 +414,14 @@ function pairingHtml(state) {
   const aiLabel = ai.state === 'connected' ? `${ai.provider === 'codex' ? 'Codex' : ai.provider === 'claude' ? 'Claude Code' : 'API'} connected · ${ai.billing === 'subscription' ? 'subscription login verified' : 'API billing selected'}`
     : ai.state === 'checking' ? 'Checking local AI login…'
       : ai.state === 'idle' ? 'Start the companion to check your AI login.' : escapeHtml(ai.message || 'No subscription CLI is connected.');
-  const aiHelp = '<p class="note">Patchwork needs a separate Codex or Claude Code CLI on this laptop. Installing the Codex VS Code extension alone may not put <code>codex</code> on PATH. On Windows, install Codex CLI with <code>npm install -g @openai/codex</code>, run <code>codex</code> in PowerShell and choose ChatGPT sign-in, then reload VS Code and recheck. For Claude Code, install its CLI and sign in with a Claude subscription. Auto uses verified Codex first, then verified Claude Code.</p>';
+  const aiHelp = '<p class="note">Xpositor needs a separate Codex or Claude Code CLI on this laptop. Installing the Codex VS Code extension alone may not put <code>codex</code> on PATH. On Windows, install Codex CLI with <code>npm install -g @openai/codex</code>, run <code>codex</code> in PowerShell and choose ChatGPT sign-in, then reload VS Code and recheck. For Claude Code, install its CLI and sign in with a Claude subscription. Auto uses verified Codex first, then verified Claude Code.</p>';
   const aiPanel = `<section class="setup"><h2>AI connection</h2><p>Provider setting: ${escapeHtml(state.aiChoice || 'auto')}</p><p>${aiLabel}</p>${aiHelp}<div class="actions"><button id="refresh-ai">Recheck connection</button><button class="secondary" id="ai-settings">Choose provider</button></div></section>`;
   const content = state.status === 'ready' && state.url
-    ? `<h1>Scan to review</h1><p>${lan?'Connect your phone to the same Wi-Fi and scan this link.':'Scan this HTTPS link from any network.'}</p><div class="card">${qrSvg(state.url)}</div><code>${safeUrl}</code><div class="actions"><button id="copy">Copy pairing link</button><button class="secondary" id="open">Open on this laptop</button></div><button class="link" id="stop">Stop companion</button><p class="note"><strong>${lan?'Local-network, read-only companion.':'HTTPS, read-only companion.'}</strong> ${lan?'HTTP is unencrypted. Use a trusted Wi-Fi network. Offline installation requires HTTPS; downloaded code remains readable in the open tab.':''} Keep this pairing link private. Patchwork cannot stage, edit, reset, or commit files.</p>`
+    ? `<h1>Scan to review</h1><p>${lan?'Connect your phone to the same Wi-Fi and scan this link.':'Scan this HTTPS link from any network.'}</p><div class="card">${qrSvg(state.url)}</div><code>${safeUrl}</code><div class="actions"><button id="copy">Copy pairing link</button><button class="secondary" id="open">Open on this laptop</button></div><button class="link" id="stop">Stop companion</button><p class="note"><strong>${lan?'Local-network, read-only companion.':'HTTPS, read-only companion.'}</strong> ${lan?'HTTP is unencrypted. Use a trusted Wi-Fi network. Offline installation requires HTTPS; downloaded code remains readable in the open tab.':''} Keep this pairing link private. Xpositor cannot stage, edit, reset, or commit files.</p>`
     : state.status === 'starting' ? `<h1>${lan?'Starting local review':'Creating secure link'}</h1><div class="state"><span class="spinner"></span><strong>${lan?'Starting the companion…':'Starting the companion and tunnel…'}</strong></div><button class="link" id="stop">Cancel startup</button>`
-      : state.status === 'error' ? `<h1>Patchwork needs attention</h1><p class="error">${safeError || 'The companion could not start.'}</p><div class="actions"><button id="retry">Try again</button></div>`
+      : state.status === 'error' ? `<h1>Xpositor needs attention</h1><p class="error">${safeError || 'The companion could not start.'}</p><div class="actions"><button id="retry">Try again</button></div>`
         : '<h1>Pair your phone</h1><p>Choose local LAN for a quick connection or HTTPS tunnel for access from another network.</p>';
-  return `<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'"><style>:root{color-scheme:light dark}body{margin:0;padding:18px 16px 24px;color:var(--vscode-foreground);font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.eyebrow{color:var(--vscode-textLink-foreground);font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}h1{margin:9px 0 8px;font-size:21px;line-height:1.15}h2{font-size:14px;margin:0}p{color:var(--vscode-descriptionForeground);line-height:1.5}.card{display:grid;place-items:center;margin:18px 0 16px;padding:14px;border:1px solid var(--vscode-panel-border);border-radius:10px;background:#fff}svg{display:block;width:min(220px,100%);height:auto}code{display:block;margin:10px 0 8px;padding:10px;overflow-wrap:anywhere;border-radius:5px;background:var(--vscode-textBlockQuote-background);font-size:11px}.transport{padding-top:14px}.actions{display:flex;flex-wrap:wrap;gap:7px}button{padding:7px 10px;border:0;border-radius:4px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);cursor:pointer}button.secondary{background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground)}button.link{margin-top:15px;padding:0;background:transparent;color:var(--vscode-textLink-foreground);text-decoration:underline}button.inline{margin:0}.note{margin-top:18px;padding:10px 11px;border-left:3px solid var(--vscode-textLink-foreground);background:var(--vscode-textBlockQuote-background)}.setup{margin-top:22px;padding-top:16px;border-top:1px solid var(--vscode-panel-border)}.setup code{display:inline;padding:1px 3px;margin:0}.state{display:flex;align-items:center;gap:9px;margin:22px 0;padding:14px;border:1px solid var(--vscode-panel-border);border-radius:8px}.spinner{width:13px;height:13px;border:2px solid var(--vscode-panel-border);border-top-color:var(--vscode-textLink-foreground);border-radius:50%;animation:spin 800ms linear infinite}.error{padding:11px;border-left:3px solid var(--vscode-errorForeground);background:var(--vscode-textBlockQuote-background);overflow-wrap:anywhere}@keyframes spin{to{transform:rotate(360deg)}}</style></head><body><span class="eyebrow">Patchwork · ${safeRoot}</span>${transportButtons}${tunnelNote}${content}${state.multipleAddresses?'<button class="link" id="address">Choose LAN address</button>':''}${aiPanel}${voicePanel}<script nonce="${nonce}">const vscode=acquireVsCodeApi();for(const type of ['copy','open','retry','stop','lan','tunnel','address','install-voice','cloudflared-help','refresh-ai','ai-settings'])document.getElementById(type)?.addEventListener('click',()=>vscode.postMessage({type}));</script></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'"><style>:root{color-scheme:light dark}body{margin:0;padding:18px 16px 24px;color:var(--vscode-foreground);font:13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.eyebrow{color:var(--vscode-textLink-foreground);font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}h1{margin:9px 0 8px;font-size:21px;line-height:1.15}h2{font-size:14px;margin:0}p{color:var(--vscode-descriptionForeground);line-height:1.5}.card{display:grid;place-items:center;margin:18px 0 16px;padding:14px;border:1px solid var(--vscode-panel-border);border-radius:10px;background:#fff}svg{display:block;width:min(220px,100%);height:auto}code{display:block;margin:10px 0 8px;padding:10px;overflow-wrap:anywhere;border-radius:5px;background:var(--vscode-textBlockQuote-background);font-size:11px}.transport{padding-top:14px}.actions{display:flex;flex-wrap:wrap;gap:7px}button{padding:7px 10px;border:0;border-radius:4px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);cursor:pointer}button.secondary{background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground)}button.link{margin-top:15px;padding:0;background:transparent;color:var(--vscode-textLink-foreground);text-decoration:underline}button.inline{margin:0}.note{margin-top:18px;padding:10px 11px;border-left:3px solid var(--vscode-textLink-foreground);background:var(--vscode-textBlockQuote-background)}.setup{margin-top:22px;padding-top:16px;border-top:1px solid var(--vscode-panel-border)}.setup code{display:inline;padding:1px 3px;margin:0}.state{display:flex;align-items:center;gap:9px;margin:22px 0;padding:14px;border:1px solid var(--vscode-panel-border);border-radius:8px}.spinner{width:13px;height:13px;border:2px solid var(--vscode-panel-border);border-top-color:var(--vscode-textLink-foreground);border-radius:50%;animation:spin 800ms linear infinite}.error{padding:11px;border-left:3px solid var(--vscode-errorForeground);background:var(--vscode-textBlockQuote-background);overflow-wrap:anywhere}@keyframes spin{to{transform:rotate(360deg)}}</style></head><body><span class="eyebrow">Xpositor · ${safeRoot}</span>${transportButtons}${tunnelNote}${content}${state.multipleAddresses?'<button class="link" id="address">Choose LAN address</button>':''}${aiPanel}${voicePanel}<script nonce="${nonce}">const vscode=acquireVsCodeApi();for(const type of ['copy','open','retry','stop','lan','tunnel','address','install-voice','cloudflared-help','refresh-ai','ai-settings'])document.getElementById(type)?.addEventListener('click',()=>vscode.postMessage({type}));</script></body></html>`;
 }
 function escapeHtml(value) { return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#039;'); }
 

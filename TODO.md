@@ -1,4 +1,4 @@
-# Patchwork roadmap
+# Xpositor roadmap
 
 ## Completed in the review hardening pass
 
@@ -21,7 +21,7 @@
 
 - [ ] Revisit natural voice when subscription-backed third-party embedding has a supported, verified integration path. Keep text fully usable; do not add a separately billed audio service by default.
 
-Checked 18 September 2026: the [official voice documentation](https://learn.chatgpt.com/docs/features/voice) covers the ChatGPT desktop app and paired iOS Remote on supported plans, subject to rollout and workspace settings. That does not establish support for embedding the same subscription voice experience in Patchwork.
+Checked 18 September 2026: the [official voice documentation](https://learn.chatgpt.com/docs/features/voice) covers the ChatGPT desktop app and paired iOS Remote on supported plans, subject to rollout and workspace settings. That does not establish support for embedding the same subscription voice experience in Xpositor.
 
 Installed `codex-cli 0.146.0` exposes `thread/realtime/*` request methods only when generating the experimental protocol. Its stable request union excludes them. The [App Server documentation](https://learn.chatgpt.com/docs/app-server) explicitly gates experimental methods. A reliable public subscription contract and account entitlement for third-party voice were not verified, so no voice session or paid audio service was added. This is a deferred feasibility item, not a claim that voice is technically impossible.
 
@@ -31,7 +31,7 @@ Possible future low-cost experiment: device dictation plus device read-aloud, wi
 
 - [ ] Exercise a real phone/Safari PWA install, offline relaunch and reconnection over cellular. Current browser checks used Chromium at phone/tablet sizes.
 - [x] Verify live Claude Code subscription generation: overview plan, audio lesson, follow-ups and deep review with repository tools (27 September 2026).
-- [ ] Exercise the existing named-tunnel configuration against a real hostname. Lifecycle behavior is covered by mocks; Patchwork does not provision infrastructure.
+- [ ] Exercise the existing named-tunnel configuration against a real hostname. Lifecycle behavior is covered by mocks; Xpositor does not provision infrastructure.
 - [ ] Add branch/commit comparisons and PR review after validating the uncommitted-change workflow with users.
 - [ ] Decide on Marketplace publishing. The VSIX is built locally; it has not been published or automatically installed.
 - [ ] Consider a framework migration only when incremental DOM updates and richer interaction justify it.
@@ -86,4 +86,4 @@ Live Luna checks passed: a four-step plan covered all 100 changed files with all
 - [ ] Validate audio start, interruption, backgrounding and reconnection on Safari and Samsung Internet.
 - [ ] Consider downloadable audio lessons and microphone questions after the pilot evaluation. No paid speech service is enabled.
 
-Pilot validation, 22 September 2026: full regression suite passed; live Luna generated a grounded seven-segment lesson from Patchwork request-deduplication code. All three Kokoro voices generated real WAV audio locally (about 15–17 seconds to synthesize a 26-second segment on the development laptop). Chromium native-audio checks cover pause/resume, segment advance and question interruption; layout and transcript checks cover phone widths down to 320 px. Human comprehension/voice preference and real phone browser behavior remain evaluation items.
+Pilot validation, 22 September 2026: full regression suite passed; live Luna generated a grounded seven-segment lesson from Xpositor request-deduplication code. All three Kokoro voices generated real WAV audio locally (about 15–17 seconds to synthesize a 26-second segment on the development laptop). Chromium native-audio checks cover pause/resume, segment advance and question interruption; layout and transcript checks cover phone widths down to 320 px. Human comprehension/voice preference and real phone browser behavior remain evaluation items.

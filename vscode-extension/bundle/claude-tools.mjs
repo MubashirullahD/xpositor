@@ -4,7 +4,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 // Claude Code reaches the captured repository through a per-run MCP endpoint.
 // It listens on loopback only, requires a random bearer token, and serves the
 // same immutable read/search/diff tools Codex receives as dynamic tools.
-export const CLAUDE_TOOL_SERVER = 'patchwork';
+export const CLAUDE_TOOL_SERVER = 'xpositor';
 export const claudeToolNames = tools => tools.definitions.map(tool => `mcp__${CLAUDE_TOOL_SERVER}__${tool.name}`);
 
 const MAX_REQUEST = 64 * 1024;

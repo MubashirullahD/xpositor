@@ -2,7 +2,7 @@ import { speechPhrases } from './src/speech-timing.js';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
-const root=process.env.PATCHWORK_VOICE_HOME;
+const root=process.env.XPOSITOR_VOICE_HOME;
 const require=createRequire(join(root,'package.json'));
 let model;
 process.on('message',async({id,text,voice})=>{

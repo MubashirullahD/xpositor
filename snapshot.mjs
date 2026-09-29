@@ -167,7 +167,7 @@ export function createSnapshotStore(repository, options = {}) {
     }
     let sourceBytes = 0;
     const sources = new Map();
-    const temp = mkdtempSync(join(tmpdir(), 'patchwork-diff-'));
+    const temp = mkdtempSync(join(tmpdir(), 'xpositor-diff-'));
     let files;
     try {
       files = meta.entries.map((entry, index) => {

@@ -31,7 +31,7 @@ async page => {
  await page.locator('#walk-draft').fill('Give an example');
  await page.getByRole('button',{name:'Ask guide',exact:true}).click();
  await page.getByText('For zero, the result is zero.',{exact:true}).waitFor();
- await page.screenshot({path:'/tmp/patchwork-walkthrough-phone.png'});
+ await page.screenshot({path:'/tmp/xpositor-walkthrough-phone.png'});
  await page.getByRole('button',{name:'src/calc.js · new 1–1',exact:true}).click();
  await page.locator('.citation-highlight').first().waitFor();
  if(!await page.getByRole('tab',{name:'Source',exact:true}).getAttribute('aria-selected').then(v=>v==='true'))throw Error('Citation did not show source');
@@ -59,11 +59,11 @@ async page => {
  await page.getByRole('button',{name:'Refresh',exact:false}).click();
  await page.getByRole('button',{name:/calc.js/}).first().click();
  if(await page.locator('.file-row.selected .review-state').getAttribute('aria-label')!=='Needs review')throw Error('Changed file stayed reviewed');
- await page.screenshot({path:'/tmp/patchwork-review-phone.png'});
+ await page.screenshot({path:'/tmp/xpositor-review-phone.png'});
  await page.setViewportSize({width:900,height:900});
  await page.getByRole('button',{name:'Code guide',exact:true}).click();
  await page.getByRole('tab',{name:'Walkthrough',exact:true}).click();
  await page.getByRole('button',{name:'Start overview',exact:true}).waitFor();
- await page.screenshot({path:'/tmp/patchwork-review-tablet.png'});
+ await page.screenshot({path:'/tmp/xpositor-review-tablet.png'});
  return ('PASS phone walkthrough/citation/followup; understood != reviewed; reload progress/draft; changed revision reset; tablet guide.');
 }

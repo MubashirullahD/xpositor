@@ -5,8 +5,8 @@ export function errorMessage(value, fallback='The guide could not finish.') {
     if(current&&typeof current==='object')current=current.error||current.message;else break;
   }
   const message=typeof current==='string'&&current.trim()?current:fallback;
-  if(message.includes('Update Codex on the laptop, restart Patchwork'))return message;
-  if(/requires a newer version|upgrade.*(?:cli|codex)|update.*(?:cli|codex)/i.test(message))return `${message} Update Codex on the laptop, restart Patchwork, or select another model in Code guide.`;
+  if(message.includes('Update Codex on the laptop, restart Xpositor'))return message;
+  if(/requires a newer version|upgrade.*(?:cli|codex)|update.*(?:cli|codex)/i.test(message))return `${message} Update Codex on the laptop, restart Xpositor, or select another model in Code guide.`;
   if(/^(Load failed|Failed to fetch|NetworkError)/i.test(message))return 'Connection to the laptop was interrupted. Keep the companion running and reconnect using its current pairing link. If a tunnel is in use, check it on the laptop.';
   return message;
 }
@@ -16,7 +16,7 @@ export async function readReply(response, onDelta = () => {}) {
     let body;try{body=await response.json();}catch{throw new Error(`The laptop returned HTTP ${response.status} without a readable response. Reconnect and check the companion.`);}
     if(!response.ok||body.error)throw new Error(errorMessage(body,`Request failed (${response.status}).`));
     if(typeof body.text==='string'){onDelta(body.text);return body;}
-    throw new Error('The laptop returned an unexpected response. Update and restart Patchwork.');
+    throw new Error('The laptop returned an unexpected response. Update and restart Xpositor.');
   }
   const reader = response.body.getReader(), decoder = new TextDecoder();
   let buffer = '', size = 0, result;

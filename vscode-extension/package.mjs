@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const extensionRoot = resolve(dirname(fileURLToPath(import.meta.url)));
 const manifest = JSON.parse(readFileSync(join(extensionRoot, 'package.json'), 'utf8'));
 const outputPath = join(extensionRoot, `${manifest.name}-${manifest.version}.vsix`);
-const stageRoot = mkdtempSync(join(tmpdir(), 'patchwork-vsix-'));
+const stageRoot = mkdtempSync(join(tmpdir(), 'xpositor-vsix-'));
 
 function copy(relativePath) {
   cpSync(join(extensionRoot, relativePath), join(stageRoot, relativePath), { recursive: true });

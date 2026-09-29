@@ -8,7 +8,7 @@ import { REPOSITORY_TOOLS } from '../repository-tools.mjs';
 import { cliInvocation } from '../cli-launch.mjs';
 import { mkdir } from 'node:fs/promises';
 
-const tempRoot = await mkdtemp(join(tmpdir(), 'patchwork-cli-provider-'));
+const tempRoot = await mkdtemp(join(tmpdir(), 'xpositor-cli-provider-'));
 const fakeCli = join(tempRoot, 'fake-ai');
 await writeFile(fakeCli, `#!/usr/bin/env node
 if (process.argv.includes('auth')) console.log(JSON.stringify({loggedIn:true,authMethod:process.env.TEST_API?'api_key':'claude.ai'}));
@@ -20,8 +20,8 @@ else {
  if (flag('--permission-mode')!=='dontAsk') process.exit(1);
  if (prompt.includes('Use a tool.')) {
   // Exercise the loopback MCP endpoint the way Claude Code would.
-  const server=JSON.parse(flag('--mcp-config')).mcpServers.patchwork;
-  if (!flag('--allowedTools').split(',').includes('mcp__patchwork__review_read') || flag('--max-turns')!=='100') process.exit(1);
+  const server=JSON.parse(flag('--mcp-config')).mcpServers.xpositor;
+  if (!flag('--allowedTools').split(',').includes('mcp__xpositor__review_read') || flag('--max-turns')!=='100') process.exit(1);
   const call=body=>fetch(server.url,{method:'POST',headers:{...server.headers,'content-type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json());
   (async()=>{
    const denied=await fetch(server.url,{method:'POST',headers:{'content-type':'application/json'},body:'{}'});
@@ -58,13 +58,13 @@ try {
  const windowsShim=join(tempRoot,'codex.cmd');
  await writeFile(windowsShim,'@echo off\r\n');
  assert.deepEqual(cliInvocation(windowsShim),{command:process.execPath,prefix:[codexScript]});
- assert.equal(resolveAiProvider({PATCHWORK_AI_PROVIDER:'codex',PATCHWORK_CODEX_BIN:windowsShim}).available,true);
+ assert.equal(resolveAiProvider({XPOSITOR_AI_PROVIDER:'codex',XPOSITOR_CODEX_BIN:windowsShim}).available,true);
  assert.equal((await runCommand(windowsShim,['--version'])).ok,true);
  const env={...process.env,OPENAI_API_KEY:'must-not-bill',ANTHROPIC_API_KEY:'must-not-bill',ANTHROPIC_AUTH_TOKEN:'must-not-bill'};
  assert.equal(childEnvironment('codex',env).OPENAI_API_KEY,undefined);
  assert.equal(childEnvironment('claude',env).ANTHROPIC_API_KEY,undefined);
  assert.equal(childEnvironment('claude',env).ANTHROPIC_AUTH_TOKEN,undefined);
- assert.equal(resolveAiProvider({...env,PATCHWORK_CODEX_BIN:'/nonexistent/codex',PATCHWORK_CLAUDE_BIN:'/nonexistent/claude'}).available,false);
+ assert.equal(resolveAiProvider({...env,XPOSITOR_CODEX_BIN:'/nonexistent/codex',XPOSITOR_CLAUDE_BIN:'/nonexistent/claude'}).available,false);
  const info={provider:'claude',command:fakeCli,available:true};
  const fakeSpawn=process.platform==='win32' ? (_command,args,options)=>spawn(process.execPath,[fakeCli,...args],options) : undefined;
  const answer=await answerWithCli(info,{question:'Explain this file.',file:{path:'demo.js'},source:'const x=1;'}, {env,spawn:fakeSpawn});

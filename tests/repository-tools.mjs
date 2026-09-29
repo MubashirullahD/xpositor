@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { createSnapshotStore } from '../snapshot.mjs';
 import { buildRepositoryGuidePrompt, validateRepositoryGuide, REPOSITORY_GUIDE_SCHEMA } from '../agent-plan.mjs';
 import { createRepositoryTools } from '../repository-tools.mjs';
-const repo = mkdtempSync(join(tmpdir(), 'patchwork-repository-'));
+const repo = mkdtempSync(join(tmpdir(), 'xpositor-repository-'));
 const git = (...args) => execFileSync('git', args, { cwd: repo, stdio: 'pipe' });
 const write = (path, content) => writeFileSync(join(repo, path), content);
 function trySymlink(target, path) {

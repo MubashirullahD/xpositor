@@ -33,7 +33,7 @@ async page => {
   const timerAfter=await page.evaluate(async()=>JSON.stringify((await import('/src/main.js')).data.pomodoro));
   if(timerAfter!==timerBefore)throw Error('Mindfulness changed Pomodoro state');
   if(await page.locator('.rail-timer-label').textContent()===timerLabelBefore)throw Error('Pomodoro stopped while mindfulness was open');
-  await page.screenshot({path:'/tmp/patchwork-mindfulness-desktop.png'});
+  await page.screenshot({path:'/tmp/xpositor-mindfulness-desktop.png'});
   await page.keyboard.press('Escape');
   if(await dialog.count())throw Error('Escape did not close mindfulness dialog');
   if(!await page.locator('.rail [data-action="mindfulness-open"]').evaluate(el=>el===document.activeElement))throw Error('Focus did not return to mindfulness icon');
@@ -45,6 +45,6 @@ async page => {
   await page.emulateMedia({reducedMotion:'reduce'});
   await page.getByRole('button',{name:'Begin',exact:true}).click();
   if(await page.locator('.breath-orb').evaluate(el=>getComputedStyle(el).animationName)!=='none')throw Error('Reduced motion still animates breathing circle');
-  await page.screenshot({path:'/tmp/patchwork-mindfulness-mobile.png'});
+  await page.screenshot({path:'/tmp/xpositor-mindfulness-mobile.png'});
   return 'PASS independent mindfulness control, phase timing, pause/resume, completion, focus return, saved settings, mobile and reduced motion';
 }

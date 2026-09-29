@@ -14,7 +14,7 @@ function qrSvg(text) {
       if (qr.modules.data[y * moduleSize + x]) path.push(`M${x + border},${y + border}h1v1h-1z`);
     }
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" shape-rendering="crispEdges" role="img" aria-label="Patchwork phone pairing QR code"><rect width="100%" height="100%" fill="#fff"/><path fill="#000" d="${path.join('')}"/></svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" shape-rendering="crispEdges" role="img" aria-label="Xpositor phone pairing QR code"><rect width="100%" height="100%" fill="#fff"/><path fill="#000" d="${path.join('')}"/></svg>`;
 }
 
 module.exports = { qrSvg };

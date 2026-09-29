@@ -4,7 +4,7 @@ import {mkdtempSync,writeFileSync,rmSync,renameSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createSnapshotStore} from '../snapshot.mjs';
-const repo=mkdtempSync(join(tmpdir(),'patchwork-scopes-'));
+const repo=mkdtempSync(join(tmpdir(),'xpositor-scopes-'));
 const git=(...args)=>execFileSync('git',args,{cwd:repo,stdio:'pipe'});
 const write=(path,text)=>writeFileSync(join(repo,path),text);
 try {
@@ -31,7 +31,7 @@ try {
  assert.equal(store.capture('staged').files[0].sourceAvailable,false);assert.equal(store.capture('unstaged').files[0].status,'?');
  assert.throws(()=>store.capture('invalid'),e=>e.status===400);
  // A refresh keeps the snapshot (and its walkthrough) while the review itself is unchanged.
- const identityRepo=mkdtempSync(join(tmpdir(),'patchwork-identity-'));const g=(...args)=>execFileSync('git',args,{cwd:identityRepo,stdio:'pipe'});const w=(path,text)=>writeFileSync(join(identityRepo,path),text);
+ const identityRepo=mkdtempSync(join(tmpdir(),'xpositor-identity-'));const g=(...args)=>execFileSync('git',args,{cwd:identityRepo,stdio:'pipe'});const w=(path,text)=>writeFileSync(join(identityRepo,path),text);
  try{
   g('init','-q');g('config','user.name','Test');g('config','user.email','test@example.invalid');w('review.js','one\n');w('other.js','one\n');g('add','.');g('commit','-qm','Initial');
   const identity=createSnapshotStore(identityRepo);w('review.js','two\n');

@@ -33,9 +33,9 @@ async page => {
  await page.setViewportSize({width:390,height:844});
  await page.locator('#chat-panel[role="dialog"]').waitFor();
  if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Phone layout overflows');
- await page.screenshot({path:'/tmp/patchwork-guide-polish-phone.png'});
+ await page.screenshot({path:'/tmp/xpositor-guide-polish-phone.png'});
  await page.setViewportSize({width:1440,height:900});
- await page.screenshot({path:'/tmp/patchwork-guide-polish-desktop.png'});
+ await page.screenshot({path:'/tmp/xpositor-guide-polish-desktop.png'});
  await page.emulateMedia({colorScheme:'dark'});
  const dark=await modes.evaluateAll(elements=>elements.map(element=>({color:getComputedStyle(element).color,underline:getComputedStyle(element,'::after').height})));
  if(dark[1].underline==='0px'||dark[0].color===dark[1].color)throw Error('Guide tab selection is unclear in dark mode');

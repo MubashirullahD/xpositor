@@ -29,7 +29,7 @@ async page => {
  voiceReady=true;releaseSpeech();await page.getByRole('button',{name:'Continue to audio',exact:true}).waitFor();
  if(!await page.evaluate(()=>testAudios.at(-1).paused))throw Error('Audio interrupted mindfulness');
  for(const [width,height] of [[320,568],[390,667],[844,390],[390,844]]){await page.setViewportSize({width,height});const overflow=await page.locator('.mindfulness-card').evaluate(el=>el.scrollHeight>el.clientHeight+1);if(overflow)throw Error('Breathing modal overflow '+width+'x'+height);}
- await page.emulateMedia({colorScheme:'dark',reducedMotion:'reduce'});await page.screenshot({path:'/tmp/patchwork-mindful-ready-mobile.png'});
+ await page.emulateMedia({colorScheme:'dark',reducedMotion:'reduce'});await page.screenshot({path:'/tmp/xpositor-mindful-ready-mobile.png'});
  await page.getByRole('button',{name:'Continue to audio',exact:true}).click();await page.getByRole('button',{name:'Pause',exact:true}).waitFor();
  if(await page.locator('.mindfulness-overlay').count())throw Error('Continue did not leave the exercise');
  if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth))throw Error('Mobile overflow');

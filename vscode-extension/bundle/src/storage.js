@@ -63,10 +63,10 @@ function cleanSnapshot(value) {
   const s = validateSnapshot(value);
   return Object.fromEntries(['repoId','scope','base','head','branch','snapshotId','generatedAt','workspaceName','files'].map((key) => [key, key === 'files' ? s.files.map((f) => Object.fromEntries(['id','path','oldPath','version','status','sourceAvailable','sourceReason','source','label','folder','type','tone','added','removed','size','changed','summary','lines'].filter((k) => f[k] !== undefined).map((k) => [k, f[k]]))) : s[key]]));
 }
-export function createBackup(data, snapshot) { return { format:'patchwork-private-backup', schema:SCHEMA, exportedAt:new Date().toISOString(), state:sanitizeState(data), snapshot:snapshot ? cleanSnapshot(snapshot) : null }; }
+export function createBackup(data, snapshot) { return { format:'xpositor-private-backup', schema:SCHEMA, exportedAt:new Date().toISOString(), state:sanitizeState(data), snapshot:snapshot ? cleanSnapshot(snapshot) : null }; }
 export function parseBackup(text) {
   const value = JSON.parse(text);
-  if (value.format !== 'patchwork-private-backup' || value.schema !== SCHEMA) throw new Error('This is not a supported Patchwork backup.');
+  if (value.format !== 'xpositor-private-backup' || value.schema !== SCHEMA) throw new Error('This is not a supported Xpositor backup.');
   const data=sanitizeState(value.state);
   // Imported backups never submit a saved request automatically.
   for(const workspace of Object.values(data.agentGuides)){workspace.pending=null;workspace.prefetch=null;}
@@ -89,15 +89,39 @@ export function reviewSummary(data, snapshot) {
   for (const n of data.historicalNotes) lines.push(`## ${n.path}`, n.label, n.text, '');
   return lines.join('\n');
 }
+// Devices paired before the Xpositor rename kept their records in 'patchwork-private'.
+// Opening it aborts the creation of a database that never existed.
+function copyLegacyRecords(indexedDB, db) {
+  return new Promise((resolve) => {
+    const request = indexedDB.open('patchwork-private');
+    request.onupgradeneeded = () => request.transaction.abort();
+    request.onerror = () => resolve();
+    request.onsuccess = () => {
+      const legacy = request.result;
+      if (!legacy.objectStoreNames.contains('records')) { legacy.close(); resolve(); return; }
+      const store = legacy.transaction('records','readonly').objectStore('records'), keys = store.getAllKeys(), values = store.getAll();
+      values.onsuccess = () => {
+        legacy.close();
+        const tx = db.transaction('records','readwrite');
+        keys.result.forEach((key,index) => tx.objectStore('records').put(values.result[index],key));
+        tx.oncomplete = () => { indexedDB.deleteDatabase('patchwork-private'); resolve(); };
+        tx.onerror = tx.onabort = () => resolve();
+      };
+      values.onerror = () => { legacy.close(); resolve(); };
+    };
+  });
+}
 export function openStorage(indexedDB = globalThis.indexedDB) {
   return new Promise((resolve,reject) => {
     if (!indexedDB) { reject(new Error('IndexedDB is unavailable.')); return; }
-    const request = indexedDB.open('patchwork-private', SCHEMA);
-    request.onupgradeneeded = () => { if (!request.result.objectStoreNames.contains('records')) request.result.createObjectStore('records'); };
+    const request = indexedDB.open('xpositor-private', SCHEMA);
+    let created = false;
+    request.onupgradeneeded = (event) => { created = event.oldVersion === 0; if (!request.result.objectStoreNames.contains('records')) request.result.createObjectStore('records'); };
     request.onerror = () => reject(request.error);
-    request.onblocked = () => reject(new Error('Close other Patchwork tabs to update device storage.'));
-    request.onsuccess = () => {
+    request.onblocked = () => reject(new Error('Close other Xpositor tabs to update device storage.'));
+    request.onsuccess = async () => {
       const db = request.result;
+      if (created) await copyLegacyRecords(indexedDB, db);
       const transact = (mode,key,value) => new Promise((done,fail) => {
         const tx=db.transaction('records',mode), store=tx.objectStore('records');
         const req=mode === 'readonly' ? store.get(key) : value === undefined ? store.delete(key) : store.put(value,key);

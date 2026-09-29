@@ -30,9 +30,9 @@ export function createDeepAudio({apiFetch, render, next, active}) {
           await new Promise(resolve=>setTimeout(resolve,1000*(retry+1)));
         }
         if (!response.ok) { const body=await response.json(); throw new Error(body.error || 'Local audio is unavailable.'); }
-        total = Math.max(1, Number(response.headers.get('x-patchwork-audio-chunks')) || 1);
-        let timings=[];try {timings=JSON.parse(response.headers.get('x-patchwork-speech-timing')||'[]');} catch {}
-        parts.push({blob:await response.blob(),timings,text:decodeURIComponent(response.headers.get('x-patchwork-speech-text')||''),offset:Number(response.headers.get('x-patchwork-speech-offset'))||0});
+        total = Math.max(1, Number(response.headers.get('x-xpositor-audio-chunks')) || 1);
+        let timings=[];try {timings=JSON.parse(response.headers.get('x-xpositor-speech-timing')||'[]');} catch {}
+        parts.push({blob:await response.blob(),timings,text:decodeURIComponent(response.headers.get('x-xpositor-speech-text')||''),offset:Number(response.headers.get('x-xpositor-speech-offset'))||0});
       }
       const bytes=parts.reduce((sum,p)=>sum+p.blob.size,0);
       while(cache.size && (cache.size>=3 || [...cache.values()].reduce((sum,c)=>sum+c.bytes,0)+bytes>24*1024*1024))cache.delete(cache.keys().next().value);

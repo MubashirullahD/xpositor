@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createSnapshotStore } from '../snapshot.mjs';
 
-const root = mkdtempSync(join(tmpdir(), 'patchwork-snapshot-test-'));
+const root = mkdtempSync(join(tmpdir(), 'xpositor-snapshot-test-'));
 const repo = join(root, 'repo');
 mkdirSync(repo);
 const git = (...args) => execFileSync('git', args, { cwd: repo, stdio: 'pipe' });

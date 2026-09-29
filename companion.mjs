@@ -4,7 +4,8 @@ import { createServer as createHttpServer } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
 import { randomBytes } from 'node:crypto';
 import { lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
-import { homedir, networkInterfaces } from 'node:os';
+import { networkInterfaces } from 'node:os';
+import { stateHome } from './state-home.mjs';
 import { join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { closeProviders } from './providers.mjs';
@@ -17,18 +18,18 @@ import { createWalkthroughService } from './walkthrough-service.mjs';
 import { createSnapshotStore, SnapshotError } from './snapshot.mjs';
 
 const appRoot = resolve(fileURLToPath(new URL('.', import.meta.url)));
-const repoRoot = resolve(process.argv[2] || process.env.PATCHWORK_REPO || process.cwd());
-const host = process.env.PATCHWORK_HOST || '127.0.0.1';
-const port = Number(process.env.PATCHWORK_PORT || 4321);
-const tlsKeyPath = process.env.PATCHWORK_TLS_KEY || '';
-const tlsCertPath = process.env.PATCHWORK_TLS_CERT || '';
-if (Boolean(tlsKeyPath) !== Boolean(tlsCertPath)) throw new Error('PATCHWORK_TLS_KEY and PATCHWORK_TLS_CERT must be provided together.');
+const repoRoot = resolve(process.argv[2] || process.env.XPOSITOR_REPO || process.cwd());
+const host = process.env.XPOSITOR_HOST || '127.0.0.1';
+const port = Number(process.env.XPOSITOR_PORT || 4321);
+const tlsKeyPath = process.env.XPOSITOR_TLS_KEY || '';
+const tlsCertPath = process.env.XPOSITOR_TLS_CERT || '';
+if (Boolean(tlsKeyPath) !== Boolean(tlsCertPath)) throw new Error('XPOSITOR_TLS_KEY and XPOSITOR_TLS_CERT must be provided together.');
 const secureTransport = Boolean(tlsKeyPath && tlsCertPath);
-const accessToken = process.env.PATCHWORK_TOKEN || (host === '127.0.0.1' || host === 'localhost' ? '' : randomBytes(18).toString('hex'));
+const accessToken = process.env.XPOSITOR_TOKEN || (host === '127.0.0.1' || host === 'localhost' ? '' : randomBytes(18).toString('hex'));
 
 let guideStorage;
 const snapshots = createSnapshotStore(repoRoot,{loadSnapshot:id=>guideStorage?.loadSnapshot(id)});
-guideStorage=createGuideStorage(process.env.PATCHWORK_STATE_DIR||join(homedir(),'.patchwork','reviews'),snapshots.repoId);
+guideStorage=createGuideStorage(process.env.XPOSITOR_STATE_DIR||join(stateHome(),'reviews'),snapshots.repoId);
 const ai = createAiService(snapshots);
 const walkthrough = createWalkthroughService(snapshots, ai);
 const speech=createSpeechService();
@@ -51,7 +52,7 @@ function readBody(request, limit = 256 * 1024) {
 }
 
 function isAuthorized(request) {
-  return !accessToken || request.headers['x-patchwork-token'] === accessToken;
+  return !accessToken || request.headers['x-xpositor-token'] === accessToken;
 }
 
 function sendJson(response, status, body) {
@@ -128,7 +129,7 @@ const handleRequest = async (request, response) => {
       if(!segment)throw new GuideError('This lesson segment is unavailable.',404,'VOICE_SEGMENT');
       const closing=input.segment===lesson.segments.length-1&&Array.isArray(lesson.reviewPointers)?` Things to double-check: ${lesson.reviewPointers.length?lesson.reviewPointers.map(pointer=>pointer.text).join(' '):'No specific concern was identified from the captured context. That does not verify the change.'}`:'';
       const audio=await speech.synthesize(segment.narration+closing,input.voice);
-      response.writeHead(200,{'content-type':'audio/wav','cache-control':'no-store','x-patchwork-speech-timing':JSON.stringify(audio.timings||[])});response.end(audio);return;
+      response.writeHead(200,{'content-type':'audio/wav','cache-control':'no-store','x-xpositor-speech-timing':JSON.stringify(audio.timings||[])});response.end(audio);return;
     }
     if(url.pathname==='/api/guide/deep/speech'&&request.method==='POST'){
       const input=JSON.parse(await readBody(request,4096));
@@ -141,7 +142,7 @@ const handleRequest = async (request, response) => {
       const chunk=input.chunk??0;
       if(!Number.isSafeInteger(chunk)||chunk<0||chunk>=chunks.length)throw new GuideError('Choose an audio part in this section.',400,'DEEP_AUDIO_CHUNK');
       const audio=await speech.synthesize(chunks[chunk],input.voice);
-      response.writeHead(200,{'content-type':'audio/wav','cache-control':'no-store','x-patchwork-audio-chunks':String(chunks.length),'x-patchwork-speech-text':encodeURIComponent(chunks[chunk]),'x-patchwork-speech-offset':String(chunks.slice(0,chunk).reduce((n,text)=>n+text.length+1,0)),'x-patchwork-speech-timing':JSON.stringify(audio.timings||[])});response.end(audio);return;
+      response.writeHead(200,{'content-type':'audio/wav','cache-control':'no-store','x-xpositor-audio-chunks':String(chunks.length),'x-xpositor-speech-text':encodeURIComponent(chunks[chunk]),'x-xpositor-speech-offset':String(chunks.slice(0,chunk).reduce((n,text)=>n+text.length+1,0)),'x-xpositor-speech-timing':JSON.stringify(audio.timings||[])});response.end(audio);return;
     }
     if (url.pathname === '/api/guide/run'  && request.method === 'GET') return sendJson(response, 200, { run: agentGuide.runs.get(url.searchParams.get('id'), url.searchParams.has('after') ? Number(url.searchParams.get('after')) : undefined) });
     if (url.pathname === '/api/guide/conversation' && request.method === 'GET') return sendJson(response, 200, { conversation: agentGuide.conversation(url.searchParams.get('id')) });
@@ -203,7 +204,7 @@ const protocol = secureTransport ? 'https' : 'http';
 
 server.listen(port, host, () => {
   const activePort = server.address()?.port || port;
-  console.log(`Patchwork companion: ${protocol}://${host}:${activePort}`);
+  console.log(`Xpositor companion: ${protocol}://${host}:${activePort}`);
   console.log(`Reading git changes from: ${repoRoot}`);
   console.log('Read-only mode: the companion never stages, edits, or commits files.');
   if (aiLogEnabled()) console.log(`AI session logging is on (development): ${aiLogDirectory()}. Logs contain captured code and questions.`);

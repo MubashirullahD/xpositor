@@ -1,6 +1,6 @@
 {
-  "name": "Patchwork — Code review companion",
-  "short_name": "Patchwork",
+  "name": "Xpositor — Code review companion",
+  "short_name": "Xpositor",
   "description": "Review uncommitted code from your laptop, one focused file at a time.",
   "start_url": "/",
   "display": "standalone",

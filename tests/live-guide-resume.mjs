@@ -9,10 +9,10 @@ import { createGuideStorage } from '../guide-storage.mjs';
 import { createAiService } from '../ai-service.mjs';
 import { createAgentGuideService } from '../agent-guide-service.mjs';
 import { closeProviders } from '../providers.mjs';
-const repo=mkdtempSync(join(tmpdir(),'patchwork-resume-live-')),state=mkdtempSync(join(tmpdir(),'patchwork-resume-state-'));
+const repo=mkdtempSync(join(tmpdir(),'xpositor-resume-live-')),state=mkdtempSync(join(tmpdir(),'xpositor-resume-state-'));
 const git=(...args)=>execFileSync('git',args,{cwd:repo,stdio:'pipe'});
 let storage,service;
-const create=()=>{const snapshots=createSnapshotStore(repo,{loadSnapshot:id=>storage?.loadSnapshot(id)});storage=createGuideStorage(state,snapshots.repoId);const ai=createAiService(snapshots,{...process.env,PATCHWORK_AI_PROVIDER:'codex'});return {snapshots,ai,service:createAgentGuideService(snapshots,ai,{storage})};};
+const create=()=>{const snapshots=createSnapshotStore(repo,{loadSnapshot:id=>storage?.loadSnapshot(id)});storage=createGuideStorage(state,snapshots.repoId);const ai=createAiService(snapshots,{...process.env,XPOSITOR_AI_PROVIDER:'codex'});return {snapshots,ai,service:createAgentGuideService(snapshots,ai,{storage})};};
 try {
  git('init','-q');git('config','user.name','Test');git('config','user.email','test@example.invalid');
  writeFileSync(join(repo,'value.js'),'export const value=41;\n');writeFileSync(join(repo,'caller.js'),'import {value} from "./value.js";\nexport const doubled=value*2;\n');git('add','.');git('commit','-qm','Initial');writeFileSync(join(repo,'value.js'),'export const value=42;\n');

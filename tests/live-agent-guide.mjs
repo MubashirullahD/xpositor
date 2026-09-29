@@ -8,7 +8,7 @@ import { createSnapshotStore } from '../snapshot.mjs';
 import { createAiService } from '../ai-service.mjs';
 import { createAgentGuideService } from '../agent-guide-service.mjs';
 import { closeProviders } from '../providers.mjs';
-const repo=mkdtempSync(join(tmpdir(),'patchwork-live-guide-'));
+const repo=mkdtempSync(join(tmpdir(),'xpositor-live-guide-'));
 const git=(...args)=>execFileSync('git',args,{cwd:repo,stdio:'pipe'});
 let service;
 try {
@@ -18,7 +18,7 @@ try {
  git('add','.');git('commit','-qm','Initial');
  for(let i=0;i<100;i++)writeFileSync(join(repo,`value${i}.js`),`export function value${i}() { return ${i} + 1; }\n`);
  const snapshots=createSnapshotStore(repo),snapshot=snapshots.capture();
- const ai=createAiService(snapshots,{...process.env,PATCHWORK_AI_PROVIDER:'codex'});
+ const ai=createAiService(snapshots,{...process.env,XPOSITOR_AI_PROVIDER:'codex'});
  service=createAgentGuideService(snapshots,ai);
  const catalog=await ai.models();const model=catalog.models.find(item=>item.id.includes('luna'))||catalog.models.find(item=>item.isDefault)||catalog.models[0];
  assert(model,'A subscription model must be available');

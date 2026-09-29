@@ -19,7 +19,7 @@ export function createAudioLesson({current,apiFetch,save,render,ask,jump}){
   const task=(async()=>{
    const response=await apiFetch('/api/guide/speech',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({conversationId:record.id,step,segment:index,voice:selectedVoice}),signal:AbortSignal.any([AbortSignal.timeout(660000),...(signal?[signal]:[])])});
    if(!response.ok){const body=await response.json();throw new Error(body.error||'Audio unavailable.');}
-   const blob=await response.blob();try{blob.timings=JSON.parse(response.headers.get('x-patchwork-speech-timing')||'[]');}catch{blob.timings=[];}
+   const blob=await response.blob();try{blob.timings=JSON.parse(response.headers.get('x-xpositor-speech-timing')||'[]');}catch{blob.timings=[];}
    while(clips.size&&(clips.size>=3||[...clips.values()].reduce((n,b)=>n+b.size,0)+blob.size>24*1024*1024))clips.delete(clips.keys().next().value);
    if(blob.size<=24*1024*1024)clips.set(key,blob);return blob;
   })();preparing.set(key,task);try{return await task;}finally{preparing.delete(key);}

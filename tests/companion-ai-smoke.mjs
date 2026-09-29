@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const appRoot = fileURLToPath(new URL('..', import.meta.url));
-const fixture = mkdtempSync(join(tmpdir(), 'patchwork-http-test-'));
+const fixture = mkdtempSync(join(tmpdir(), 'xpositor-http-test-'));
 const repo = join(fixture, 'repo');
 const app = join(fixture, 'app');
 function trySymlink(target, path) {
@@ -45,7 +45,7 @@ const provider = createServer((request, response) => {
     received = body;
     const payload = JSON.parse(body);
     const prompt = payload.input?.at(-1)?.content || '';
-    const structured = payload.text?.format?.name === 'patchwork_walkthrough';
+    const structured = payload.text?.format?.name === 'xpositor_walkthrough';
     let text = 'Stub provider answer.';
     if (structured) {
       const marker = 'SNAPSHOT_CONTEXT:\n';
@@ -67,7 +67,7 @@ try {
   await new Promise((resolveListen) => provider.listen(0, '127.0.0.1', resolveListen));
   companion = spawn(process.execPath, [join(app, 'companion.mjs'), repo], {
     cwd: app,
-    env: { ...process.env, PATCHWORK_STATE_DIR:join(fixture,'state'), PATCHWORK_HOST: '127.0.0.1', PATCHWORK_PORT: '0', PATCHWORK_TOKEN: 'test-pairing', PATCHWORK_TLS_KEY: '', PATCHWORK_TLS_CERT: '', PATCHWORK_AI_PROVIDER: 'api', OPENAI_API_KEY: 'stub-key', OPENAI_MODEL: 'stub-model', OPENAI_API_URL: `http://127.0.0.1:${provider.address().port}/responses` },
+    env: { ...process.env, XPOSITOR_STATE_DIR:join(fixture,'state'), XPOSITOR_HOST: '127.0.0.1', XPOSITOR_PORT: '0', XPOSITOR_TOKEN: 'test-pairing', XPOSITOR_TLS_KEY: '', XPOSITOR_TLS_CERT: '', XPOSITOR_AI_PROVIDER: 'api', OPENAI_API_KEY: 'stub-key', OPENAI_MODEL: 'stub-model', OPENAI_API_URL: `http://127.0.0.1:${provider.address().port}/responses` },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let output = '';
@@ -76,14 +76,14 @@ try {
     const cleanup = () => clearTimeout(timeout);
     companion.stdout.on('data', (chunk) => {
       output += chunk;
-      const match = output.match(/Patchwork companion: (http:\/\/127\.0\.0\.1:\d+)/);
+      const match = output.match(/Xpositor companion: (http:\/\/127\.0\.0\.1:\d+)/);
       if (match) { cleanup(); resolveReady(match[1]); }
     });
     companion.stderr.on('data', (chunk) => { output += chunk; });
     companion.on('error', (error) => { cleanup(); rejectReady(error); });
     companion.on('exit', (code) => { cleanup(); rejectReady(new Error(`Companion exited ${code}: ${output}`)); });
   });
-  const headers = { 'x-patchwork-token': 'test-pairing' };
+  const headers = { 'x-xpositor-token': 'test-pairing' };
   const get = (path) => fetch(`${base}${path}`, { headers });
   assert.equal((await fetch(`${base}/api/snapshot`)).status, 401);
   for (const path of ['/.git/config', '/.env', '/companion.mjs', '/providers.mjs', '/snapshot.mjs', '/src/leak.js', '/src/../.env', '/%2eenv']) assert.equal((await fetch(`${base}${path}`)).status, 404, path);
@@ -137,7 +137,7 @@ try {
   assert.equal(walkthrough.guide.steps.length, 3);
   assert.deepEqual(walkthrough.guide.steps[0].citations[0], { fileId: file.id, startLine: 1, endLine: 1, side: 'new' });
   const walkthroughProviderRequest = JSON.parse(received);
-  assert.equal(walkthroughProviderRequest.text.format.name, 'patchwork_walkthrough');
+  assert.equal(walkthroughProviderRequest.text.format.name, 'xpositor_walkthrough');
   assert.match(walkthroughProviderRequest.input.at(-1).content, /CAPTURED_SOURCE/);
   assert.ok(!walkthroughProviderRequest.input.at(-1).content.includes('EDITED_AFTER_CAPTURE'));
   assert.ok(!walkthroughProviderRequest.input.at(-1).content.includes('EXTERNAL_SECRET'));

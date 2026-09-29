@@ -15,7 +15,7 @@ const player=createDeepAudio({active:()=>true,render:()=>{},next:()=>{next++;},a
  const input=JSON.parse(options.body);requests.push(input);inflight++;maxInflight=Math.max(inflight,maxInflight);
  await new Promise(resolve=>setTimeout(resolve,5));inflight--;
  const text=input.chunk===0?'One two':'three four.';
- return new Response('audio',{headers:{'x-patchwork-audio-chunks':'2','x-patchwork-speech-text':encodeURIComponent(text),'x-patchwork-speech-offset':input.chunk===0?'0':'8','x-patchwork-speech-timing':JSON.stringify([{start:0,end:text.length,time:0,duration:2}])}});
+ return new Response('audio',{headers:{'x-xpositor-audio-chunks':'2','x-xpositor-speech-text':encodeURIComponent(text),'x-xpositor-speech-offset':input.chunk===0?'0':'8','x-xpositor-speech-timing':JSON.stringify([{start:0,end:text.length,time:0,duration:2}])}});
 }});
 await player.prepare(first,second);
 assert.equal(clips.length,1,'Preparation must mount audio without playing');

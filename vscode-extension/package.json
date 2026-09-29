@@ -1,9 +1,9 @@
 {
-  "name": "patchwork-vscode",
-  "displayName": "Patchwork",
+  "name": "xpositor-vscode",
+  "displayName": "Xpositor",
   "description": "Review code from your phone using local LAN or an HTTPS tunnel.",
   "version": "0.1.0",
-  "publisher": "patchwork-dev",
+  "publisher": "xpositor-dev",
   "license": "MIT",
   "type": "commonjs",
   "dependencies": {
@@ -16,9 +16,9 @@
     "Other"
   ],
   "activationEvents": [
-    "onCommand:patchwork.start",
-    "onCommand:patchwork.stop",
-    "onView:patchwork.pairing",
+    "onCommand:xpositor.start",
+    "onCommand:xpositor.stop",
+    "onView:xpositor.pairing",
     "onStartupFinished"
   ],
   "main": "./extension.js",
@@ -30,50 +30,50 @@
   "contributes": {
     "commands": [
       {
-        "command": "patchwork.start",
-        "title": "Patchwork: Start Phone Review"
+        "command": "xpositor.start",
+        "title": "Xpositor: Start Phone Review"
       },
       {
-        "command": "patchwork.stop",
-        "title": "Patchwork: Stop Companion"
+        "command": "xpositor.stop",
+        "title": "Xpositor: Stop Companion"
       }
     ],
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "patchwork",
-          "title": "Patchwork",
-          "icon": "resources/patchwork-activity.svg"
+          "id": "xpositor",
+          "title": "Xpositor",
+          "icon": "resources/xpositor-activity.svg"
         }
       ]
     },
     "views": {
-      "patchwork": [
+      "xpositor": [
         {
           "type": "webview",
-          "id": "patchwork.pairing",
+          "id": "xpositor.pairing",
           "name": "Pair phone",
-          "icon": "resources/patchwork-activity.svg",
-          "contextualTitle": "Patchwork pairing"
+          "icon": "resources/xpositor-activity.svg",
+          "contextualTitle": "Xpositor pairing"
         }
       ]
     },
     "configuration": {
-      "title": "Patchwork",
+      "title": "Xpositor",
       "properties": {
-        "patchwork.autoStart": {
+        "xpositor.autoStart": {
           "type": "boolean",
           "default": false,
           "description": "Start the read-only companion when VS Code finishes starting with a workspace open."
         },
-        "patchwork.port": {
+        "xpositor.port": {
           "type": "number",
           "default": 0,
           "minimum": 0,
           "maximum": 65535,
-          "description": "LAN port used by the Patchwork companion. Use 0 to choose an available port automatically."
+          "description": "LAN port used by the Xpositor companion. Use 0 to choose an available port automatically."
         },
-        "patchwork.aiProvider": {
+        "xpositor.aiProvider": {
           "type": "string",
           "enum": [
             "auto",
@@ -92,42 +92,42 @@
           "default": "auto",
           "description": "AI provider used by the laptop companion. Local CLI providers reuse their existing laptop login."
         },
-        "patchwork.devAiLog": {
+        "xpositor.devAiLog": {
           "type": "boolean",
           "default": false,
-          "description": "Development: record each AI request (prompt, repository tool calls, provider turns and answer) as private JSONL files in ~/.patchwork/ai-logs. Logs contain captured code and your questions. Restart the companion after changing this."
+          "description": "Development: record each AI request (prompt, repository tool calls, provider turns and answer) as private JSONL files in ~/.xpositor/ai-logs. Logs contain captured code and your questions. Restart the companion after changing this."
         },
-        "patchwork.companionPath": {
+        "xpositor.companionPath": {
           "type": "string",
           "default": "",
-          "description": "Optional absolute path to companion.mjs. Leave empty when developing from the Patchwork repository."
+          "description": "Optional absolute path to companion.mjs. Leave empty when developing from the Xpositor repository."
         },
-        "patchwork.cloudflaredPath": {
+        "xpositor.cloudflaredPath": {
           "type": "string",
           "default": "cloudflared",
           "scope": "machine",
           "description": "Path to the cloudflared executable used to create a temporary Cloudflare Quick Tunnel."
         },
-        "patchwork.tunnelName": {
+        "xpositor.tunnelName": {
           "type": "string",
           "default": "",
           "scope": "machine",
-          "description": "Optional existing Cloudflare named tunnel to run. Patchwork does not create or configure this tunnel. Set patchwork.publicUrl and a fixed patchwork.port too."
+          "description": "Optional existing Cloudflare named tunnel to run. Xpositor does not create or configure this tunnel. Set xpositor.publicUrl and a fixed xpositor.port too."
         },
-        "patchwork.publicUrl": {
+        "xpositor.publicUrl": {
           "type": "string",
           "default": "",
           "scope": "machine",
-          "description": "HTTPS public URL already routed by patchwork.tunnelName. It is used for phone pairing and preserves the same phone storage origin."
+          "description": "HTTPS public URL already routed by xpositor.tunnelName. It is used for phone pairing and preserves the same phone storage origin."
         },
-        "patchwork.startupTimeoutSeconds": {
+        "xpositor.startupTimeoutSeconds": {
           "type": "number",
           "default": 30,
           "minimum": 5,
           "maximum": 300,
           "description": "Seconds to wait for the companion and tunnel to become ready before showing diagnostics."
         },
-        "patchwork.transport": {
+        "xpositor.transport": {
           "type": "string",
           "enum": [
             "lan",
