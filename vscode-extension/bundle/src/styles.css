@@ -541,7 +541,7 @@ progress::-webkit-progress-value { background:var(--lime-deep); border-radius:12
 .walkthrough details { margin:14px 0; padding:10px; background:#f1f4ed; border-radius:8px; }
 .walkthrough summary { cursor:pointer; min-height:32px; }
 .walkthrough ul { padding-left:20px; }
-.walkthrough .step-explanation { white-space:pre-wrap; }
+.walkthrough .step-explanation { white-space:normal; }
 .guide-citations, .walk-controls, .walk-shortcuts { display:flex; flex-wrap:wrap; gap:8px; margin:14px 0; }
 .guide-citations button { white-space:normal; overflow-wrap:anywhere; text-align:left; }
 .walk-controls button, .walk-shortcuts button { min-height:44px; }
