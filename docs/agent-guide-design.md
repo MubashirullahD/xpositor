@@ -1,6 +1,6 @@
 # Repository-wide conversational guide
 
-Status: implemented for Codex. The conversational UI, immutable repository tools, complete plans, explicit cancellation, saved progress, branched conversations and companion-restart persistence are connected. Claude retains text-only behavior.
+Status: implemented for Codex and Claude Code. The conversational UI, immutable repository tools, complete plans, explicit cancellation, saved progress, branched conversations and companion-restart persistence are connected.
 
 ## Experience
 
@@ -21,7 +21,7 @@ Keep the existing ChatGPT-authenticated Codex app-server process and dynamic mod
 
 Acceptance checks: a 100-file fixture produces complete plan coverage; the agent finds an unchanged caller not included in the initial prompt; attempted writes/out-of-root reads fail; branching preserves the main walkthrough; reload/reconnect does not duplicate turns; cancellation stops tools; citations still resolve after the original worktree changes.
 
-Claude Code needs its own equivalent tool/session adapter and live authentication validation. Current Claude support is text-only; Codex behavior does not establish Claude parity. Full editing/terminal/network capability is a separate product mode, with visible permissions and change review, rather than an implicit consequence of asking for an explanation.
+Claude Code receives the same four tools through a per-run MCP endpoint that the companion serves on loopback with a random bearer token (`claude-tools.mjs`). Claude runs with built-in tools disabled, `--permission-mode dontAsk`, and only those tools allowed. Claude runs are stateless: follow-ups carry the recent conversation instead of resuming a thread, and branches start from a copy of it. Live check, 27 September 2026: Sonnet produced a plan, audio lesson, follow-up, deep section and deep follow-up on a two-file change, calling `review_diff`, `review_read` and `review_search`. Full editing/terminal/network capability is a separate product mode, with visible permissions and change review, rather than an implicit consequence of asking for an explanation.
 
 Source checked 19 September 2026: [official Codex App Server documentation](https://learn.chatgpt.com/docs/app-server).
 

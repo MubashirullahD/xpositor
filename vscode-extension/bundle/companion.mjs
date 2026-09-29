@@ -148,7 +148,7 @@ const handleRequest = async (request, response) => {
       const repository = snapshots.getRepository(url.searchParams.get('snapshotId'));
       return sendJson(response, 200, { path: url.searchParams.get('path'), ...repository.read(url.searchParams.get('path')) });
     }
-    if (['/api/guide/lesson', '/api/guide/start', '/api/guide/question', '/api/guide/stop', '/api/guide/step', '/api/guide/deep/start', '/api/guide/deep/section', '/api/guide/deep/advance'].includes(url.pathname) && request.method === 'POST') {
+    if (['/api/guide/lesson', '/api/guide/start', '/api/guide/question', '/api/guide/stop', '/api/guide/step', '/api/guide/deep/start', '/api/guide/deep/section', '/api/guide/deep/advance', '/api/guide/deep/question'].includes(url.pathname) && request.method === 'POST') {
       let input;
       try { input = JSON.parse(await readBody(request, 64 * 1024)); } catch (error) { if (error instanceof SnapshotError) throw error; throw new SnapshotError('Invalid guide JSON.', 400, 'GUIDE_INPUT'); }
       if (!input || typeof input !== 'object' || Array.isArray(input)) throw new SnapshotError('Invalid guide request.', 400, 'GUIDE_INPUT');
@@ -157,7 +157,7 @@ const handleRequest = async (request, response) => {
       if (url.pathname === '/api/guide/deep/start') return sendJson(response, 200, { conversation:agentGuide.startDeep(input) });
       if (url.pathname === '/api/guide/deep/advance') return sendJson(response, 200, { conversation:agentGuide.advanceDeep(input) });
       if (url.pathname === '/api/guide/deep/section') {const value=agentGuide.deepSection(input);return sendJson(response,value.cached?200:202,value);}
-      const run = url.pathname === '/api/guide/start' ? agentGuide.start(input) : url.pathname==='/api/guide/lesson'?agentGuide.lesson(input):agentGuide.question(input);
+      const run = url.pathname === '/api/guide/start' ? agentGuide.start(input) : url.pathname==='/api/guide/lesson'?agentGuide.lesson(input):url.pathname==='/api/guide/deep/question'?agentGuide.deepQuestion(input):agentGuide.question(input);
       return sendJson(response, 202, { run });
     }
     if (url.pathname === '/api/models' && request.method === 'GET') return sendJson(response,200,await ai.models(url.searchParams.get('refresh')==='true'));

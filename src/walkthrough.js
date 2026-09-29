@@ -1,7 +1,7 @@
 import { prepare, finishPreparation, restInvitation } from './preparation.js';
 import { createAgentGuideUI } from './agent-guide.js';
 import { createDeepReviewUI } from './deep-review.js';
-import { escapeHtml as esc } from './render.js';
+import { escapeHtml as esc, icon, messageBubble } from './render.js';
 import { readReply, errorMessage } from './transport.js';
 
 export const walkthroughKey = (snapshot) => JSON.stringify([snapshot.repoId, snapshot.snapshotId]);
@@ -16,23 +16,50 @@ export function sanitizeWalkthrough(value) {
   return { scroll:Number.isFinite(value.scroll)&&value.scroll>=0?value.scroll:0, selectedId:value.selectedId, fileIds:Array.isArray(value.fileIds)?value.fileIds.filter((id)=>typeof id==='string').slice(0,12):undefined, guide:{title:text(value.guide.title,140),summary:text(value.guide.summary,1600),assumptions:(Array.isArray(value.guide.assumptions)?value.guide.assumptions:[]).filter((s)=>typeof s==='string').slice(0,12),steps}, scope:{includedPaths:(Array.isArray(value.scope?.includedPaths)?value.scope.includedPaths:[]).filter((s)=>typeof s==='string'),excludedCount:Math.max(0,Number(value.scope?.excludedCount)||0)}, step:Math.min(steps.length-1,Math.max(0,Number.isInteger(value.step)?value.step:0)), understood:Array.isArray(value.understood)?value.understood.filter((i)=>Number.isInteger(i)&&i>=0&&i<steps.length):[],draft:text(value.draft,1600),chats };
 }
 
-export function createWalkthroughUI({getState,getData,save,render,apiFetch,jump,showSection}) {
-  const agent = createAgentGuideUI({getState,getData,save,render,apiFetch,jump});
-  const deep = createDeepReviewUI({getState,getData,save,render,apiFetch,jump,showSection});
-  const useAgent = () => getState().repositoryGuide || Boolean(getState().snapshot && getData().agentGuides?.[walkthroughKey(getState().snapshot)]);
+export function createWalkthroughUI({getState,getData,save,render,apiFetch,jump,showSection,choices}) {
+  const agent = createAgentGuideUI({getState,getData,save,render,apiFetch,jump,choices});
+  const deep = createDeepReviewUI({getState,getData,save,render,apiFetch,showSection,choices});
+  // A saved repository walkthrough stays readable even if the provider changes. An empty
+  // workspace entry (created by merely rendering) must not switch the overview style.
+  const useAgent = () => { const saved=getState().snapshot&&getData().agentGuides?.[walkthroughKey(getState().snapshot)]; return getState().repositoryGuide || Boolean(saved&&(Object.keys(saved.records||{}).length||saved.pending)); };
   let controller, pending=false, preparingWalk=false, error='', setup={depth:'standard',timeMinutes:15,scope:'auto'};
   const current=()=>{const s=getState();return s.snapshot?getData().walkthroughs[walkthroughKey(s.snapshot)]:null;};
   const enabled=()=>{const s=getState();return s.aiEnabled&&s.online&&!s.demo;};
+  // Both review styles are peers: the same audio card, code sync and follow-up questions.
+  // Overview tours the whole change by importance; deep review goes file by file, line by line.
+  const hasOverview=()=>useAgent()?Boolean(agent.current()):Boolean(current());
+  function option(kind) {
+    const deepKind=kind==='deep',resume=deepKind?deep.current():hasOverview();
+    const startAttrs=deepKind?`data-walk-mode="deep" ${!getState().online?'disabled':''}`:useAgent()?`data-agent="start" ${!enabled()?'disabled':''}`:`data-walk="start" ${!enabled()||pending?'disabled':''}`;
+    return `<article class="review-option"><div class="review-option-head"><span class="review-option-icon" aria-hidden="true">${icon(deepKind?'menu':'grid',18)}</span><h4>${deepKind?'Deep file review':'Overview walkthrough'}</h4></div>
+      <p>${deepKind?'Every changed file, line by line, in short sections you can listen to and follow in the code.':'A narrated tour of the whole change: how the files fit together and the snippets that matter most.'}</p>
+      <ul class="review-option-facts"><li>${deepKind?'File by file, every line':'Chapters across all changed files'}</li><li>Audio synced to the code</li><li>Ask follow-up questions anytime</li></ul>
+      ${resume?`<button class="primary-button" data-walk-mode="${deepKind?'resume-deep':'resume-overview'}">Resume ${deepKind?'deep review':'walkthrough'}</button><button class="agent-step-link" ${startAttrs}>Start a new one</button>`:`<button class="primary-button" ${startAttrs}>Start ${deepKind?'deep review':'overview'}</button>`}
+      ${!deepKind&&!useAgent()?`<details><summary>Customize overview</summary><label>Depth <select id="guide-depth">${['brief','standard','deep'].map((d)=>`<option ${setup.depth===d?'selected':''}>${d}</option>`).join('')}</select></label><label>Time <select id="guide-time">${[5,15,30].map((n)=>`<option value="${n}" ${setup.timeMinutes===n?'selected':''}>${n} minutes</option>`).join('')}</select></label><label>Context <select id="guide-scope"><option value="auto" ${setup.scope==='auto'?'selected':''}>Related changed files (up to 8)</option><option value="selected" ${setup.scope==='selected'?'selected':''}>Only this file</option></select></label></details>`:''}</article>`;
+  }
+  const legacyStatus=()=>`${!useAgent()&&pending&&preparingWalk?restInvitation():''}${error?`<p class="guide-error" role="alert">${esc(error)}</p>`:''}${!useAgent()&&pending?'<p role="status">The guide is thinking…</p><button class="secondary-button" data-walk="stop">Stop</button>':''}`;
+  function chooser() {
+    const state=getState(),count=state.snapshot.files.length;
+    const note=!state.online?'Reconnect to the laptop to start a review.':!enabled()?esc(state.aiMessage||'Connect Codex or Claude Code on the laptop to start a review.'):'';
+    return `<section class="walkthrough review-chooser"><p class="eyebrow">${count} CHANGED FILE${count===1?'':'S'}</p><h3>How would you like to review?</h3>${note?`<p class="guide-intro">${note}</p>`:''}<div class="review-options">${option('overview')}${option('deep')}</div>${legacyStatus()}</section>`;
+  }
+  function modeSwitch(mode) {
+    return `<div class="review-switch" role="group" aria-label="Review style"><button type="button" data-walk-mode="show-overview" aria-pressed="${mode==='overview'}">${icon('grid',15)} Overview</button><button type="button" data-walk-mode="show-deep" aria-pressed="${mode==='deep'}">${icon('menu',15)} Line by line</button></div>`;
+  }
   function html() {
-    if(deep.workspace()?.mode==='deep'&&deep.current())return deep.html();
-    const deepChoice=getState().snapshot?.files.length?`<div class="deep-mode-choice"><p>Examine every changed file, section by section.</p><button class="secondary-button" data-walk-mode="deep" ${!getState().online?'disabled':''}>Start Deep file review</button>${deep.current()?'<button class="agent-step-link" data-walk-mode="resume-deep">Resume saved deep review</button>':''}</div>`:'';
-    if(useAgent())return agent.html()+deepChoice;
+    if(!getState().snapshot?.files.length)return '<p class="guide-intro">No changes to walk through in this scope.</p>';
+    const mode=deep.workspace()?.mode==='deep'?'deep':'overview',started=hasOverview()||Boolean(deep.current())||Boolean(agent.workspace()?.pending)||(!useAgent()&&pending);
+    if(!started)return chooser();
+    if(mode==='deep')return modeSwitch(mode)+(deep.current()?deep.html():`<div class="review-options single">${option('deep')}</div>`);
+    if(useAgent())return modeSwitch(mode)+(agent.current()||agent.workspace()?.pending?agent.html():`<div class="review-options single">${option('overview')}</div>`);
+    if(!current())return modeSwitch(mode)+`<div class="review-options single">${option('overview')}</div>${legacyStatus()}`;
+    return modeSwitch(mode)+legacyHtml();
+  }
+  function legacyHtml() {
     const state=getState(), walk=current(), disabled=!enabled()||pending;
-    if(!state.snapshot?.files.length)return '<p class="guide-intro">Choose a changed file to start a walkthrough.</p>';
     const status=`${pending&&preparingWalk?restInvitation():''}${error?`<p class="guide-error" role="alert">${esc(error)}</p>`:''}${pending?'<p role="status">The guide is thinking…</p><button class="secondary-button" data-walk="stop">Stop</button>':''}`;
-    if(!walk)return `<section class="walkthrough"><h3>Walk me through it</h3><p>Trace the change, examine an edge case, then decide what to verify. Notes stay private.</p><button class="primary-button" data-walk="start" ${disabled?'disabled':''}>Start overview walkthrough</button><p class="guide-intro">${esc(state.aiMessage||'Requires a connected laptop and provider.')} Context includes captured code and your questions.</p><details><summary>Customize overview</summary><label>Depth <select id="guide-depth">${['brief','standard','deep'].map((d)=>`<option ${setup.depth===d?'selected':''}>${d}</option>`).join('')}</select></label><label>Time <select id="guide-time">${[5,15,30].map((n)=>`<option value="${n}" ${setup.timeMinutes===n?'selected':''}>${n} minutes</option>`).join('')}</select></label><label>Context <select id="guide-scope"><option value="auto" ${setup.scope==='auto'?'selected':''}>Related changed files (up to 8)</option><option value="selected" ${setup.scope==='selected'?'selected':''}>Only this file</option></select></label></details>${status}</section>${deepChoice}`;
     const step=walk.guide.steps[walk.step], chats=walk.chats[walk.step]||[];
-    return `<section class="walkthrough"><h3>${esc(walk.guide.title)}</h3><details><summary>Overview & scope</summary><p>${esc(walk.guide.summary)}</p><details><summary>${walk.scope.includedPaths.length} files included · ${walk.scope.excludedCount} outside this context</summary><ul>${walk.scope.includedPaths.map((p)=>`<li>${esc(p)}</li>`).join('')}</ul>${walk.guide.assumptions.map((a)=>`<p>${esc(a)}</p>`).join('')}</details></details><p class="eyebrow">STEP ${walk.step+1} OF ${walk.guide.steps.length}</p><h4 tabindex="-1" id="walk-step-title">${esc(step.title)}</h4><p class="step-explanation">${esc(step.explanation)}</p><div class="guide-citations">${step.citations.map((c,i)=>`<button class="secondary-button" data-citation="${i}">${esc(state.snapshot.files.find((f)=>f.id===c.fileId)?.path||'Unavailable file')} · ${c.side} ${c.startLine}–${c.endLine}</button>`).join('')}</div><div class="review-question"><strong>Things to double-check</strong>${step.reviewPointers.length?`<ul>${step.reviewPointers.map((p,i)=>`<li>${esc(p.text)} <button class="agent-step-link" data-walk-pointer="${i}">View lines ${p.citation.startLine}–${p.citation.endLine}</button></li>`).join('')}</ul>`:'<p>No specific concern identified from captured context. This does not verify the change.</p>'}</div><div class="walk-controls"><button class="secondary-button" data-walk="previous" ${walk.step===0||pending?'disabled':''}>Back</button><button class="primary-button" data-walk="understood" ${pending||(walk.step===walk.guide.steps.length-1&&walk.understood.includes(walk.step))?'disabled':''}>${walk.step<walk.guide.steps.length-1?'Next':walk.understood.includes(walk.step)?'Complete ✓':'Finish'}</button></div><div class="walk-chat" role="log" aria-live="polite">${chats.map((m)=>`<div class="chat-message ${m.role}"><div class="message-bubble">${esc(m.text)}</div></div>`).join('')}</div><form id="walk-question"><label for="walk-draft">Ask about this step</label><textarea id="walk-draft" maxlength="1600" rows="2">${esc(walk.draft)}</textarea><button class="primary-button" ${disabled?'disabled':''}>Ask guide</button></form>${status}<button class="secondary-button" data-walk="restart" ${pending?'disabled':''}>New walkthrough</button></section>`;
+    return `<section class="walkthrough"><h3>${esc(walk.guide.title)}</h3><details><summary>Overview & scope</summary><p>${esc(walk.guide.summary)}</p><details><summary>${walk.scope.includedPaths.length} files included · ${walk.scope.excludedCount} outside this context</summary><ul>${walk.scope.includedPaths.map((p)=>`<li>${esc(p)}</li>`).join('')}</ul>${walk.guide.assumptions.map((a)=>`<p>${esc(a)}</p>`).join('')}</details></details><p class="eyebrow">STEP ${walk.step+1} OF ${walk.guide.steps.length}</p><h4 tabindex="-1" id="walk-step-title">${esc(step.title)}</h4><p class="step-explanation">${esc(step.explanation)}</p><div class="guide-citations">${step.citations.map((c,i)=>`<button class="secondary-button" data-citation="${i}">${esc(state.snapshot.files.find((f)=>f.id===c.fileId)?.path||'Unavailable file')} · ${c.side} ${c.startLine}–${c.endLine}</button>`).join('')}</div><div class="review-question"><strong>Things to double-check</strong>${step.reviewPointers.length?`<ul>${step.reviewPointers.map((p,i)=>`<li>${esc(p.text)} <button class="agent-step-link" data-walk-pointer="${i}">View lines ${p.citation.startLine}–${p.citation.endLine}</button></li>`).join('')}</ul>`:'<p>No specific concern identified from captured context. This does not verify the change.</p>'}</div><div class="walk-controls"><button class="secondary-button" data-walk="previous" ${walk.step===0||pending?'disabled':''}>Back</button><button class="primary-button" data-walk="understood" ${pending||(walk.step===walk.guide.steps.length-1&&walk.understood.includes(walk.step))?'disabled':''}>${walk.step<walk.guide.steps.length-1?'Next':walk.understood.includes(walk.step)?'Complete ✓':'Finish'}</button></div><div class="walk-chat" role="log" aria-live="polite">${chats.map((m)=>`<div class="chat-message ${m.role}">${messageBubble(m.role,m.text)}</div>`).join('')}</div><form id="walk-question"><label for="walk-draft">Ask about this step</label><textarea id="walk-draft" maxlength="1600" rows="2">${esc(walk.draft)}</textarea><button class="primary-button" ${disabled?'disabled':''}>Ask guide</button></form>${status}<button class="secondary-button" data-walk="restart" ${pending?'disabled':''}>New walkthrough</button></section>`;
   }
   async function start() {
     const state=getState(),snapshot=state.snapshot,selectedId=state.selectedFile;
@@ -40,7 +67,7 @@ export function createWalkthroughUI({getState,getData,save,render,apiFetch,jump,
     preparingWalk=true;prepare('legacy:'+snapshot.snapshotId,'Your walkthrough');pending=true;error='';controller=new AbortController();render();
     try {
       const fileIds=setup.scope==='selected'?[selectedId]:undefined;
-      const response=await apiFetch('/api/walkthrough',{method:'POST',headers:{'content-type':'application/json'},signal:AbortSignal.any([controller.signal,AbortSignal.timeout(11*60*1000)]),body:JSON.stringify({model:getState().aiProvider==='codex'?getData().preferences.model||undefined:undefined,effort:getState().aiProvider==='codex'?getData().preferences.effort||undefined:undefined,snapshotId:snapshot.snapshotId,selectedId,fileIds,depth:setup.depth,timeMinutes:setup.timeMinutes})});
+      const response=await apiFetch('/api/walkthrough',{method:'POST',headers:{'content-type':'application/json'},signal:AbortSignal.any([controller.signal,AbortSignal.timeout(11*60*1000)]),body:JSON.stringify({...choices(),snapshotId:snapshot.snapshotId,selectedId,fileIds,depth:setup.depth,timeMinutes:setup.timeMinutes})});
       const body=await response.json();if(!response.ok)throw new Error(errorMessage(body,'The walkthrough could not start.'));
       const walk=sanitizeWalkthrough({...body,fileIds,step:0,understood:[],chats:{},draft:''});if(!walk)throw new Error('The walkthrough response is invalid.');
       getData().walkthroughs[walkthroughKey(snapshot)]=walk;save();
@@ -57,19 +84,25 @@ export function createWalkthroughUI({getState,getData,save,render,apiFetch,jump,
     messages.push({role:'user',text:question});const reply={role:'assistant',text:'',pending:true};messages.push(reply);walk.draft='';pending=true;error='';controller=new AbortController();save();render();
     let lastRender=0;
     try{
-      const response=await apiFetch('/api/walkthrough/followup/stream',{method:'POST',headers:{'content-type':'application/json'},signal:AbortSignal.any([controller.signal,AbortSignal.timeout(11*60*1000)]),body:JSON.stringify({model:getState().aiProvider==='codex'?getData().preferences.model||undefined:undefined,effort:getState().aiProvider==='codex'?getData().preferences.effort||undefined:undefined,snapshotId:snapshot.snapshotId,selectedId:walk.selectedId,fileIds:walk.fileIds,guide:walk.guide,stepIndex,question,history})});
+      const response=await apiFetch('/api/walkthrough/followup/stream',{method:'POST',headers:{'content-type':'application/json'},signal:AbortSignal.any([controller.signal,AbortSignal.timeout(11*60*1000)]),body:JSON.stringify({...choices(),snapshotId:snapshot.snapshotId,selectedId:walk.selectedId,fileIds:walk.fileIds,guide:walk.guide,stepIndex,question,history})});
       const body=await readReply(response,(text)=>{reply.text+=text;if(Date.now()-lastRender>100){lastRender=Date.now();render();}});reply.text=body.text;
     }catch(e){reply.error=true;reply.text=controller.signal.aborted?'Stopped.':`Guide unavailable: ${errorMessage(e.message)}`;}
     finally{reply.pending=false;pending=false;controller=null;save();render();}
   }
   function bind(root) {
     if(getState().guideMode!=='walkthrough'){deep.stopAudio();agent.bind(root);return;}
+    root.querySelectorAll('[data-walk-mode]').forEach(el=>el.addEventListener('click',async()=>{
+      const w=deep.workspace();
+      switch(el.dataset.walkMode){
+        case 'deep':agent.pause();await deep.start();break;
+        case 'resume-deep':case 'show-deep':agent.pause();w.mode='deep';await save();render();if(deep.current())deep.focusCurrent(true,false);break;
+        case 'resume-overview':case 'show-overview':await deep.cancelPrefetch();deep.stopAudio();w.mode='overview';await save();render();break;
+      }
+    }));
+    // Starting an overview always shows it, even if deep mode was last selected.
+    root.querySelectorAll('[data-agent="start"],[data-walk="start"]').forEach(el=>el.addEventListener('click',()=>{if(deep.workspace())deep.workspace().mode='overview';}));
     if(deep.workspace()?.mode==='deep'&&deep.current()){agent.pause();deep.bind(root);return;}
     deep.stopAudio();
-    root.querySelectorAll('[data-walk-mode]').forEach(el=>el.addEventListener('click',async()=>{
-      if(el.dataset.walkMode==='resume-deep'){deep.workspace().mode='deep';await save();render();deep.focusCurrent(true,false);return;}
-      await deep.start();
-    }));
     if(useAgent()){agent.bind(root);return;}
     root.querySelector('#guide-depth')?.addEventListener('change',(e)=>{setup.depth=e.target.value;});
     root.querySelector('#guide-time')?.addEventListener('change',(e)=>{setup.timeMinutes=Number(e.target.value);});

@@ -1,2 +1,7 @@
 vscode-extension/node_modules/
 vscode-extension/*.vsix
+
+# Playwright browser-check output (page snapshots, console logs, reports)
+.playwright-cli/
+test-results/
+playwright-report/

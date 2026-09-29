@@ -94,5 +94,7 @@ export function createDeepAudio({apiFetch, render, next, active}) {
     root.querySelector('#deep-voice')?.addEventListener('change',e=>{voice=e.target.value;stop();attempted='';render();});
     if(online&&item&&key!==identity(item)&&attempted!==identity(item))queueMicrotask(()=>prepare(item,following));
   }
-  return {html,bind,play,prepare,requestAutoplay:()=>{autoplay=true;},stop:()=>{stop();attempted='';autoplay=false;},retry:(item,following)=>{attempted='';stop();return prepare(item,following);}};
+  // Pause without discarding the clip, so Play resumes from the same word.
+  function pause(){clearTimeout(timer);autoplay=false;if(audio&&!audio.paused){audio.pause();render();}}
+  return {html,bind,play,pause,prepare,requestAutoplay:()=>{autoplay=true;},stop:()=>{stop();attempted='';autoplay=false;},retry:(item,following)=>{attempted='';stop();return prepare(item,following);}};
 }

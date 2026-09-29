@@ -48,17 +48,36 @@ function inlineMarkdown(text) {
   return value;
 }
 
+// Assistant replies are Markdown; reviewer text stays literal. Both are escaped.
+export function messageBubble(role, text) {
+  return role === 'assistant' ? `<div class="message-bubble markdown-message">${renderMarkdown(String(text || ''))}</div>` : `<div class="message-bubble">${escapeHtml(text)}</div>`;
+}
+
 export function renderMarkdown(source) {
   const output = [];
   const lines = source.split(/\r?\n/);
   let inCode = false;
   let listType = '';
+  let table = null;
   const closeList = () => {
     if (listType) output.push(`</${listType}>`);
     listType = '';
   };
+  const cells = line => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(cell => cell.trim());
+  const closeTable = () => {
+    if (!table) return;
+    const [head, ...body] = table.filter(row => !row.every(cell => /^:?-{2,}:?$/.test(cell)));
+    output.push(`<div class="markdown-table"><table><thead><tr>${head.map(cell => `<th>${inlineMarkdown(cell)}</th>`).join('')}</tr></thead><tbody>${body.map(row => `<tr>${row.map(cell => `<td>${inlineMarkdown(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`);
+    table = null;
+  };
 
   for (const line of lines) {
+    if (!inCode && /^\s*\|.*\|\s*$/.test(line)) {
+      closeList();
+      (table ||= []).push(cells(line));
+      continue;
+    }
+    closeTable();
     if (/^\s*```/.test(line)) {
       closeList();
       if (inCode) output.push('</code></pre>');
@@ -84,6 +103,7 @@ export function renderMarkdown(source) {
     }
     closeList();
     if (!line.trim()) continue;
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { output.push('<hr>'); continue; }
     const heading = line.match(/^\s*(#{1,6})\s+(.+)/);
     if (heading) {
       const level = heading[1].length;
@@ -95,6 +115,7 @@ export function renderMarkdown(source) {
     }
   }
   closeList();
+  closeTable();
   if (inCode) output.push('</code></pre>');
   return output.join('');
 }

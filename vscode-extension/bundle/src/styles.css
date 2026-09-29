@@ -888,3 +888,47 @@ html.modal-open,body.modal-open { overflow:hidden!important; overscroll-behavior
 .deep-section-list p { font-size:12px; color:var(--muted); }
 
 .deep-review > .eyebrow { font-size:11px; line-height:1.7; }
+
+/* Review styles: overview and deep review are peers with the same card treatment. */
+.review-chooser h3 { margin:6px 0 16px; }
+.review-chooser > .eyebrow { margin:0; font-size:11px; }
+.review-options { display:grid; gap:12px; }
+.review-options.single { margin-top:4px; }
+.review-option { display:flex; flex-direction:column; align-items:flex-start; gap:10px; padding:16px; border:1px solid var(--line); border-radius:12px; background:var(--panel); box-shadow:var(--shadow-small); }
+.review-option-head { display:flex; align-items:center; gap:10px; }
+.review-option-head h4 { margin:0; font-size:16px; }
+.review-option-icon { display:grid; place-items:center; width:32px; height:32px; flex:none; border-radius:9px; background:var(--panel-muted); color:var(--ink); }
+.review-option p { margin:0; color:var(--muted); font-size:13px; line-height:1.55; }
+.review-option-facts { display:flex; flex-wrap:wrap; gap:6px; margin:0; padding:0; list-style:none; }
+.review-option-facts li { padding:4px 8px; border-radius:99px; background:var(--panel-muted); color:var(--muted); font-size:11px; line-height:1.4; }
+.review-option .primary-button { align-self:stretch; margin-top:4px; }
+.review-option .agent-step-link { align-self:center; padding:4px 0; font-size:12px; }
+.review-option details { align-self:stretch; margin:0; }
+.review-switch { display:flex; gap:4px; margin:0 0 16px; padding:4px; border:1px solid var(--line); border-radius:11px; background:var(--panel-muted); }
+.review-switch button { display:inline-flex; flex:1; align-items:center; justify-content:center; gap:6px; min-height:36px; padding:0 10px; border:0; border-radius:8px; background:transparent; color:var(--muted); font-size:13px; font-weight:600; cursor:pointer; }
+.review-switch button:hover { color:var(--ink); }
+.review-switch button[aria-pressed="true"] { background:var(--panel); color:var(--ink); box-shadow:0 1px 3px rgba(38,46,36,.12); }
+.deep-chat:empty { display:none; }
+.deep-chat { margin-top:16px; }
+.deep-question { margin:16px 0; padding:9px 10px 8px; border:1px solid var(--line-strong); border-radius:11px; background:var(--panel); }
+.walkthrough .deep-question textarea { min-height:56px; max-height:180px; padding:4px 2px; border:0; background:transparent; color:var(--ink); }
+.walkthrough .deep-question textarea:focus { outline:none; }
+.deep-question .composer-bottom > span { font-size:11px; }
+.deep-card .lesson-help { margin-top:8px; }
+
+/* Assistant replies render Markdown inside chat bubbles. */
+.message-bubble.markdown-message { white-space:normal; }
+.markdown-message > :first-child { margin-top:0; }
+.markdown-message > :last-child { margin-bottom:0; }
+.markdown-message p { margin:0 0 10px; }
+.markdown-message h1, .markdown-message h2, .markdown-message h3, .markdown-message h4 { margin:14px 0 6px; color:var(--ink); font-size:1.05em; line-height:1.35; }
+.markdown-message ul, .markdown-message ol { margin:0 0 10px; padding-left:20px; color:inherit; }
+.markdown-message code { padding:1px 4px; border-radius:4px; background:var(--panel-muted); color:var(--ink); font-family:'DM Mono', ui-monospace, monospace; font-size:.9em; }
+.markdown-message pre { margin:0 0 10px; padding:10px; overflow-x:auto; border-radius:8px; background:var(--panel-muted); white-space:pre; }
+.markdown-message pre code { padding:0; background:none; }
+.markdown-message hr { margin:12px 0; border:0; border-top:1px solid var(--line); }
+.markdown-message blockquote { margin:0 0 10px; padding:4px 10px; border-left:3px solid var(--lime-deep); color:var(--muted); }
+.markdown-table { margin:0 0 10px; overflow-x:auto; }
+.markdown-table table { border-collapse:collapse; font-size:.95em; }
+.markdown-table th, .markdown-table td { overflow-wrap:normal; word-break:normal; padding:5px 8px; border:1px solid var(--line); text-align:left; vertical-align:top; }
+.markdown-table th { background:var(--panel-muted); color:var(--ink); }

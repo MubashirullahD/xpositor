@@ -22,7 +22,7 @@ export function createAiService(snapshots, env = process.env) {
           if (checked.available) { info = alternative; result = checked; }
         }
       }
-      cachedStatus = { aiEnabled: Boolean(result.available), provider: info.provider, model: info.provider === 'api' && env.OPENAI_API_KEY ? (env.OPENAI_MODEL || 'gpt-5') : null, auth: result.auth, billing: result.billing, message: result.message, limits: result.limits || null, capabilities: { streaming: info.provider === 'codex', conversation: true, repositoryGuide: info.provider === 'codex', voice: false } };
+      cachedStatus = { aiEnabled: Boolean(result.available), provider: info.provider, model: info.provider === 'api' && env.OPENAI_API_KEY ? (env.OPENAI_MODEL || 'gpt-5') : null, auth: result.auth, billing: result.billing, message: result.message, limits: result.limits || null, capabilities: { streaming: info.provider === 'codex', conversation: true, repositoryGuide: ['codex', 'claude'].includes(info.provider), modelSelection: ['codex', 'claude'].includes(info.provider), voice: false } };
       statusAt = Date.now(); return cachedStatus;
     })();
     try { return await statusPromise; } finally { statusPromise = null; }
@@ -34,9 +34,9 @@ export function createAiService(snapshots, env = process.env) {
     return {...await listProviderModels(info,{env,refresh}),provider:info.provider};
   }
 
-  async function generate(prompt, { history = [], sessionKey, signal, onDelta, jsonSchema, model, effort, repositoryTools, onActivity, forkSessionKey, forkThreadId, resumeThreadId, onThread, turnTimeoutMs, parallelKey } = {}) {
+  async function generate(prompt, { history = [], transcript, sessionKey, signal, onDelta, jsonSchema, model, effort, repositoryTools, onActivity, forkSessionKey, forkThreadId, resumeThreadId, onThread, turnTimeoutMs, parallelKey } = {}) {
     prompt = `${GUIDE_INSTRUCTIONS}\n\n${prompt}`;
-    if (parallelKey ? busy || parallelBusy.has(parallelKey) || parallelBusy.size>=4 : busy || parallelBusy.size) return { status: 429, body: { error: 'Another explanation is running. Stop it or wait before asking again.' } };
+    if (parallelKey ? parallelBusy.has(parallelKey) || parallelBusy.size>=4 : busy) return { status: 429, body: { error: 'Another explanation is running. Stop it or wait before asking again.' } };
     if (Buffer.byteLength(prompt) > MAX_CONTEXT) throw new SnapshotError('The selected code exceeds the guide context limit. Choose fewer files.', 413, 'AI_CONTEXT_LIMIT');
     if(parallelKey)parallelBusy.add(parallelKey);else busy = true;
     try {
@@ -44,15 +44,15 @@ export function createAiService(snapshots, env = process.env) {
       if (!config.aiEnabled) return { status: 503, body: { error: config.message } };
       if (signal?.aborted) return { status: 499, body: { error: 'Stopped.' } };
       if(model||effort) {
-        if(info.provider!=='codex')return {status:400,body:{error:'Model selection requires the Codex provider.'}};
+        if(!['codex','claude'].includes(info.provider))return {status:400,body:{error:'Model selection requires Codex or Claude Code.'}};
         const catalog=await models();const choice=catalog.models.find((item)=>item.id===(model||catalog.defaultModel));
         if(!choice)return {status:400,body:{error:'This model is no longer available. Refresh the model list and choose another.'}};
         model=choice.id;
         if(effort&&!choice.efforts.includes(effort))return {status:400,body:{error:'This effort is not supported by the selected model. Choose an available effort.'}};
         effort ||= choice.defaultEffort;
       }
-      if (repositoryTools && info.provider !== 'codex') return { status: 400, body: { error: 'Repository exploration currently requires Codex with a ChatGPT subscription. Select Codex on the laptop.' } };
-      if (info.provider !== 'api') return await answerWithCli(info, { prompt, history }, { env, sessionKey:sessionKey?(repositoryTools?sessionKey:`${sessionKey}:${model||'default'}:${effort||'default'}`):undefined, signal, onDelta, jsonSchema, model, effort, repositoryTools, onActivity, forkSessionKey, forkThreadId, resumeThreadId, onThread, turnTimeoutMs, parallelKey });
+      if (repositoryTools && !['codex', 'claude'].includes(info.provider)) return { status: 400, body: { error: 'Repository exploration requires Codex or Claude Code signed in with a subscription. Select one on the laptop.' } };
+      if (info.provider !== 'api') return await answerWithCli(info, { prompt, history }, { env, transcript, sessionKey:sessionKey?(repositoryTools?sessionKey:`${sessionKey}:${model||'default'}:${effort||'default'}`):undefined, signal, onDelta, jsonSchema, model, effort, repositoryTools, onActivity, forkSessionKey, forkThreadId, resumeThreadId, onThread, turnTimeoutMs, parallelKey });
       // API mode is deliberately opt-in. Auto detection never selects an API key.
       const historyMessages = history.map((item) => ({ role: item.role, content: item.text }));
       const timeout = AbortSignal.timeout(turnTimeoutMs || 90_000);

@@ -9,6 +9,11 @@ import { buildDeepManifest, deepSectionPrompt, validateDeepSection, DEEP_SECTION
 const MIN_WALKTHROUGH_TIMEOUT_MS = 5 * 60_000;
 const PER_CHANGED_FILE_TIMEOUT_MS = 30_000;
 const MAX_WALKTHROUGH_TIMEOUT_MS = 60 * 60_000;
+// Stateless providers (Claude Code) receive recent turns with each follow-up.
+// A correction reuses the rejected answer so the model repairs it instead of
+// exploring the repository again from scratch (Claude runs keep no session).
+const correction = (error, previous) => `\nYour previous answer failed validation: ${error.message}\nPrevious answer JSON:\n${String(previous).slice(0, 48 * 1024)}\nReturn the complete corrected JSON. Keep everything that was valid and change only what the error requires. Use the repository tools only if you must re-check a citation.`;
+const transcriptOf = messages => (messages || []).slice(-20).map(({ role, text }) => ({ role, text: text.slice(0, 4000) }));
 
 export function repositoryGuideTimeoutMs(changedFileCount) {
   if (!Number.isSafeInteger(changedFileCount) || changedFileCount < 1) throw new TypeError('Changed file count must be a positive integer.');
@@ -42,7 +47,7 @@ export function createAgentGuideService(snapshots, ai, { storage } = {}) {
     return record;
   }
   function view(record) {
-    if (record.mode === 'deep') return structuredClone({ id:record.id, mode:'deep', snapshotId:record.snapshotId, title:record.title, persistenceError:record.persistenceError||null, sections:record.sections, position:record.position, group:record.group||0, completed:record.completed, explanations:record.explanations, runId:record.runId });
+    if (record.mode === 'deep') return structuredClone({ id:record.id, mode:'deep', snapshotId:record.snapshotId, title:record.title, persistenceError:record.persistenceError||null, sections:record.sections, position:record.position, group:record.group||0, completed:record.completed, explanations:record.explanations, messages:record.messages||[], runId:record.runId });
     return structuredClone({ id: record.id, snapshotId: record.snapshotId, parentId: record.parentId,
       title: record.title, persistenceError:record.persistenceError||null, step: record.step, guide: record.guide, fileOverviews:record.fileOverviews||{}, overviewStatus:record.overviewStatus||{}, lessons:record.lessons||{}, messages: record.messages, runId: record.runId });
   }
@@ -55,13 +60,14 @@ export function createAgentGuideService(snapshots, ai, { storage } = {}) {
     const repository=snapshots.getRepository(input.snapshotId);
     const sections=buildDeepManifest(repository);
     storage?.saveSnapshot(input.snapshotId,snapshots.exportRecord(input.snapshotId));
-    const record={id:input.requestId,mode:'deep',snapshotId:input.snapshotId,title:'Deep file review',sections,position:0,completed:[],explanations:{},runId:null};
+    const record={id:input.requestId,mode:'deep',snapshotId:input.snapshotId,title:'Deep file review',sections,position:0,completed:[],explanations:{},messages:[],threadId:null,runId:null};
     conversations.set(record.id,record);
     try{persist();}catch(error){conversations.delete(record.id);throw error;}
     return view(record);
   }
   function deepSection(input) {
     requireStorage();requireInput(input,['requestId','conversationId','index','model','effort','prefetch']);
+    const background=input.prefetch===true;
     const record=find(input.conversationId);
     if(record.mode!=='deep')throw new GuideError('Choose a deep review session.',400,'DEEP_SESSION');
     if(!Number.isSafeInteger(input.index)||input.index<0||input.index>=record.sections.length)throw new GuideError('Choose a section in this review.',400,'DEEP_INDEX');
@@ -72,16 +78,38 @@ export function createAgentGuideService(snapshots, ai, { storage } = {}) {
     const run=runs.start(input.requestId,{...input,snapshotId:record.snapshotId},async(_,options)=>{
       let prompt=deepSectionPrompt(repository,section);
       for(let attempt=0;attempt<2;attempt++){
-        const result=await ai.generate(prompt,{...options,jsonSchema:DEEP_SECTION_SCHEMA,model:input.model,effort:input.effort,turnTimeoutMs:5*60_000});
+        const result=await ai.generate(prompt,{...options,jsonSchema:DEEP_SECTION_SCHEMA,model:input.model,effort:input.effort,turnTimeoutMs:5*60_000,...(background?{parallelKey:'prefetch'}:{})});
         if(result.status!==200)throw new GuideError(result.body?.error||'Section explanation failed.',result.status,'DEEP_GENERATION_FAILED');
         if(options.signal.aborted)throw new Error('Stopped.');
         try{
           const explanation=validateDeepSection(JSON.parse(result.body.text),repository,section);
           record.explanations[input.index]=explanation;persist();return {index:input.index,explanation,conversationId:record.id};
-        }catch(error){if(attempt)throw error;prompt=`${deepSectionPrompt(repository,section)}\nYour previous response failed validation: ${error.message}. Return the full corrected JSON.`;}
+        }catch(error){if(attempt)throw error;options.onActivity?.({tool:'Fixing this section',path:null});prompt=deepSectionPrompt(repository,section)+correction(error,result.body.text);}
       }
+    },{lane:background?'prefetch':'main'});
+    if(!background)record.runId=run.id;track(record,run);return {run};
+  }
+  function deepQuestion(input) {
+    requireStorage();requireInput(input,['requestId','conversationId','question','index','group','model','effort']);
+    const record=find(input.conversationId);
+    if(record.mode!=='deep')throw new GuideError('Choose a deep review session.',400,'DEEP_SESSION');
+    if(typeof input.question!=='string'||!input.question.trim()||input.question.length>8000)throw new GuideError('Ask a question of 1–8,000 characters.',400,'GUIDE_QUESTION');
+    if(!Number.isSafeInteger(input.index)||input.index<0||input.index>=record.sections.length)throw new GuideError('Choose a section in this review.',400,'DEEP_INDEX');
+    const section=record.sections[input.index],range=record.explanations[input.index]?.explanations[input.group??0];
+    if(input.group!==undefined&&(!Number.isSafeInteger(input.group)||input.group<0||(record.explanations[input.index]&&!range)))throw new GuideError('Choose a line group in this section.',400,'DEEP_GROUP');
+    const question=input.question.trim(),place={index:input.index,group:input.group??0};
+    const run=runs.start(input.requestId,{...input,snapshotId:record.snapshotId},async(_,options)=>{
+      record.messages||=[];
+      const transcript=transcriptOf(record.messages);
+      record.messages.push({role:'user',text:question,...place});
+      const focus=section.kind==='code'?`${section.path}, new lines ${range?.startLine??section.startLine}-${range?.endLine??section.endLine}${range?`\nCurrent explanation: ${range.text}`:''}`:`${section.path} (coverage notice: ${section.summary})`;
+      const prompt=`The reviewer is going through this immutable snapshot file by file, line by line. Use the captured read/search tools as needed.\nReviewer is currently on: ${focus}\nReviewer question: ${question}\nAnswer the question directly and concisely, citing captured lines. Do not claim approval on the reviewer's behalf.`;
+      const result=await ai.generate(prompt,{...options,repositoryTools:createRepositoryTools(snapshots,record.snapshotId),sessionKey:sessionKey(record),resumeThreadId:record.threadId,onThread:threadId=>{record.threadId=threadId;persist();},transcript,model:input.model,effort:input.effort});
+      if(result.status!==200)throw new GuideError(result.body?.error||'The guide could not answer.',result.status,'GUIDE_GENERATION_FAILED');
+      record.messages.push({role:'assistant',text:result.body.text,...place});record.messages=record.messages.slice(-400);persist();
+      return {text:result.body.text,conversationId:record.id};
     });
-    record.runId=run.id;track(record,run);return {run};
+    record.runId=run.id;return track(record,run);
   }
   function advanceDeep(input) {
     requireStorage();
@@ -101,6 +129,9 @@ export function createAgentGuideService(snapshots, ai, { storage } = {}) {
       resumeThreadId: record.threadId, onThread: threadId => { record.threadId = threadId; persist(); },
       ...(schema ? { jsonSchema: schema } : {}),
     };
+    const original = prompt;
+    // Codex keeps the thread between attempts; other providers start fresh each call.
+    const stateless = schema && ai.status ? (await ai.status()).provider !== 'codex' : false;
     for (let attempt = 0; attempt < (schema ? 3 : 1); attempt++) {
       const result = await ai.generate(prompt, generationOptions);
       if (result.status !== 200) throw new GuideError(result.body?.error || 'The guide could not finish.', result.status, 'GUIDE_GENERATION_FAILED');
@@ -115,7 +146,8 @@ export function createAgentGuideService(snapshots, ai, { storage } = {}) {
       } catch (error) {
         if (attempt === 2) throw new GuideError(`The guide could not produce a complete, valid plan: ${error.message}`, 502, 'AGENT_PLAN_INVALID');
         options.onActivity?.({ tool: 'Checking review plan', path: null });
-        prompt = `Correct your previous plan and return the complete JSON replacement. Validation failed: ${error.message}\nEvery changed file must appear in at least one step's files array. fileOverviews can be empty and must not delay the plan. A file may be revisited in later steps, but must not be repeated within the same step. Preserve full scope; do not omit files or invent citations.`;
+        const rules = `Every changed file must appear in at least one step's files array. fileOverviews can be empty and must not delay the plan. A file may be revisited in later steps, but must not be repeated within the same step. Preserve full scope; do not omit files or invent citations.`;
+        prompt = stateless ? `${original}${correction(error, result.body.text)}\n${rules}` : `Correct your previous plan and return the complete JSON replacement. Validation failed: ${error.message}\n${rules}`;
       }
     }
   }
@@ -133,7 +165,7 @@ export function createAgentGuideService(snapshots, ai, { storage } = {}) {
     conversations.set(id, record);
     try {
       const run=runs.start(id, { ...input, conversationId: id }, async (_, options) => {
-        if(ai.status){const availability=await ai.status();if(!availability.capabilities?.repositoryGuide)throw new GuideError('Repository exploration currently requires Codex with a ChatGPT subscription. Select Codex on the laptop.',400,'GUIDE_PROVIDER');}
+        if(ai.status){const availability=await ai.status();if(!availability.capabilities?.repositoryGuide)throw new GuideError('Repository exploration requires Codex or Claude Code signed in with a subscription. Select one on the laptop.',400,'GUIDE_PROVIDER');}
         const singleFile=repository.snapshot.files.length===1;
         const progress=singleFile?{fileOverviews:{}}:await generateFileOverviews(repository,ai,{signal:options.signal,model:input.model,effort:input.effort,onProgress:value=>{
           record.fileOverviews=value.fileOverviews;record.overviewStatus=value.overviewStatus;
@@ -165,37 +197,38 @@ export function createAgentGuideService(snapshots, ai, { storage } = {}) {
     const request = { ...input, snapshotId: original.snapshotId, conversationId: id };
     try {
       const run = runs.start(input.requestId, request, async (_, options) => {
+        const transcript = transcriptOf(record.messages);
         record.messages.push({ role: 'user', text: input.question.trim() });
         const prompt = `Continue this immutable repository walkthrough. Use the captured read/search tools as needed.\nCurrent step: ${JSON.stringify(record.guide.steps[step])}\nReviewer question: ${input.question.trim()}\nDo not change the review plan or claim approval on the reviewer's behalf.`;
-        return generate(record, prompt, { ...options, model: input.model, effort: input.effort }, null, input.branch && fresh ? original : null);
+        return generate(record, prompt, { ...options, transcript, model: input.model, effort: input.effort }, null, input.branch && fresh ? original : null);
       });
       record.runId = run.id; conversations.set(id, record); return track(record,run);
     } catch (error) { if (fresh) conversations.delete(id); throw error; }
   }
   function lesson(input) {
-    requireStorage();requireInput(input,['requestId','conversationId','step','model','effort']);
-    const record=find(input.conversationId),step=input.step;
+    requireStorage();requireInput(input,['requestId','conversationId','step','model','effort','prefetch']);
+    const record=find(input.conversationId),step=input.step,background=input.prefetch===true;
     if(!Number.isSafeInteger(step)||!record.guide?.steps[step])throw new GuideError('Choose an existing chapter.',400,'LESSON_STEP');
     const run=runs.start(input.requestId,{...input,snapshotId:record.snapshotId},async(_,options)=>{
       const tools=createRepositoryTools(snapshots,record.snapshotId);
       let prompt=lessonPrompt(record,step);
       for(let attempt=0;attempt<2;attempt++){
-        const result=await ai.generate(prompt,{...options,repositoryTools:tools,jsonSchema:LESSON_SCHEMA,model:input.model,effort:input.effort,turnTimeoutMs:repositoryGuideTimeoutMs(tools.repository.snapshot.files.length)});
+        const result=await ai.generate(prompt,{...options,repositoryTools:tools,jsonSchema:LESSON_SCHEMA,model:input.model,effort:input.effort,turnTimeoutMs:repositoryGuideTimeoutMs(tools.repository.snapshot.files.length),...(background?{parallelKey:'prefetch'}:{})});
         if(result.status!==200)throw new GuideError(result.body?.error||'Lesson generation failed.',result.status,'LESSON_FAILED');
         if(options.signal.aborted)throw new Error('Stopped.');
         let value;
         try{value=validateLesson(JSON.parse(result.body.text),tools.repository,step);}
-        catch(error){if(attempt)throw error;prompt=lessonPrompt(record,step)+'\nYour previous attempt was invalid: '+error.message+' Return a complete corrected lesson.';continue;}
+        catch(error){if(attempt)throw error;options.onActivity?.({tool:'Fixing the lesson',path:null});prompt=lessonPrompt(record,step)+correction(error,result.body.text);continue;}
         record.lessons||={};record.lessons[step]=value;persist();return {lesson:value,conversationId:record.id};
       }
-    });record.runId=run.id;return track(record,run);
+    },{lane:background?'prefetch':'main'});if(!background)record.runId=run.id;return track(record,run);
   }
   function selectStep(id, step) {
     const record = find(id);
     if (!Number.isSafeInteger(step) || step < 0 || step >= (record.guide?.steps.length || 0)) throw new GuideError('Choose an existing walkthrough step.', 400, 'GUIDE_STEP');
     record.step = step; persist();return view(record);
   }
-  return { start, question, lesson, selectStep, startDeep, deepSection, advanceDeep, runs,
+  return { start, question, lesson, selectStep, startDeep, deepSection, deepQuestion, advanceDeep, runs,
     conversation: id => view(find(id)),
     list: snapshotId => [...conversations.values()].filter(record => record.snapshotId === snapshotId).map(record => ({ id: record.id, mode:record.mode||'overview', snapshotId: record.snapshotId, parentId: record.parentId, title: record.title, persistenceError:record.persistenceError||null, step: record.step, position:record.position, runId: record.runId })),
     close: () => runs.close(),

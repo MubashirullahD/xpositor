@@ -19,7 +19,7 @@ async page => {
  });
 
  await page.setViewportSize({width:390,height:844});await page.goto(base);await page.getByRole('heading',{name:'queue.js',exact:true}).waitFor();await page.getByRole('button',{name:'Open code guide',exact:true}).click();
- await page.getByRole('button',{name:'Start walkthrough',exact:true}).click();await page.getByRole('button',{name:'Try a breathing exercise',exact:true}).click();
+ await page.getByRole('button',{name:'Start overview',exact:true}).click();await page.getByRole('button',{name:'Try a breathing exercise',exact:true}).click();
  await page.getByRole('dialog',{name:'Mindful breathing',exact:true}).waitFor();await page.getByRole('button',{name:'Pause',exact:true}).waitFor();
  await page.getByRole('button',{name:'Notice your surroundings',exact:true}).click();await page.getByRole('dialog',{name:'Notice this moment',exact:true}).waitFor();
  if(await page.locator('.breath-orb').evaluate(el=>getComputedStyle(el).animationName)!=='none')throw Error('Grounding should not pace breathing');

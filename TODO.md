@@ -30,7 +30,7 @@ Possible future low-cost experiment: device dictation plus device read-aloud, wi
 ## Release validation and later product work
 
 - [ ] Exercise a real phone/Safari PWA install, offline relaunch and reconnection over cellular. Current browser checks used Chromium at phone/tablet sizes.
-- [ ] Verify live Claude Code subscription generation. Its adapter/auth/error behavior is covered by stubs; live generation was verified with Codex only.
+- [x] Verify live Claude Code subscription generation: overview plan, audio lesson, follow-ups and deep review with repository tools (27 September 2026).
 - [ ] Exercise the existing named-tunnel configuration against a real hostname. Lifecycle behavior is covered by mocks; Patchwork does not provision infrastructure.
 - [ ] Add branch/commit comparisons and PR review after validating the uncommitted-change workflow with users.
 - [ ] Decide on Marketplace publishing. The VSIX is built locally; it has not been published or automatically installed.

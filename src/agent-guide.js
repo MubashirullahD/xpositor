@@ -1,6 +1,6 @@
 import { prepare, finishPreparation, restInvitation } from './preparation.js';
 import { createAudioLesson, sanitizeLessons } from './audio-lesson.js';
-import { escapeHtml as esc, icon } from './render.js';
+import { escapeHtml as esc, icon, messageBubble } from './render.js';
 import { randomId } from './platform.js';
 import { errorMessage } from './transport.js';
 const idValid = value => typeof value === 'string' && /^[a-zA-Z0-9_-]{16,80}$/.test(value);
@@ -22,12 +22,12 @@ export function sanitizeAgentWorkspace(value) {
     if(guide&&!guide.steps.length)guide=null;
     records[record.id] = {id:record.id,snapshotId:record.snapshotId,parentId:idValid(record.parentId)?record.parentId:null,title:text(record.title,140),guide,fileOverviews:overviewMap(record.fileOverviews),overviewStatus:overviewStatuses(record.overviewStatus),lessons:sanitizeLessons(record.lessons),lessonPosition:Object.fromEntries(Object.entries(record.lessonPosition||{}).filter(([key,n])=>/^\d{1,4}$/.test(key)&&Number.isInteger(n)&&n>=0&&n<8)),step:Math.max(0,Math.min((guide?.steps.length||1)-1,Number.isInteger(record.step)?record.step:0)),finished:Boolean(record.finished),scroll:Number.isFinite(record.scroll)?Math.max(0,record.scroll):0,overviewOpen:Boolean(record.overviewOpen),draft:text(record.draft),runId:idValid(record.runId)?record.runId:null,messages:(Array.isArray(record.messages)?record.messages:[]).filter(m=>m&&['user','assistant'].includes(m.role)&&typeof m.text==='string').slice(-2000).map(m=>({role:m.role,text:text(m.text,256*1024)}))};
   }
-  const pending = value?.pending;
-  return {records,activeId:idValid(value?.activeId)?value.activeId:'',pending:pending&&idValid(pending.input?.requestId)&&['start','question','lesson'].includes(pending.action)?{action:pending.action,input:JSON.parse(JSON.stringify(pending.input)),recordId:text(pending.recordId,80),acknowledged:Boolean(pending.acknowledged)}:null};
+  const pending = value?.pending, prefetch = value?.prefetch;
+  return {records,activeId:idValid(value?.activeId)?value.activeId:'',prefetch:prefetch&&idValid(prefetch.requestId)&&idValid(prefetch.recordId)&&Number.isSafeInteger(prefetch.step)?{requestId:prefetch.requestId,recordId:prefetch.recordId,step:prefetch.step}:null,pending:pending&&idValid(pending.input?.requestId)&&['start','question','lesson'].includes(pending.action)?{action:pending.action,input:JSON.parse(JSON.stringify(pending.input)),recordId:text(pending.recordId,80),acknowledged:Boolean(pending.acknowledged)}:null};
 }
 
-export function createAgentGuideUI({getState,getData,save,render,apiFetch,jump}) {
-  let polling=false,error='',activity='',partial='',retryTimer;
+export function createAgentGuideUI({getState,getData,save,render,apiFetch,jump,choices}) {
+  let polling=false,error='',activity='',partial='',retryTimer,prefetchPolling=false,prefetchTimer;
   const seenProgress=new Map();
   const attemptedLessons=new Set();
   const workspace=()=>{const state=getState();if(!state.snapshot)return null;getData().agentGuides||={};return getData().agentGuides[keyFor(state.snapshot)]||=( {records:{},activeId:'',pending:null} );};
@@ -35,7 +35,6 @@ export function createAgentGuideUI({getState,getData,save,render,apiFetch,jump})
   const captureScroll=()=>{const record=current(),panel=document.querySelector('.walkthrough-scroll');if(record&&panel)record.scroll=panel.scrollTop;};
   function selectConversation(id){captureScroll();workspace().activeId=id;error='';save();render(false);ensureLesson();}
   const enabled=()=>getState().online&&getState().aiEnabled&&!getState().demo;
-  const choices=()=>({model:getData().preferences.model||undefined,effort:getData().preferences.effort||undefined});
   const player=createAudioLesson({current,apiFetch,save,render,jump,ask:question=>{current().draft=question;ask();}});
   async function request(path, input) {
     const response=await apiFetch(`/api/guide/${path}`,input===undefined?{}:{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(input)});
@@ -58,7 +57,7 @@ export function createAgentGuideUI({getState,getData,save,render,apiFetch,jump})
       <div class="guide-citations">${step.citations.map((c,i)=>`<button class="secondary-button" data-agent-citation="${i}">${esc(c.path)} · ${c.side} ${c.startLine}–${c.endLine}</button>`).join('')}</div>`}
       ${!record.lessons?.[record.step]&&!record.parentId?`<div class="walk-controls"><button class="secondary-button" data-agent="previous" ${record.step===0?'disabled':''}>Back</button><button class="primary-button" data-agent="next" ${record.finished?'disabled':''}>${record.finished?'Walkthrough complete ✓':record.step===guide.steps.length-1?'Finish':'Next'}</button></div>`:''}`:`<h3>${activity.startsWith('Preparing file overviews')?'Preparing file overviews':'Putting the walkthrough together'}</h3><p>Open a file’s Overview tab as soon as its summary is ready.</p>`}
       ${guide?`${record.lessons?.[record.step]?player.html()+`<button class="agent-step-link" data-agent="next" ${record.finished?'disabled':''}>${record.finished?'Chapter complete ✓':record.step===guide.steps.length-1?'Finish walkthrough':'Next chapter'}</button>`:`<p class="agent-activity">${error?'This chapter is not ready yet.':!enabled()?'Reconnect to prepare this chapter and its audio.':'Preparing this chapter and its audio…'}</p>${error?`<button class="secondary-button" data-agent="lesson" ${pending||!enabled()?'disabled':''}>Retry chapter</button>`:''}`}`:''}
-      <div class="walk-chat" role="log" aria-live="polite">${record.messages.map(m=>`<div class="chat-message ${m.role}"><div class="message-bubble">${esc(m.text)}</div></div>`).join('')}${pending&&w.pending.recordId===record.id&&guide&&pending&&w.pending.action!=='lesson'&&partial?`<div class="chat-message assistant"><div class="message-bubble">${esc(partial)}</div></div>`:''}</div>
+      <div class="walk-chat" role="log" aria-live="polite">${record.messages.map(m=>`<div class="chat-message ${m.role}">${messageBubble(m.role,m.text)}</div>`).join('')}${pending&&w.pending.recordId===record.id&&guide&&pending&&w.pending.action!=='lesson'&&partial?`<div class="chat-message assistant">${messageBubble('assistant',partial)}</div>`:''}</div>
       ${status}
       ${guide?`<form id="agent-question"><label class="sr-only" for="agent-draft">Ask your guide</label><textarea id="agent-draft" rows="2" maxlength="8000" placeholder="Ask your guide…">${esc(record.draft||'')}</textarea><div class="composer-bottom"><button class="icon-button" type="button" data-agent="branch" aria-label="Explore in a separate conversation" title="Explore in a separate conversation" ${pending||!enabled()?'disabled':''}>${icon('branch')}</button><button class="send-control" type="${pending?'button':'submit'}" ${pending?'data-agent="stop"':''} aria-label="${pending?'Stop response':'Send question'}" ${!pending&&!enabled()?'disabled':''}>${icon(pending?'stop':'send')}</button></div></form>`:pending?'<button class="secondary-button" data-agent="stop">Stop</button>':''}
       ${!pending?`<button class="agent-step-link" data-agent="start" ${!enabled()?'disabled':''}>New walkthrough</button>`:''}
@@ -89,7 +88,7 @@ export function createAgentGuideUI({getState,getData,save,render,apiFetch,jump})
       if(!pending.acknowledged){await request(pending.action,pending.input);pending.acknowledged=true;await save();}
       const {run}=await request(`run?id=${encodeURIComponent(pending.input.requestId)}`);
       if(!run)throw new Error('The laptop did not return this guide run.');
-      activity=run.status==='stopping'?'Stopping…':run.progress?.phase==='overviews'?`Preparing file overviews · ${run.progress.completed} of ${run.progress.total} ready`:run.activity?.path?`Reading ${run.activity.path}`:run.activity?.tool==='review_search'?'Finding related code…':'Your guide is thinking…';
+      activity=run.status==='stopping'?'Stopping…':run.progress?.phase==='overviews'?`Preparing file overviews · ${run.progress.completed} of ${run.progress.total} ready`:run.activity?.path?`Reading ${run.activity.path}`:run.activity?.tool&&!run.activity.tool.startsWith('review_')?`${run.activity.tool}…`:run.activity?.tool==='review_search'?'Finding related code…':'Your guide is thinking…';
       if(pending.action==='start'&&run.progress){const marker=`${run.progress.phase}:${run.progress.completed}`;if(seenProgress.get(pending.input.requestId)!==marker){const {conversation}=await request(`conversation?id=${encodeURIComponent(pending.recordId)}`);const record=w.records[pending.recordId];if(record){record.fileOverviews=conversation.fileOverviews||record.fileOverviews;record.overviewStatus=conversation.overviewStatus||record.overviewStatus;await save();}seenProgress.set(pending.input.requestId,marker);}}
       partial=run.text||'';error='';
       if(!['running','stopping'].includes(run.status)) {
@@ -101,7 +100,7 @@ export function createAgentGuideUI({getState,getData,save,render,apiFetch,jump})
         if(run.status!=='completed')error=run.error||'The guide stopped before finishing.';else if(conversation.persistenceError)error=conversation.persistenceError;
         await save();
       }
-      if(workspace()===w){render();if(!w.pending&&run.status==='completed'){if(pending.action==='lesson')player.prepare();else if(pending.action==='start')queueMicrotask(ensureLesson);}}
+      if(workspace()===w){render();if(!w.pending&&run.status==='completed'){if(pending.action==='lesson'){player.prepare();prefetchNext();}else if(pending.action==='start')queueMicrotask(ensureLesson);}}
     } catch(e) {if(e.status>=400&&e.status<500&&e.status!==429){w.pending=null;finishPreparation(pending.input.requestId,'error');await save();error=`${errorMessage(e.message)} Your saved conversation remains here; you can try again.`;}else error=`${errorMessage(e.message)} Your request is saved; reconnecting will check the same response.`;if(workspace()===w)render();}
     finally {polling=false;if(w.pending&&workspace()===w)retryTimer=setTimeout(()=>{retryTimer=null;poll();},error?5000:1000);}
   }
@@ -112,10 +111,37 @@ export function createAgentGuideUI({getState,getData,save,render,apiFetch,jump})
   async function citation(index) {jump(current().guide.steps[current().step].citations[index]);}
   function ensureLesson() {
     const record=current();if(!record?.guide||workspace().pending||!enabled())return;
-    if(record.lessons?.[record.step]){player.prepare();return;}
+    if(record.lessons?.[record.step]){player.prepare();prefetchNext();return;}
+    const w=workspace();if(w.prefetch?.recordId===record.id&&w.prefetch.step===record.step){pollPrefetch();return;}
     const key=JSON.stringify([record.snapshotId,record.id,record.step]);
     if(attemptedLessons.has(key))return;attemptedLessons.add(key);
     submit('lesson',{requestId:randomId(),conversationId:record.id,step:record.step,...choices()},record);
+  }
+  // While the reviewer listens to one chapter, prepare the next in the background.
+  async function prefetchNext() {
+    const w=workspace(),record=current(),next=record?record.step+1:-1;
+    if(!record?.guide||w.prefetch||!enabled()||next>=record.guide.steps.length||record.lessons?.[next])return;
+    const key=JSON.stringify([record.snapshotId,record.id,next,'prefetch']);if(attemptedLessons.has(key))return;attemptedLessons.add(key);
+    const requestId=randomId();w.prefetch={requestId,recordId:record.id,step:next};await save();
+    try{await request('lesson',{requestId,conversationId:record.id,step:next,prefetch:true,...choices()});}
+    catch{if(w.prefetch?.requestId===requestId){w.prefetch=null;await save();}return;}
+    pollPrefetch();
+  }
+  async function pollPrefetch() {
+    clearTimeout(prefetchTimer);prefetchTimer=null;
+    const w=workspace(),job=w?.prefetch;if(!job||prefetchPolling||!getState().online)return;
+    prefetchPolling=true;let done=false;
+    try{
+      const {run}=await request(`run?id=${encodeURIComponent(job.requestId)}`);
+      if(!['running','stopping'].includes(run.status)){
+        done=true;
+        if(run.status==='completed'){const {conversation}=await request(`conversation?id=${encodeURIComponent(job.recordId)}`);const local=w.records[job.recordId];if(local)local.lessons=conversation.lessons||local.lessons;}
+        if(w.prefetch?.requestId===job.requestId)w.prefetch=null;await save();
+        // A failed prefetch is retried in the foreground when the reviewer reaches that chapter.
+        if(workspace()===w&&current()?.id===job.recordId&&current().step===job.step){render();ensureLesson();}
+      }
+    }catch(e){if(e.status>=400&&e.status<500&&e.status!==429){done=true;if(w.prefetch?.requestId===job.requestId){w.prefetch=null;await save();}}}
+    finally{prefetchPolling=false;if(!done&&w.prefetch)prefetchTimer=setTimeout(pollPrefetch,2000);}
   }
   function bind(root) {
     player.bind(root);
@@ -139,7 +165,8 @@ export function createAgentGuideUI({getState,getData,save,render,apiFetch,jump})
     }));
     const pending=workspace()?.pending;if(pending&&['start','lesson'].includes(pending.action))prepare(pending.input.requestId,pending.action==='start'?'Your walkthrough':'Your chapter');
     if(pending&&!polling&&!retryTimer)queueMicrotask(poll);
+    if(workspace()?.prefetch&&!prefetchPolling&&!prefetchTimer)queueMicrotask(pollPrefetch);
     if(!pending&&root.querySelector('#chat-panel:not([inert]) .agent-walkthrough')&&!error)queueMicrotask(ensureLesson);
   }
-  return {html,bind,pause:player.pause};
+  return {html,bind,pause:player.pause,current,workspace};
 }

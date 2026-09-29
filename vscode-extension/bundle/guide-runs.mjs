@@ -22,7 +22,8 @@ export function createGuideRuns({ maxRuns = 24, maxReplyBytes = 256 * 1024 } = {
       try { listener(view(run)); } catch { run.listeners.delete(listener); }
     }
   }
-  function start(id, input, execute) {
+  // Runs in different lanes may overlap: background prefetch never blocks a question.
+  function start(id, input, execute, { lane = 'main' } = {}) {
     if (typeof id !== 'string' || !/^[a-zA-Z0-9_-]{16,80}$/.test(id)) throw new GuideError('A stable request ID is required.', 400, 'GUIDE_RUN_ID');
     if (!input || typeof input !== 'object' || Array.isArray(input) || typeof input.snapshotId !== 'string' || !input.snapshotId || typeof input.conversationId !== 'string' || !input.conversationId) throw new GuideError('Snapshot and conversation identity are required.', 400, 'GUIDE_RUN_INPUT');
     const serialized = JSON.stringify(input);
@@ -34,9 +35,9 @@ export function createGuideRuns({ maxRuns = 24, maxReplyBytes = 256 * 1024 } = {
       return view(previous);
     }
     if (typeof execute !== 'function') throw new TypeError('A guide executor is required.');
-    if ([...runs.values()].some(run => run.status === 'running' || run.status === 'stopping')) throw new GuideError('Another guide response is running. Wait or stop it first.', 429, 'GUIDE_RUN_BUSY');
+    if ([...runs.values()].some(run => (run.lane || 'main') === lane && (run.status === 'running' || run.status === 'stopping'))) throw new GuideError('Another guide response is running. Wait or stop it first.', 429, 'GUIDE_RUN_BUSY');
     while (runs.size >= maxRuns) runs.delete(runs.keys().next().value);
-    const run = { id, fingerprint, input: JSON.parse(serialized), status: 'running', revision: 1,
+    const run = { id, lane, fingerprint, input: JSON.parse(serialized), status: 'running', revision: 1,
       text: '', activity: null, progress:null, result: null, error: null, createdAt: new Date().toISOString(), finishedAt: null,
       controller: new AbortController(), listeners: new Set(), failure: null };
     runs.set(id, run);

@@ -23,7 +23,7 @@ async page => {
  await page.goBack();
  if(await page.locator('#file-panel').getAttribute('aria-hidden')!=='true')throw Error('Back did not close file drawer');
  await page.getByRole('button',{name:'Open code guide',exact:true}).click();
- await page.getByRole('button',{name:'Start walkthrough',exact:true}).click();
+ await page.getByRole('button',{name:'Start overview',exact:true}).click();
  await page.getByRole('heading',{name:'Trace the doubling change',exact:true}).waitFor();
  await page.getByRole('button',{name:'Next',exact:true}).click();
  if(!await page.getByRole('heading',{name:'Trace',exact:true}).isVisible())throw Error('Step did not advance');
@@ -63,7 +63,7 @@ async page => {
  await page.setViewportSize({width:900,height:900});
  await page.getByRole('button',{name:'Code guide',exact:true}).click();
  await page.getByRole('tab',{name:'Walkthrough',exact:true}).click();
- await page.getByRole('button',{name:'Start walkthrough',exact:true}).waitFor();
+ await page.getByRole('button',{name:'Start overview',exact:true}).waitFor();
  await page.screenshot({path:'/tmp/patchwork-review-tablet.png'});
  return ('PASS phone walkthrough/citation/followup; understood != reviewed; reload progress/draft; changed revision reset; tablet guide.');
 }

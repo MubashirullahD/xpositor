@@ -25,7 +25,7 @@ async page => {
  });
  await page.goto(base);await page.locator('h2').filter({hasText:'src/change.js'}).first().waitFor({state:'attached'});
  await page.getByRole('button',{name:'Code guide',exact:true}).click();
- await page.getByRole('button',{name:'Start Deep file review'}).click();
+ await page.getByRole('button',{name:'Start deep review'}).click();
  await page.getByText('This line defines the answer.').waitFor();
  await page.getByText('Audio ready',{exact:true}).waitFor();
  await page.waitForFunction(()=>window.testAudio?.length>0);

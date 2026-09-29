@@ -67,8 +67,8 @@ export function parseBackup(text) {
   if (value.format !== 'patchwork-private-backup' || value.schema !== SCHEMA) throw new Error('This is not a supported Patchwork backup.');
   const data=sanitizeState(value.state);
   // Imported backups never submit a saved request automatically.
-  for(const workspace of Object.values(data.agentGuides))workspace.pending=null;
-  for(const workspace of Object.values(data.deepReviews))workspace.pending=null;
+  for(const workspace of Object.values(data.agentGuides)){workspace.pending=null;workspace.prefetch=null;}
+  for(const workspace of Object.values(data.deepReviews)){workspace.pending=null;workspace.question=null;}
   return { data, snapshot:value.snapshot ? cleanSnapshot(value.snapshot) : null };
 }
 export function mergeState(current, incoming) {
