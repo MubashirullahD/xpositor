@@ -311,6 +311,11 @@ export async function answerWithCli(providerInfo, input, options = {}) {
       if (payload.is_error || !text) return { status: 502, body: { error: payload.is_error ? claudeFailure(result, payload, timeoutMs) : 'Claude Code did not return an explanation. Check the provider on the laptop.' } };
       if (!streamed) options.onDelta?.(text);
       return { status: 200, body: { text, model: 'claude', billing: 'subscription' } };
-    } finally { await tools?.close(); await rm(cwd, { recursive: true, force: true }); }
+    } finally {
+      // Cleanup must never replace the real result. On Windows a just-killed CLI can
+      // still hold its working folder, so deletion retries briefly and then gives up.
+      await tools?.close().catch(() => {});
+      await rm(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }).catch(() => {});
+    }
   } catch (error) { return { status: 502, body: { error: error.message || 'The guide could not finish.' } }; }
 }

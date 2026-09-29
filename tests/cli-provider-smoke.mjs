@@ -82,7 +82,7 @@ try {
  const streamedAnswer=await answerWithCli(info,{prompt:'Stream please.'},{env,spawn:fakeSpawn,onDelta:text=>deltas.push(text)});
  assert.equal(streamedAnswer.body.text,'Hello **world**');assert.deepEqual(deltas,['Hello ','**world**'],'Claude text must stream once, not repeat at the end.');
  const slow=await answerWithCli(info,{prompt:'Take too long.'},{env,spawn:fakeSpawn,turnTimeoutMs:1500});
- assert.equal(slow.status,504);assert.match(slow.body.error,/did not finish within 1 minutes/);
+ assert.equal(slow.status,504,slow.body.error);assert.match(slow.body.error,/did not finish within 1 minutes/);
  const activity=[];
  const tools={definitions:REPOSITORY_TOOLS,call(name,args){if(name!=='review_read')throw new Error('Only repository tools are available.');return {path:args.path,text:'captured'};}};
  const toolAnswer=await answerWithCli(info,{prompt:'Use a tool.'},{env,spawn:fakeSpawn,repositoryTools:tools,onActivity:value=>activity.push(value)});
