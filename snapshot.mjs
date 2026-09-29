@@ -137,8 +137,14 @@ export function createSnapshotStore(repository, options = {}) {
       if (size > limits.maxSnapshotBytes) throw new SnapshotError('Snapshot exceeds the total source byte limit.', 413, 'SNAPSHOT_LIMIT');
       return content;
     });
-    const fingerprint = hash(JSON.stringify([meta, [...context], working.map((item) => [item.mode, hash(item.bytes), item.sourceReason])]));
-    return { meta, working, context, fingerprint };
+    const contents = working.map((item) => [item.mode, hash(item.bytes), item.sourceReason]);
+    const fingerprint = hash(JSON.stringify([meta, [...context], contents]));
+    // The review itself: which files changed, their content, and the base they are
+    // compared against. Edits elsewhere (other scopes, supporting files) leave it
+    // unchanged, so a refresh keeps the same snapshot and its walkthrough.
+    const base = scope === 'unstaged' ? meta.entries.map((entry) => [index.get(entry.path)?.oid ?? null, entry.oldPath ? index.get(entry.oldPath)?.oid ?? null : null]) : meta.head;
+    const reviewFingerprint = hash(JSON.stringify([scope, base, meta.entries, contents]));
+    return { meta, working, context, fingerprint, reviewFingerprint };
   }
   function capture(scope='all', { reuse = false } = {}) {
     if(!['all','staged','unstaged'].includes(scope))throw new SnapshotError('Unknown review scope.',400,'INVALID_SCOPE');
@@ -150,7 +156,7 @@ export function createSnapshotStore(repository, options = {}) {
     }
     if (!state) throw new SnapshotError('Repository changed while capturing the snapshot. Retry refresh.', 409, 'SNAPSHOT_CHANGED');
     if (reuse) {
-      for (const record of cache.values()) if (record.snapshot.scope === scope && record.fingerprint === state.fingerprint) return record.snapshot;
+      for (const record of cache.values()) if (record.snapshot.scope === scope && (record.reviewFingerprint ? record.reviewFingerprint === state.reviewFingerprint : record.fingerprint === state.fingerprint)) return record.snapshot;
     }
     const { meta, working, context } = state;
     const baseFiles = scope==='unstaged'?indexFiles(meta.index):new Map();
@@ -204,7 +210,7 @@ export function createSnapshotStore(repository, options = {}) {
     const bytes = Buffer.byteLength(JSON.stringify([...context])) + Buffer.byteLength(JSON.stringify(snapshot)) + [...sources.values()].reduce((sum, value) => sum + (value === null ? 0 : Buffer.byteLength(value)), 0);
     if (bytes > limits.maxCacheBytes) throw new SnapshotError('Snapshot exceeds the cache byte limit.', 413, 'SNAPSHOT_LIMIT');
     while (cache.size && (cache.size >= limits.maxSnapshots || cacheBytes + bytes > limits.maxCacheBytes)) { const key = cache.keys().next().value; cacheBytes -= cache.get(key).bytes; cache.delete(key); }
-    cache.set(snapshot.snapshotId, { snapshot, sources, context, bytes, fingerprint: state.fingerprint }); cacheBytes += bytes;
+    cache.set(snapshot.snapshotId, { snapshot, sources, context, bytes, fingerprint: state.fingerprint, reviewFingerprint: state.reviewFingerprint }); cacheBytes += bytes;
     return snapshot;
   }
   function get(snapshotId) {
@@ -226,7 +232,7 @@ export function createSnapshotStore(repository, options = {}) {
   }
   function exportRecord(snapshotId) {
     get(snapshotId);const record=cache.get(snapshotId);
-    return {snapshot:record.snapshot,sources:[...record.sources],context:[...record.context],fingerprint:record.fingerprint};
+    return {snapshot:record.snapshot,sources:[...record.sources],context:[...record.context],fingerprint:record.fingerprint,reviewFingerprint:record.reviewFingerprint};
   }
   function restoreRecord(value) {
     if (!value || value.snapshot?.repoId !== repoId || typeof value.snapshot.snapshotId !== 'string' || !Array.isArray(value.snapshot.files) || value.snapshot.files.length > limits.maxFiles || !Array.isArray(value.context) || value.context.length > limits.maxContextFiles || !Array.isArray(value.sources)) throw new SnapshotError('Saved review snapshot is invalid.',500,'SNAPSHOT_STORAGE');
@@ -236,8 +242,17 @@ export function createSnapshotStore(repository, options = {}) {
     const id=value.snapshot.snapshotId;
     if(cache.has(id)){cacheBytes-=cache.get(id).bytes;cache.delete(id);}
     while(cache.size&&(cache.size>=limits.maxSnapshots||cacheBytes+bytes>limits.maxCacheBytes)){const oldest=cache.keys().next().value;cacheBytes-=cache.get(oldest).bytes;cache.delete(oldest);}
-    cache.set(id,{snapshot:freeze(value.snapshot),sources:new Map(value.sources),context:new Map(value.context),fingerprint:value.fingerprint,bytes});cacheBytes+=bytes;
+    cache.set(id,{snapshot:freeze(value.snapshot),sources:new Map(value.sources),context:new Map(value.context),fingerprint:value.fingerprint,reviewFingerprint:typeof value.reviewFingerprint==='string'?value.reviewFingerprint:undefined,bytes});cacheBytes+=bytes;
     return value.snapshot;
+  }
+  // Which reviewed files differ between two captures, so a reader can decide
+  // whether an earlier walkthrough still describes the current code.
+  function compare(fromId, toId) {
+    const from = get(fromId), to = get(toId);
+    const before = new Map(from.files.map((file) => [file.path, file.version])), after = new Map(to.files.map((file) => [file.path, file.version]));
+    const changed = [...new Set([...before.keys(), ...after.keys()])].filter((path) => before.get(path) !== after.get(path)).sort();
+    const summary = (snapshot) => ({ snapshotId: snapshot.snapshotId, scope: snapshot.scope, generatedAt: snapshot.generatedAt });
+    return { from: summary(from), to: summary(to), sameScope: from.scope === to.scope, changed };
   }
   function getRepository(snapshotId) {
     const snapshot = get(snapshotId);
@@ -255,5 +270,5 @@ export function createSnapshotStore(repository, options = {}) {
       return { ...context.get(path) };
     } };
   }
-  return { capture, get, getFile, getRepository, exportRecord, restoreRecord, repoId, limits: freeze({ ...limits }) };
+  return { capture, get, getFile, getRepository, compare, exportRecord, restoreRecord, repoId, limits: freeze({ ...limits }) };
 }

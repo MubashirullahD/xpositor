@@ -110,6 +110,7 @@ const handleRequest = async (request, response) => {
       const snapshot=snapshots.capture(url.searchParams.get('scope')||'all', { reuse: true });
       return sendJson(response, 200, {...snapshot,files:snapshot.files.map((file)=>({...file,source:snapshots.getFile(snapshot.snapshotId,{id:file.id}).source}))});
     }
+    if (url.pathname === '/api/snapshot/compare' && request.method === 'GET') return sendJson(response, 200, snapshots.compare(url.searchParams.get('from'), url.searchParams.get('to')));
     if (url.pathname === '/api/file' && request.method === 'GET') {
       const requestedPath = url.searchParams.get('path');
       if (!requestedPath) throw new SnapshotError('An exact file path is required.', 400, 'FILE_REQUIRED');
@@ -205,8 +206,8 @@ server.listen(port, host, () => {
   console.log(`Patchwork companion: ${protocol}://${host}:${activePort}`);
   console.log(`Reading git changes from: ${repoRoot}`);
   console.log('Read-only mode: the companion never stages, edits, or commits files.');
-  if (secureTransport) console.log('Secure transport: HTTPS is enabled for service-worker installation and LAN review.');
   if (aiLogEnabled()) console.log(`AI session logging is on (development): ${aiLogDirectory()}. Logs contain captured code and questions.`);
+  if (secureTransport) console.log('Secure transport: HTTPS is enabled for service-worker installation and LAN review.');
   if (accessToken) {
     console.log(`Pairing token: ${accessToken}`);
     const addresses = lanAddresses();

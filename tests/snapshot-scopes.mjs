@@ -30,5 +30,21 @@ try {
  git('add','.');git('commit','-qm','Rename');git('rm','renamed.js');write('renamed.js','recreated\n');
  assert.equal(store.capture('staged').files[0].sourceAvailable,false);assert.equal(store.capture('unstaged').files[0].status,'?');
  assert.throws(()=>store.capture('invalid'),e=>e.status===400);
- console.log('Scope snapshots passed: unborn, partial staging, index source, inverse changes, renames and recreated deletions.');
+ // A refresh keeps the snapshot (and its walkthrough) while the review itself is unchanged.
+ const identityRepo=mkdtempSync(join(tmpdir(),'patchwork-identity-'));const g=(...args)=>execFileSync('git',args,{cwd:identityRepo,stdio:'pipe'});const w=(path,text)=>writeFileSync(join(identityRepo,path),text);
+ try{
+  g('init','-q');g('config','user.name','Test');g('config','user.email','test@example.invalid');w('review.js','one\n');w('other.js','one\n');g('add','.');g('commit','-qm','Initial');
+  const identity=createSnapshotStore(identityRepo);w('review.js','two\n');
+  const first=identity.capture('unstaged',{reuse:true});
+  w('other.js','two\n');g('add','other.js');g('commit','-qm','Unrelated');
+  assert.equal(identity.capture('unstaged',{reuse:true}).snapshotId,first.snapshotId,'Committing another file must not replace the unstaged review.');
+  g('add','review.js');const staged=identity.capture('staged',{reuse:true});w('review.js','three\n');
+  assert.equal(identity.capture('staged',{reuse:true}).snapshotId,staged.snapshotId,'A worktree edit must not replace the staged review.');
+  const edited=identity.capture('unstaged',{reuse:true});
+  assert.notEqual(edited.snapshotId,first.snapshotId,'Editing a reviewed file creates a new snapshot.');
+  const comparison=identity.compare(first.snapshotId,edited.snapshotId);
+  assert.deepEqual([comparison.sameScope,comparison.changed],[true,['review.js']]);
+  assert.equal(identity.compare(first.snapshotId,staged.snapshotId).sameScope,false);
+ }finally{rmSync(identityRepo,{recursive:true,force:true});}
+ console.log('Scope snapshots passed: unborn, partial staging, index source, inverse changes, renames, recreated deletions and review-only snapshot identity.');
 }finally{rmSync(repo,{recursive:true,force:true});}

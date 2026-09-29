@@ -38,10 +38,36 @@ export function createWalkthroughUI({getState,getData,save,render,apiFetch,jump,
       ${!deepKind&&!useAgent()?`<details><summary>Customize overview</summary><label>Depth <select id="guide-depth">${['brief','standard','deep'].map((d)=>`<option ${setup.depth===d?'selected':''}>${d}</option>`).join('')}</select></label><label>Time <select id="guide-time">${[5,15,30].map((n)=>`<option value="${n}" ${setup.timeMinutes===n?'selected':''}>${n} minutes</option>`).join('')}</select></label><label>Context <select id="guide-scope"><option value="auto" ${setup.scope==='auto'?'selected':''}>Related changed files (up to 8)</option><option value="selected" ${setup.scope==='selected'?'selected':''}>Only this file</option></select></label></details>`:''}</article>`;
   }
   const legacyStatus=()=>`${!useAgent()&&pending&&preparingWalk?restInvitation():''}${error?`<p class="guide-error" role="alert">${esc(error)}</p>`:''}${!useAgent()&&pending?'<p role="status">The guide is thinking…</p><button class="secondary-button" data-walk="stop">Stop</button>':''}`;
+  // A walkthrough belongs to the capture it was made from. When the reviewed files
+  // change, offer to carry the most recent earlier walkthrough over instead of hiding it.
+  let carry={for:'',offer:null};
+  const hasWalkthrough=key=>Object.values(getData().agentGuides?.[key]?.records||{}).some(record=>record.guide)||Object.keys(getData().deepReviews?.[key]?.records||{}).length>0||Boolean(getData().walkthroughs?.[key]);
+  async function checkCarryover() {
+    const snapshot=getState().snapshot;if(!snapshot||!getState().online)return;
+    const current=walkthroughKey(snapshot);if(carry.for===current)return;
+    carry={for:current,offer:null};if(getData().carryover?.[current])return;
+    const earlier=[...new Set(['agentGuides','deepReviews','walkthroughs'].flatMap(map=>Object.keys(getData()[map]||{})))].filter(key=>{try{const [repoId]=JSON.parse(key);return repoId===snapshot.repoId&&key!==current&&hasWalkthrough(key);}catch{return false;}}).slice(-4);
+    const found=[];
+    for(const key of earlier){try{const response=await apiFetch(`/api/snapshot/compare?from=${encodeURIComponent(JSON.parse(key)[1])}&to=${encodeURIComponent(snapshot.snapshotId)}`);if(!response.ok)continue;const comparison=await response.json();if(comparison.sameScope)found.push({key,...comparison});}catch{/* An unavailable capture cannot be continued. */}}
+    found.sort((a,b)=>String(b.from.generatedAt).localeCompare(String(a.from.generatedAt)));
+    if(carry.for===current&&found[0]){carry.offer=found[0];render(false);}
+  }
+  function carryoverNotice() {
+    const offer=getState().snapshot&&carry.for===walkthroughKey(getState().snapshot)?carry.offer:null;if(!offer)return '';
+    const when=new Date(offer.from.generatedAt),label=Number.isNaN(when.getTime())?'an earlier capture':`a capture from ${when.toLocaleString([], {dateStyle:'medium',timeStyle:'short'})}`;
+    const names=offer.changed.slice(0,3).map(path=>esc(path)).join(', ')+(offer.changed.length>3?` and ${offer.changed.length-3} more`:'');
+    return `<div class="carryover" role="status"><strong>Continue your earlier walkthrough?</strong><p>It was made from ${label}. ${offer.changed.length?`Since then ${offer.changed.length} of the files you’re reviewing changed (${names}), so some explanations and line references may not match the current code.`:'The files you’re reviewing have not changed since.'}</p><div class="carryover-actions"><button class="primary-button" data-carryover="continue">Continue it</button><button class="secondary-button" data-carryover="fresh">Start fresh</button></div></div>`;
+  }
+  async function resolveCarryover(choice) {
+    const offer=carry.offer,current=walkthroughKey(getState().snapshot);if(!offer)return;
+    if(choice==='continue'){for(const map of ['agentGuides','deepReviews','walkthroughs']){const data=getData()[map];if(data?.[offer.key]){data[current]=data[offer.key];delete data[offer.key];}}}
+    else{getData().carryover||={};getData().carryover[current]=offer.from.snapshotId;}
+    carry.offer=null;await save();render();
+  }
   function chooser() {
     const state=getState(),count=state.snapshot.files.length;
     const note=!state.online?'Reconnect to the laptop to start a review.':!enabled()?esc(state.aiMessage||'Connect Codex or Claude Code on the laptop to start a review.'):'';
-    return `<section class="walkthrough review-chooser"><p class="eyebrow">${count} CHANGED FILE${count===1?'':'S'}</p><h3>How would you like to review?</h3>${note?`<p class="guide-intro">${note}</p>`:''}<div class="review-options">${option('overview')}${option('deep')}</div>${legacyStatus()}</section>`;
+    return `<section class="walkthrough review-chooser"><p class="eyebrow">${count} CHANGED FILE${count===1?'':'S'}</p><h3>How would you like to review?</h3>${carryoverNotice()}${note?`<p class="guide-intro">${note}</p>`:''}<div class="review-options">${option('overview')}${option('deep')}</div>${legacyStatus()}</section>`;
   }
   function modeSwitch(mode) {
     return `<div class="review-switch" role="group" aria-label="Review style"><button type="button" data-walk-mode="show-overview" aria-pressed="${mode==='overview'}">${icon('grid',15)} Overview</button><button type="button" data-walk-mode="show-deep" aria-pressed="${mode==='deep'}">${icon('menu',15)} Line by line</button></div>`;
@@ -91,6 +117,8 @@ export function createWalkthroughUI({getState,getData,save,render,apiFetch,jump,
   }
   function bind(root) {
     if(getState().guideMode!=='walkthrough'){deep.stopAudio();agent.bind(root);return;}
+    root.querySelectorAll('[data-carryover]').forEach(el=>el.addEventListener('click',()=>resolveCarryover(el.dataset.carryover)));
+    if(root.querySelector('.review-chooser'))queueMicrotask(checkCarryover);
     root.querySelectorAll('[data-walk-mode]').forEach(el=>el.addEventListener('click',async()=>{
       const w=deep.workspace();
       switch(el.dataset.walkMode){
