@@ -42,7 +42,9 @@ else {
  if (prompt.includes('Pick a model.')) { console.log(JSON.stringify({type:'result',subtype:'success',result:[flag('--model'),flag('--effort')].join('|')})); return; }
  if (args.includes('--json-schema')) {
   if (Number(flag('--max-turns'))<2) { console.log(JSON.stringify({type:'result',subtype:'error_max_turns',is_error:true,errors:['Reached maximum number of turns (1)']})); process.exit(1); }
-  console.log(JSON.stringify({type:'result',subtype:'success',result:'',structured_output:{summary:'structured'}})); return;
+  for (const content_block of [{type:'thinking'},{type:'tool_use',name:'StructuredOutput'}]) console.log(JSON.stringify({type:'stream_event',event:{type:'content_block_start',content_block}}));
+  console.log(JSON.stringify({type:'assistant',message:{content:[{type:'thinking',thinking:'plan'},{type:'tool_use',name:'StructuredOutput',input:{summary:'structured'}}],usage:{output_tokens:9}}}));
+  console.log(JSON.stringify({type:'result',subtype:'success',num_turns:2,result:'',structured_output:{summary:'structured'}})); return;
  }
  console.log(JSON.stringify({type:'result',subtype:'success',result:'Claude answer: '+prompt.includes('Explain this file.')}));
  });
@@ -67,7 +69,12 @@ try {
  const fakeSpawn=process.platform==='win32' ? (_command,args,options)=>spawn(process.execPath,[fakeCli,...args],options) : undefined;
  const answer=await answerWithCli(info,{question:'Explain this file.',file:{path:'demo.js'},source:'const x=1;'}, {env,spawn:fakeSpawn});
  assert.equal(answer.status,200);assert.equal(answer.body.text,'Claude answer: true');
- const structured=await answerWithCli(info,{prompt:'Plan this.'},{env,spawn:fakeSpawn,jsonSchema:{type:'object'}});
+ const labels=[],logged=[];
+ const structured=await answerWithCli(info,{prompt:'Plan this.'},{env,spawn:fakeSpawn,jsonSchema:{type:'object'},onActivity:value=>labels.push(value.tool),log:{event:(type,data)=>logged.push({type,...data})}});
+ assert.deepEqual(labels,['Thinking','Writing the answer'],'Claude reports thinking and writing instead of the last file read.');
+ assert.deepEqual(logged.map(event=>event.type),['claude-command','claude-turn','claude-result']);
+ assert.equal(logged[0].input,'Plan this.');assert(!logged[0].args.includes('{"type":"object"}'),'Bulky schema/config arguments are left out of the log.');
+ assert.deepEqual(logged[1].blocks,[{type:'thinking',chars:4},{type:'tool_use',name:'StructuredOutput',input:{summary:'structured'}}]);
  assert.equal(structured.status,200);assert.deepEqual(JSON.parse(structured.body.text),{summary:'structured'});
  assert.equal((await answerWithCli(info,{prompt:'Pick a model.'},{env,spawn:fakeSpawn,model:'opus',effort:'high'})).body.text,'opus|high');
  assert.deepEqual((await listProviderModels(info)).models.map(model=>model.id),['opus','sonnet','haiku']);

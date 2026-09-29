@@ -1,5 +1,5 @@
 import { execFileSync, spawn } from 'node:child_process';
-import { appendFileSync, existsSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -174,24 +174,33 @@ function claudeFailure(result, payload, timeoutMs) {
 }
 
 // Claude Code's stream-json output is one JSON event per line. Only the final
-// result is kept; text deltas stream to the reader, and PATCHWORK_CLAUDE_TRACE
-// names a file that records each turn for diagnosing slow runs.
-function claudeEvents({ onDelta, trace }) {
-  let buffer = '', result = null, streamed = false;
-  const log = trace ? line => { try { appendFileSync(trace, `${new Date().toISOString()} ${line}\n`); } catch { /* tracing is best effort */ } } : null;
-  const clip = value => String(typeof value === 'string' ? value : JSON.stringify(value)).replace(/\s+/g, ' ').slice(0, 300);
+// result is kept; text deltas stream to the reader, and when AI logging is on
+// (PATCHWORK_AI_LOG) each turn, tool call and tool result is recorded.
+function claudeEvents({ onDelta, onActivity, log }) {
+  let buffer = '', result = null, streamed = false, activity = '';
+  // Without this, the reader keeps seeing the last file read while Claude thinks or writes for minutes.
+  const announce = label => { if (label && label !== activity) { activity = label; onActivity?.({ tool: label, path: null }); } };
+  const clip = (value, limit = 600) => String(typeof value === 'string' ? value : JSON.stringify(value)).slice(0, limit);
   function handle(event) {
-    if (event.type === 'result') { result = event; log?.(`result ${event.subtype} turns=${event.num_turns} ms=${event.duration_ms} out=${event.usage?.output_tokens}`); return; }
+    if (event.type === 'result') {
+      result = event;
+      log?.event('claude-result', { subtype: event.subtype, isError: Boolean(event.is_error), turns: event.num_turns, durationMs: event.duration_ms, apiMs: event.duration_api_ms, usage: event.usage, costUsd: event.total_cost_usd, errors: event.errors || null });
+      return;
+    }
     if (event.type === 'stream_event') {
+      const block = event.event?.type === 'content_block_start' ? event.event.content_block : null;
+      if (block?.type === 'thinking') announce('Thinking');
+      else if (block?.type === 'text' || (block?.type === 'tool_use' && block.name === 'StructuredOutput')) announce('Writing the answer');
+      else if (block?.type === 'tool_use') activity = '';
       const delta = event.event?.delta;
       if (onDelta && delta?.type === 'text_delta' && delta.text) { streamed = true; onDelta(delta.text); }
       return;
     }
     if (!log) return;
     const blocks = Array.isArray(event.message?.content) ? event.message.content : [];
-    if (event.type === 'assistant') log(`assistant ${blocks.map(b => b.type === 'tool_use' ? `tool_use:${b.name}` : b.type === 'text' ? `text:${b.text.length}` : b.type).join(',')} out=${event.message?.usage?.output_tokens ?? '?'}`);
-    else if (event.type === 'user') log(`user ${blocks.filter(b => b.type === 'tool_result').map(b => `tool_result${b.is_error ? ':error' : ''} ${clip(b.content)}`).join(' | ')}`);
-    else log(`${event.type}${event.subtype ? ` ${event.subtype}` : ''}`);
+    if (event.type === 'assistant') log.event('claude-turn', { outputTokens: event.message?.usage?.output_tokens ?? null, blocks: blocks.map(b => b.type === 'tool_use' ? { type: 'tool_use', name: b.name, input: b.input } : b.type === 'text' ? { type: 'text', text: b.text } : b.type === 'thinking' ? { type: 'thinking', chars: String(b.thinking || '').length } : { type: b.type }) });
+    else if (event.type === 'user') log.event('claude-tool-results', { results: blocks.filter(b => b.type === 'tool_result').map(b => ({ isError: Boolean(b.is_error), preview: clip(b.content) })) });
+    else if (event.type === 'system') log.event('claude-system', { subtype: event.subtype || null, model: event.model || null, tools: event.tools || null });
   }
   return {
     push(chunk) {
@@ -286,13 +295,15 @@ export async function answerWithCli(providerInfo, input, options = {}) {
     const tools = options.repositoryTools ? await startClaudeToolServer(options.repositoryTools, { onActivity: options.onActivity }) : null;
     try {
       const streamText = Boolean(options.onDelta && !options.jsonSchema);
-      const args = ['-p', '--output-format', 'stream-json', '--verbose', ...(streamText ? ['--include-partial-messages'] : []), '--permission-mode', 'dontAsk', '--max-turns', String(tools ? CLAUDE_TOOL_TURNS : CLAUDE_TEXT_TURNS), '--no-session-persistence', '--tools', '', '--disable-slash-commands', '--strict-mcp-config', '--mcp-config', tools ? tools.config : '{"mcpServers":{}}', ...(tools ? ['--allowedTools', claudeToolNames(options.repositoryTools).join(',')] : []), '--setting-sources', '', '--settings', '{"disableAllHooks":true}', '--append-system-prompt', (tools ? CLAUDE_TOOL_INSTRUCTIONS : '') + CLAUDE_INSTRUCTIONS + (options.jsonSchema ? CLAUDE_STRUCTURED_INSTRUCTIONS : ''), ...((options.model || (options.env || process.env).PATCHWORK_CLAUDE_MODEL) ? ['--model', options.model || (options.env || process.env).PATCHWORK_CLAUDE_MODEL] : []), ...(options.effort ? ['--effort', options.effort] : []), ...(options.jsonSchema ? ['--json-schema', JSON.stringify(options.jsonSchema)] : [])];
+      const args = ['-p', '--output-format', 'stream-json', '--verbose', '--include-partial-messages', '--permission-mode', 'dontAsk', '--max-turns', String(tools ? CLAUDE_TOOL_TURNS : CLAUDE_TEXT_TURNS), '--no-session-persistence', '--tools', '', '--disable-slash-commands', '--strict-mcp-config', '--mcp-config', tools ? tools.config : '{"mcpServers":{}}', ...(tools ? ['--allowedTools', claudeToolNames(options.repositoryTools).join(',')] : []), '--setting-sources', '', '--settings', '{"disableAllHooks":true}', '--append-system-prompt', (tools ? CLAUDE_TOOL_INSTRUCTIONS : '') + CLAUDE_INSTRUCTIONS + (options.jsonSchema ? CLAUDE_STRUCTURED_INSTRUCTIONS : ''), ...((options.model || (options.env || process.env).PATCHWORK_CLAUDE_MODEL) ? ['--model', options.model || (options.env || process.env).PATCHWORK_CLAUDE_MODEL] : []), ...(options.effort ? ['--effort', options.effort] : []), ...(options.jsonSchema ? ['--json-schema', JSON.stringify(options.jsonSchema)] : [])];
       // Claude runs are stateless, so earlier turns travel with each request.
       const history = input.history?.length ? input.history : options.transcript || [];
       const env = options.env || process.env;
-      const events = claudeEvents({ onDelta: streamText ? options.onDelta : null, trace: env.PATCHWORK_CLAUDE_TRACE });
+      const stdinText = input.prompt && history.length ? `Previous conversation:\n${JSON.stringify(history)}\n\n${prompt}` : prompt;
+      const events = claudeEvents({ onDelta: streamText ? options.onDelta : null, onActivity: options.onActivity, log: options.log });
+      options.log?.event('claude-command', { args: args.filter((_, index) => args[index - 1] !== '--mcp-config' && args[index - 1] !== '--json-schema' && args[index - 1] !== '--append-system-prompt'), input: stdinText });
       const timeoutMs = options.turnTimeoutMs || options.timeoutMs || DEFAULT_TIMEOUT_MS;
-      const result = await runCommand(command, args, { cwd, env: childEnvironment(provider, env), input: input.prompt && history.length ? `Previous conversation:\n${JSON.stringify(history)}\n\n${prompt}` : prompt, timeoutMs, signal: options.signal, spawn: options.spawn, onChunk: chunk => events.push(chunk), discardOutput: true });
+      const result = await runCommand(command, args, { cwd, env: childEnvironment(provider, env), input: stdinText, timeoutMs, signal: options.signal, spawn: options.spawn, onChunk: chunk => events.push(chunk), discardOutput: true });
       const { result: payload, streamed } = events.finish();
       if (!result.ok) return { status: result.reason === 'timeout' ? 504 : 502, body: { error: result.reason === 'aborted' ? 'Stopped.' : claudeFailure(result, payload, timeoutMs) } };
       if (!payload) return { status: 502, body: { error: claudeFailure(result, null, timeoutMs) } };

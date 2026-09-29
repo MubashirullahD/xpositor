@@ -37,7 +37,7 @@ export async function generateFileOverviews(repository, ai, {signal,model,effort
       if(signal?.aborted)throw new Error('Stopped.');
       const batch=batches[next++],expected=new Set(batch.map(file=>file.path));
       for(let attempt=0;attempt<2;attempt++){
-        const result=await ai.generate(fileOverviewPrompt(repository,batch),{signal,model,effort,jsonSchema:FILE_OVERVIEW_SCHEMA,parallelKey:`file-overview-${index}`,turnTimeoutMs:5*60_000});
+        const result=await ai.generate(fileOverviewPrompt(repository,batch),{signal,model,effort,purpose:`file overviews batch ${index+1}`,jsonSchema:FILE_OVERVIEW_SCHEMA,parallelKey:`file-overview-${index}`,turnTimeoutMs:5*60_000});
         if(signal?.aborted)throw new Error('Stopped.');
         if(result.status!==200){if(attempt===0&&result.status>=500)continue;break;}
         let value;

@@ -92,6 +92,11 @@
           "default": "auto",
           "description": "AI provider used by the laptop companion. Local CLI providers reuse their existing laptop login."
         },
+        "patchwork.devAiLog": {
+          "type": "boolean",
+          "default": false,
+          "description": "Development: record each AI request (prompt, repository tool calls, provider turns and answer) as private JSONL files in ~/.patchwork/ai-logs. Logs contain captured code and your questions. Restart the companion after changing this."
+        },
         "patchwork.companionPath": {
           "type": "string",
           "default": "",

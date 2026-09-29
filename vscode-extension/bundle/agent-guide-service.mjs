@@ -78,7 +78,7 @@ export function createAgentGuideService(snapshots, ai, { storage } = {}) {
     const run=runs.start(input.requestId,{...input,snapshotId:record.snapshotId},async(_,options)=>{
       let prompt=deepSectionPrompt(repository,section);
       for(let attempt=0;attempt<2;attempt++){
-        const result=await ai.generate(prompt,{...options,jsonSchema:DEEP_SECTION_SCHEMA,model:input.model,effort:input.effort,turnTimeoutMs:5*60_000,...(background?{parallelKey:'prefetch'}:{})});
+        const result=await ai.generate(prompt,{...options,purpose:`deep section ${input.index} ${section.path}${background?' prefetch':''}`,jsonSchema:DEEP_SECTION_SCHEMA,model:input.model,effort:input.effort,turnTimeoutMs:5*60_000,...(background?{parallelKey:'prefetch'}:{})});
         if(result.status!==200)throw new GuideError(result.body?.error||'Section explanation failed.',result.status,'DEEP_GENERATION_FAILED');
         if(options.signal.aborted)throw new Error('Stopped.');
         try{
@@ -104,7 +104,7 @@ export function createAgentGuideService(snapshots, ai, { storage } = {}) {
       record.messages.push({role:'user',text:question,...place});
       const focus=section.kind==='code'?`${section.path}, new lines ${range?.startLine??section.startLine}-${range?.endLine??section.endLine}${range?`\nCurrent explanation: ${range.text}`:''}`:`${section.path} (coverage notice: ${section.summary})`;
       const prompt=`The reviewer is going through this immutable snapshot file by file, line by line. Use the captured read/search tools as needed.\nReviewer is currently on: ${focus}\nReviewer question: ${question}\nAnswer the question directly and concisely, citing captured lines. Do not claim approval on the reviewer's behalf.`;
-      const result=await ai.generate(prompt,{...options,repositoryTools:createRepositoryTools(snapshots,record.snapshotId),sessionKey:sessionKey(record),resumeThreadId:record.threadId,onThread:threadId=>{record.threadId=threadId;persist();},transcript,model:input.model,effort:input.effort});
+      const result=await ai.generate(prompt,{...options,purpose:'deep follow-up',repositoryTools:createRepositoryTools(snapshots,record.snapshotId),sessionKey:sessionKey(record),resumeThreadId:record.threadId,onThread:threadId=>{record.threadId=threadId;persist();},transcript,model:input.model,effort:input.effort});
       if(result.status!==200)throw new GuideError(result.body?.error||'The guide could not answer.',result.status,'GUIDE_GENERATION_FAILED');
       record.messages.push({role:'assistant',text:result.body.text,...place});record.messages=record.messages.slice(-400);persist();
       return {text:result.body.text,conversationId:record.id};
@@ -173,7 +173,7 @@ export function createAgentGuideService(snapshots, ai, { storage } = {}) {
         }});
         options.onProgress({phase:'walkthrough',completed:repository.snapshot.files.length,total:repository.snapshot.files.length,ready:Object.keys(progress.fileOverviews).length});
         const prompt=buildRepositoryGuidePrompt(repository,input.selectedPath,progress.fileOverviews);
-        const result=await generate(record,prompt,{...options,model:input.model,effort:input.effort,turnTimeoutMs:repositoryGuideTimeoutMs(repository.snapshot.files.length)},singleFile?SINGLE_FILE_REPOSITORY_GUIDE_SCHEMA:REPOSITORY_GUIDE_SCHEMA);
+        const result=await generate(record,prompt,{...options,purpose:'walkthrough plan',model:input.model,effort:input.effort,turnTimeoutMs:repositoryGuideTimeoutMs(repository.snapshot.files.length)},singleFile?SINGLE_FILE_REPOSITORY_GUIDE_SCHEMA:REPOSITORY_GUIDE_SCHEMA);
         Object.assign(record.guide.fileOverviews,progress.fileOverviews);persist();
         return {...result,guide:record.guide};
       });
@@ -200,7 +200,7 @@ export function createAgentGuideService(snapshots, ai, { storage } = {}) {
         const transcript = transcriptOf(record.messages);
         record.messages.push({ role: 'user', text: input.question.trim() });
         const prompt = `Continue this immutable repository walkthrough. Use the captured read/search tools as needed.\nCurrent step: ${JSON.stringify(record.guide.steps[step])}\nReviewer question: ${input.question.trim()}\nDo not change the review plan or claim approval on the reviewer's behalf.`;
-        return generate(record, prompt, { ...options, transcript, model: input.model, effort: input.effort }, null, input.branch && fresh ? original : null);
+        return generate(record, prompt, { ...options, purpose: input.branch ? 'branch question' : 'follow-up', transcript, model: input.model, effort: input.effort }, null, input.branch && fresh ? original : null);
       });
       record.runId = run.id; conversations.set(id, record); return track(record,run);
     } catch (error) { if (fresh) conversations.delete(id); throw error; }
@@ -213,7 +213,7 @@ export function createAgentGuideService(snapshots, ai, { storage } = {}) {
       const tools=createRepositoryTools(snapshots,record.snapshotId);
       let prompt=lessonPrompt(record,step);
       for(let attempt=0;attempt<2;attempt++){
-        const result=await ai.generate(prompt,{...options,repositoryTools:tools,jsonSchema:LESSON_SCHEMA,model:input.model,effort:input.effort,turnTimeoutMs:repositoryGuideTimeoutMs(tools.repository.snapshot.files.length),...(background?{parallelKey:'prefetch'}:{})});
+        const result=await ai.generate(prompt,{...options,purpose:`lesson chapter ${step+1}${background?' prefetch':''}${attempt?' repair':''}`,repositoryTools:tools,jsonSchema:LESSON_SCHEMA,model:input.model,effort:input.effort,turnTimeoutMs:repositoryGuideTimeoutMs(tools.repository.snapshot.files.length),...(background?{parallelKey:'prefetch'}:{})});
         if(result.status!==200)throw new GuideError(result.body?.error||'Lesson generation failed.',result.status,'LESSON_FAILED');
         if(options.signal.aborted)throw new Error('Stopped.');
         let value;

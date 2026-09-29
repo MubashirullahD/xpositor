@@ -94,7 +94,7 @@ class Launcher {
     try {
       session.companion = this.spawn(process.execPath, [script, session.root], {
         cwd: session.root,
-        env: { ...process.env, ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {}), PATCHWORK_HOST: '0.0.0.0', PATCHWORK_PORT: String(port), PATCHWORK_TOKEN: token, PATCHWORK_AI_PROVIDER: String(config.get('aiProvider', 'auto')) },
+        env: { ...process.env, ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {}), PATCHWORK_HOST: '0.0.0.0', PATCHWORK_PORT: String(port), PATCHWORK_TOKEN: token, PATCHWORK_AI_PROVIDER: String(config.get('aiProvider', 'auto')), ...(config.get('devAiLog', false) ? { PATCHWORK_AI_LOG: '1' } : {}) },
         stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
       });
       this.bindCompanion(session, this.cloudflaredPath(config));

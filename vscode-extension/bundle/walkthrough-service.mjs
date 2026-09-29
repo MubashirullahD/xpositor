@@ -52,7 +52,7 @@ export function createWalkthroughService(snapshots, ai) {
 
 async function generate(ai, prompt, options) {
   let result;
-  try { result = await ai.generate(prompt, options); }
+  try { result = await ai.generate(prompt, { purpose: 'legacy walkthrough', ...options }); }
   catch (error) { return { status: 502, body: { error: error instanceof Error ? error.message : 'The AI provider failed.', code: 'GUIDE_PROVIDER_FAILED' } }; }
   if (!result || !Number.isInteger(result.status) || !result.body || typeof result.body !== 'object') {
     return { status: 502, body: { error: 'The AI provider returned an invalid response envelope.', code: 'GUIDE_PROVIDER_RESPONSE' } };

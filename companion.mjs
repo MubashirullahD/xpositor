@@ -1,3 +1,4 @@
+import { aiLogDirectory, aiLogEnabled } from './ai-log.mjs';
 import { createSpeechService } from './speech-service.mjs';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
@@ -205,6 +206,7 @@ server.listen(port, host, () => {
   console.log(`Reading git changes from: ${repoRoot}`);
   console.log('Read-only mode: the companion never stages, edits, or commits files.');
   if (secureTransport) console.log('Secure transport: HTTPS is enabled for service-worker installation and LAN review.');
+  if (aiLogEnabled()) console.log(`AI session logging is on (development): ${aiLogDirectory()}. Logs contain captured code and questions.`);
   if (accessToken) {
     console.log(`Pairing token: ${accessToken}`);
     const addresses = lanAddresses();
