@@ -1,12 +1,24 @@
 import assert from 'node:assert/strict';
 import { fork } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
+import Module, { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 // Run against the actual package staging tree, outside the checkout's ESM scope.
 const extension=resolve(process.argv[2]);
 assert.notEqual(JSON.parse(readFileSync(join(extension,'package.json'))).type,'module');
+
+// The packaged extension.js is an esbuild bundle: it must render the pairing QR without node_modules.
+assert.equal(existsSync(join(extension,'node_modules')),false);
+const load=Module._load;
+Module._load=function(request,...rest){return request==='vscode'?{}:load.call(this,request,...rest);};
+try {
+ const bundled=createRequire(import.meta.url)(join(extension,'extension.js'));
+ assert.match(bundled.pairingHtml({status:'ready',url:'http://192.168.0.104:4321/?token=abc',mode:'lan'}),/aria-label="Xpositor phone pairing QR code"/);
+} finally {Module._load=load;}
+assert.match(readFileSync(join(extension,'ThirdPartyNotices.txt'),'utf8'),/^qrcode /m);
+console.log('Packaged extension bundle: loads without node_modules, renders the pairing QR and ships third-party notices.');
 const home=mkdtempSync(join(tmpdir(),'xpositor-bundle-voice-'));
 let worker;
 try {

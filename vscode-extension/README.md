@@ -78,7 +78,7 @@ On macOS or Linux:
 code --install-extension ./xpositor-0.1.0.vsix --force
 ```
 
-The `--force` flag replaces an installed build with the same version number. After installation, run **Developer: Reload Window** from VS Code's Command Palette, then click the Xpositor icon in the Activity Bar. Alternatively, open **Extensions → … → Install from VSIX…**, choose the rebuilt VSIX, and reload the window. The package contains the launcher, QR renderer, bundled read-only companion, PWA shell, and production QR runtime dependencies. It is installed locally and is not published to the VS Code Marketplace.
+The `--force` flag replaces an installed build with the same version number. After installation, run **Developer: Reload Window** from VS Code's Command Palette, then click the Xpositor icon in the Activity Bar. Alternatively, open **Extensions → … → Install from VSIX…**, choose the rebuilt VSIX, and reload the window. The package contains the launcher and QR renderer as one unminified esbuild bundle (third-party licenses are in `ThirdPartyNotices.txt`), the bundled read-only companion and the PWA shell. It is installed locally and is not published to the VS Code Marketplace.
 
 ### Audio walkthrough
 
