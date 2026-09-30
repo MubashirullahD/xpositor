@@ -78,20 +78,20 @@ cd vscode-extension
 npm run package
 ```
 
-Run the commands from a clean checkout on macOS, Windows, or Linux with Node.js 20+ and Git. `npm ci` installs the extension's locked dependencies before the root test suite invokes its extension tests. The package command creates `vscode-extension/xpositor-vscode-0.1.0.vsix`.
+Run the commands from a clean checkout on macOS, Windows, or Linux with Node.js 20+ and Git. `npm ci` installs the extension's locked dependencies before the root test suite invokes its extension tests. The package command creates `vscode-extension/xpositor-0.1.0.vsix`.
 
 ### Update a locally installed extension
 
 After rebuilding the VSIX, install it over the existing version. If your PowerShell prompt ends in `xpositor>` (the repository root), run:
 
 ```powershell
-code.cmd --install-extension .\vscode-extension\xpositor-vscode-0.1.0.vsix --force
+code.cmd --install-extension .\vscode-extension\xpositor-0.1.0.vsix --force
 ```
 
 If your prompt ends in `xpositor\vscode-extension>`, run this instead; the VSIX is already in the current directory:
 
 ```powershell
-code.cmd --install-extension .\xpositor-vscode-0.1.0.vsix --force
+code.cmd --install-extension .\xpositor-0.1.0.vsix --force
 ```
 
 Use `code.cmd` on Windows because `code` may resolve to `Code.exe` and only open a window.
@@ -99,7 +99,7 @@ Use `code.cmd` on Windows because `code` may resolve to `Code.exe` and only open
 On macOS or Linux:
 
 ```sh
-code --install-extension ./vscode-extension/xpositor-vscode-0.1.0.vsix --force
+code --install-extension ./vscode-extension/xpositor-0.1.0.vsix --force
 ```
 
 In VS Code, run **Developer: Reload Window** from the Command Palette after installation, then open the Xpositor Activity Bar icon. You can also use **Extensions → … → Install from VSIX…**, select the rebuilt file, and reload the window. `--force` replaces the installed build even when the version number is unchanged. See the [extension README](vscode-extension/README.md#build-and-install-a-local-vsix) for details.

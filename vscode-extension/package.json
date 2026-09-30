@@ -1,10 +1,18 @@
 {
-  "name": "xpositor-vscode",
+  "name": "xpositor",
   "displayName": "Xpositor",
-  "description": "Review code from your phone using local LAN or an HTTPS tunnel.",
+  "description": "Review your changes from your phone: guided AI walkthroughs, line-by-line explanations and private notes, using your existing Codex or Claude Code login.",
   "version": "0.1.0",
-  "publisher": "xpositor-dev",
+  "publisher": "mubash",
   "license": "Apache-2.0",
+  "preview": true,
+  "pricing": "Free",
+  "icon": "resources/icon.png",
+  "galleryBanner": {
+    "color": "#242923",
+    "theme": "dark"
+  },
+  "homepage": "https://mubash.dev/xpositor/",
   "type": "commonjs",
   "dependencies": {
     "qrcode": "^1.5.4"
@@ -13,8 +21,36 @@
     "vscode": "^1.85.0"
   },
   "categories": [
+    "AI",
+    "Education",
     "Other"
   ],
+  "keywords": [
+    "code review",
+    "review",
+    "pull request",
+    "diff",
+    "git",
+    "mobile",
+    "phone",
+    "walkthrough",
+    "explain code",
+    "ai",
+    "claude code",
+    "codex",
+    "onboarding",
+    "audio"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Xpositor reads the repository, runs Git and starts local AI tools, so it only runs in trusted workspaces."
+    },
+    "virtualWorkspaces": {
+      "supported": false,
+      "description": "Xpositor needs a Git repository on local disk."
+    }
+  },
   "activationEvents": [
     "onCommand:xpositor.start",
     "onCommand:xpositor.stop",
@@ -100,7 +136,8 @@
         "xpositor.companionPath": {
           "type": "string",
           "default": "",
-          "description": "Optional absolute path to companion.mjs. Leave empty when developing from the Xpositor repository."
+          "description": "Optional absolute path to companion.mjs. Leave empty when developing from the Xpositor repository.",
+          "scope": "machine"
         },
         "xpositor.cloudflaredPath": {
           "type": "string",

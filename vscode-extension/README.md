@@ -69,13 +69,13 @@ npm run package
 Install or update it from this directory (`xpositor\vscode-extension>` in PowerShell). The VSIX is in the current directory, so do not repeat `vscode-extension` in its path. On Windows PowerShell, invoke `code.cmd` so PowerShell does not pick `Code.exe`, which opens a window without processing extension installation flags:
 
 ```powershell
-code.cmd --install-extension .\xpositor-vscode-0.1.0.vsix --force
+code.cmd --install-extension .\xpositor-0.1.0.vsix --force
 ```
 
 On macOS or Linux:
 
 ```sh
-code --install-extension ./xpositor-vscode-0.1.0.vsix --force
+code --install-extension ./xpositor-0.1.0.vsix --force
 ```
 
 The `--force` flag replaces an installed build with the same version number. After installation, run **Developer: Reload Window** from VS Code's Command Palette, then click the Xpositor icon in the Activity Bar. Alternatively, open **Extensions → … → Install from VSIX…**, choose the rebuilt VSIX, and reload the window. The package contains the launcher, QR renderer, bundled read-only companion, PWA shell, and production QR runtime dependencies. It is installed locally and is not published to the VS Code Marketplace.
