@@ -6,6 +6,12 @@ Xpositor puts the uncommitted changes in your repository on your phone. Scan a Q
 
 Xpositor is a preview. It is free and open source under the Apache 2.0 license.
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/MubashirullahD/xpositor/main/docs/images/review-queue.png" alt="Review queue listing three changed files with their added and removed line counts" width="30%">
+  <img src="https://raw.githubusercontent.com/MubashirullahD/xpositor/main/docs/images/diff-note.png" alt="A private note attached to a line of a changed file" width="30%">
+  <img src="https://raw.githubusercontent.com/MubashirullahD/xpositor/main/docs/images/walkthrough.png" alt="A step of the AI guided walkthrough explaining the changes" width="30%">
+</p>
+
 ## What you can do
 
 - **Read every changed file on your phone.** Syntax highlighting, adjustable text size, line wrapping, folded unchanged lines and jumps between changes.
