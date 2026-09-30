@@ -13,6 +13,14 @@
     "theme": "dark"
   },
   "homepage": "https://mubash.dev/xpositor/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MubashirullahD/xpositor.git",
+    "directory": "vscode-extension"
+  },
+  "bugs": {
+    "url": "https://github.com/MubashirullahD/xpositor/issues"
+  },
   "type": "commonjs",
   "dependencies": {
     "qrcode": "^1.5.4"

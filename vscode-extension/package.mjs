@@ -60,7 +60,6 @@ try {
   execFileSync(process.execPath, [
     vsce,
     'package',
-    '--allow-missing-repository',
     '--no-dependencies',
     '--out',
     outputPath,
