@@ -245,7 +245,7 @@ function bindGuideResize() {
     event.preventDefault();event.stopPropagation();
     update(event.key==='Home'?260:event.key==='End'?guideWidthLimit():guideWidth()+(event.key==='ArrowLeft'?20:-20));saveState();
   });
-  handle.addEventListener('dblclick',()=>{update(310);saveState();});
+  handle.addEventListener('dblclick',()=>{update(guideWidthLimit());saveState();});
   handle.addEventListener('pointerdown',event=>{
     if(event.button!==0)return;event.preventDefault();handle.focus();
     const startX=event.clientX,startWidth=guideWidth(),listeners=new AbortController();

@@ -16,10 +16,11 @@ async page => {
  if(requests.at(-1)!=='staged')throw Error('Scope not remembered');
  await page.getByRole('button',{name:'Code guide',exact:true}).click();
  const separator=page.getByRole('separator',{name:'Resize Code Guide'});
- await separator.focus();await page.keyboard.press('ArrowLeft');
- if(await separator.getAttribute('aria-valuenow')!=='330')throw Error('Keyboard resize failed');
- const box=await separator.boundingBox();await page.mouse.move(box.x+3,box.y+100);await page.mouse.down();await page.mouse.move(box.x-97,box.y+100,{steps:8});await page.mouse.up();
- if(Number(await separator.getAttribute('aria-valuenow'))<425)throw Error('Pointer resize failed');
+ if(await separator.getAttribute('aria-valuenow')!=='640')throw Error('Code guide did not open at its widest');
+ await separator.focus();await page.keyboard.press('ArrowRight');
+ if(await separator.getAttribute('aria-valuenow')!=='620')throw Error('Keyboard resize failed');
+ const box=await separator.boundingBox();await page.mouse.move(box.x+3,box.y+100);await page.mouse.down();await page.mouse.move(box.x+153,box.y+100,{steps:8});await page.mouse.up();
+ {const width=Number(await separator.getAttribute('aria-valuenow'));if(width<425||width>500)throw Error('Pointer resize failed: '+width);}
  await page.waitForFunction(async()=>{const {openStorage}=await import('/src/storage.js');const store=await openStorage();return (await store.get('state')).preferences.guideWidth>=425;});
  await page.reload();await page.getByRole('heading',{name:'one.js',exact:true}).waitFor();await page.getByRole('button',{name:'Code guide',exact:true}).click();
  if(Number(await separator.getAttribute('aria-valuenow'))<425)throw Error('Width not remembered: '+await separator.getAttribute('aria-valuenow')+' state '+JSON.stringify(await page.evaluate(async()=>{const {data}=await import('/src/main.js');return data.preferences;})));

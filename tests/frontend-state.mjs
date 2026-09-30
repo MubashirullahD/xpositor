@@ -85,3 +85,5 @@ const workspacePreferences = sanitizeState({ ...emptyState(), preferences: { gui
 assert.equal(workspacePreferences.guideWidth, 470);
 assert.equal(workspacePreferences.scope, 'staged');
 assert.equal(sanitizeState({ ...emptyState(), preferences: { guideWidth: 1000 } }).preferences.guideWidth, 640);
+assert.equal(emptyState().preferences.guideWidth, 640, 'Code Guide opens at its widest by default');
+assert.equal(sanitizeState({ schema: 2 }).preferences.guideWidth, 640);
